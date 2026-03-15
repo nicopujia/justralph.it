@@ -43,7 +43,7 @@
                 <div id="issues-list"></div>
             </div>
             <div id="terminal-content" style="display: none; font-family: monospace; background: #111; padding: 1rem; border-radius: 4px; color: #0f0; min-height: 200px;">
-                <p>Ralph stdout will appear here.</p>
+                <p>When the Ralph loop starts, you'll see its stdout here</p>
             </div>
         </div>
     </div>
@@ -170,6 +170,18 @@ function connectInternalSSE() {
             } else if (data.type === 'ralph_stopped') {
                 document.getElementById('ralph-status').style.display = 'none';
                 RALPH_RUNNING = 0;
+                var reason = data.data && data.data.reason;
+                if (reason === 'all_done') {
+                    var terminal = document.getElementById('terminal-content');
+                    var doneDiv = document.createElement('div');
+                    doneDiv.textContent = 'Ralph is done.';
+                    doneDiv.style.marginTop = '1rem';
+                    doneDiv.style.fontWeight = 'bold';
+                    terminal.appendChild(doneDiv);
+                } else if (reason === 'human_needed') {
+                    renderMessage('assistant', 'Ralph is blocked \u2014 check the Issues tab');
+                    switchTab('issues');
+                }
             }
         } catch(e) {}
     };

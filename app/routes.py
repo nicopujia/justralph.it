@@ -251,10 +251,14 @@ def ralph_start(slug):
     db_path = current_app.config["DATABASE"]
 
     def _watch_ralph():
-        # Drain stdout (blocks until process closes stdout)
+        # Drain stdout and capture the last non-empty line to detect exit reason
+        last_line = ""
         if process.stdout:
-            for _ in process.stdout:
-                pass
+            for raw_line in process.stdout:
+                decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+                stripped = decoded.strip()
+                if stripped:
+                    last_line = stripped
         rc = process.wait()
         # Only clean up if wait() returned a real exit code (int)
         if not isinstance(rc, int):
@@ -269,7 +273,9 @@ def ralph_start(slug):
             conn.close()
         except Exception:
             pass
-        publish(slug, "ralph_stopped", {})
+        # Determine exit reason from last stdout line
+        reason = "all_done" if last_line == "NO MORE ISSUES LEFT" else "human_needed"
+        publish(slug, "ralph_stopped", {"reason": reason})
         ralph_processes.pop(slug, None)
 
     t = threading.Thread(target=_watch_ralph, daemon=True)
