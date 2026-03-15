@@ -1,5 +1,7 @@
 import json
+import os
 
+import markdown
 from flask import Blueprint, Response, abort, redirect, render_template, request, session
 
 from .models import get_db
@@ -65,6 +67,25 @@ def show_project(slug):
     if project is None:
         abort(404)
     return render_template("projects/show.html", project=project)
+
+
+@bp.route("/projects/<slug>/spec")
+def project_spec(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    vps_path = project["vps_path"]
+    if vps_path is None:
+        return '<p style="color: #888;">Continue chatting to let Ralphy create the spec</p>'
+    agents_path = os.path.join(vps_path, "AGENTS.md")
+    if not os.path.isfile(agents_path):
+        return '<p style="color: #888;">Continue chatting to let Ralphy create the spec</p>'
+    with open(agents_path) as f:
+        content = f.read()
+    return markdown.markdown(content)
 
 
 @bp.route("/health")
