@@ -22,6 +22,7 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     from . import auth, models, routes
+    from .compaction import start_compaction_monitor
     from .recovery import recover_processes
 
     models.init_app(app)
@@ -29,6 +30,10 @@ def create_app(test_config=None):
     app.register_blueprint(auth.bp)
 
     recover_processes(app)
+
+    # Start background session compaction monitor (skip in tests)
+    if not app.config.get("TESTING"):
+        start_compaction_monitor(app)
 
     # Compute VAPID application server key from public key file (unless already set by test_config)
     if "VAPID_APPLICATION_SERVER_KEY" not in app.config:
