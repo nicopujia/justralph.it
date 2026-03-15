@@ -59,6 +59,7 @@ var SESSION_ID = '{{ project["opencode_session_id"] | default("", true) }}';
 var SLUG = '{{ project["slug"] }}';
 var FIRST_MSG_SENT = {{ project["first_message_sent"] | default(0, true) }};
 var RALPH_RUNNING = {{ project["ralph_running"] | default(0, true) }};
+var VAPID_PUBLIC_KEY = '';
 var pendingFiles = [];
 
 function handleFileSelect(files) {
@@ -276,10 +277,46 @@ function connectInternalSSE() {
     };
 }
 
+function subscribePush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return Promise.resolve();
+
+    return fetch('/projects/' + SLUG + '/push/vapid-key')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.key) return;
+            return navigator.serviceWorker.register('/static/sw.js')
+                .then(function(reg) {
+                    return reg.pushManager.getSubscription().then(function(sub) {
+                        if (sub) return sub;
+                        var key = data.key;
+                        var padding = '='.repeat((4 - key.length % 4) % 4);
+                        var raw = atob(key.replace(/-/g, '+').replace(/_/g, '/') + padding);
+                        var arr = new Uint8Array(raw.length);
+                        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+                        return reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: arr
+                        });
+                    });
+                })
+                .then(function(sub) {
+                    if (!sub) return;
+                    return fetch('/projects/' + SLUG + '/push/subscribe', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({subscription: sub.toJSON()})
+                    });
+                });
+        })
+        .catch(function() { /* silently skip if denied or unsupported */ });
+}
+
 function startRalph() {
     document.getElementById('just-ralph-it-btn').style.display = 'none';
     document.getElementById('ralph-status').style.display = '';
-    fetch('/projects/' + SLUG + '/ralph/start', { method: 'POST' });
+    subscribePush().then(function() {
+        fetch('/projects/' + SLUG + '/ralph/start', { method: 'POST' });
+    });
 }
 
 function connectRalphOutput() {

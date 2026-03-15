@@ -258,6 +258,68 @@ def chat_events(slug):
     return Response(stream(), mimetype="text/event-stream")
 
 
+@bp.route("/projects/<slug>/push/subscribe", methods=["POST"])
+def push_subscribe(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    data = request.get_json(force=True)
+    subscription = data.get("subscription")
+    if not subscription:
+        return {"error": "missing subscription"}, 400
+    sub_json = json.dumps(subscription)
+    endpoint = subscription.get("endpoint", "")
+    # Deduplicate: delete any existing subscription with the same endpoint for this project
+    rows = db.execute(
+        "SELECT id, subscription_json FROM push_subscriptions WHERE project_slug = ?",
+        (slug,),
+    ).fetchall()
+    for row in rows:
+        existing = json.loads(row["subscription_json"])
+        if existing.get("endpoint") == endpoint:
+            db.execute("DELETE FROM push_subscriptions WHERE id = ?", (row["id"],))
+    db.execute(
+        "INSERT INTO push_subscriptions (project_slug, subscription_json) VALUES (?, ?)",
+        (slug, sub_json),
+    )
+    db.commit()
+    return "", 204
+
+
+@bp.route("/projects/<slug>/push/subscribe", methods=["DELETE"])
+def push_unsubscribe(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    data = request.get_json(force=True)
+    endpoint = data.get("endpoint")
+    if not endpoint:
+        return {"error": "missing endpoint"}, 400
+    rows = db.execute(
+        "SELECT id, subscription_json FROM push_subscriptions WHERE project_slug = ?",
+        (slug,),
+    ).fetchall()
+    for row in rows:
+        sub = json.loads(row["subscription_json"])
+        if sub.get("endpoint") == endpoint:
+            db.execute("DELETE FROM push_subscriptions WHERE id = ?", (row["id"],))
+    db.commit()
+    return "", 204
+
+
+@bp.route("/projects/<slug>/push/vapid-key")
+def push_vapid_key(slug):
+    if not session.get("user"):
+        return redirect("/")
+    return {"key": current_app.config["VAPID_APPLICATION_SERVER_KEY"]}
+
+
 @bp.route("/projects/<slug>/ralph/start", methods=["POST"])
 def ralph_start(slug):
     if not session.get("user"):
@@ -284,6 +346,8 @@ def ralph_start(slug):
     publish(slug, "ralph_started", {})
 
     db_path = current_app.config["DATABASE"]
+    vapid_private_key_path = current_app.config["VAPID_PRIVATE_KEY_PATH"]
+    vapid_claims_email = current_app.config["VAPID_CLAIMS_EMAIL"]
 
     def _watch_ralph():
         # Drain stdout and capture the last non-empty line to detect exit reason
@@ -311,6 +375,12 @@ def ralph_start(slug):
         # Determine exit reason from last stdout line
         reason = "all_done" if last_line == "NO MORE ISSUES LEFT" else "human_needed"
         publish(slug, "ralph_stopped", {"reason": reason})
+        from .push import send_push_notification
+
+        push_message = (
+            "Ralph is done building your project." if reason == "all_done" else "Ralph is blocked and needs your help."
+        )
+        send_push_notification(slug, push_message, db_path, vapid_private_key_path, vapid_claims_email)
         ralph_processes.pop(slug, None)
 
     t = threading.Thread(target=_watch_ralph, daemon=True)

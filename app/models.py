@@ -42,6 +42,16 @@ def init_db():
     _add_column_if_missing(db, "projects", "opencode_session_id", "TEXT")
     _add_column_if_missing(db, "projects", "bdui_port", "INTEGER")
     _add_column_if_missing(db, "projects", "first_message_sent", "INTEGER DEFAULT 0")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_slug TEXT NOT NULL,
+            subscription_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
     db.commit()
 
 

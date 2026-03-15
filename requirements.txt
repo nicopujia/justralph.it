@@ -6,3 +6,4 @@ cryptography
 requests
 markdown
 gunicorn
+pywebpush
