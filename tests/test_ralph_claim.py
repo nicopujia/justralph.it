@@ -4,9 +4,11 @@ Bug: ralph.py never calls `bd update <id> --claim` before spawning the
 opencode agent, so issues stay in 'open' status instead of transitioning
 to 'in-progress'.
 
-Fix: After get_next_ready_issue() returns an issue and before spawning
-the opencode subprocess, call:
-    subprocess.run(["bd", "update", issue["id"], "--claim"], check=True)
+Fix: Before get_next_ready_issue(), call get_in_progress_issue() to check
+for already in-progress work (resumes without claiming). For new issues,
+call:
+    subprocess.run(["bd", "update", issue["id"], "--claim"],
+                   capture_output=True, check=True)
 """
 
 import json
@@ -59,12 +61,24 @@ def _make_bd_ready_empty():
     return _make_bd_ready_result([])
 
 
+def _make_bd_list_empty():
+    """Create a CompletedProcess for `bd list --status in_progress` returning no issues."""
+    return subprocess.CompletedProcess(
+        args=["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],
+        returncode=0,
+        stdout=json.dumps([]),
+        stderr="",
+    )
+
+
 def _make_one_issue_side_effect():
     """Return a side_effect function: first bd ready returns one issue, second returns empty."""
     state = {"bd_ready_count": 0}
 
     def side_effect(args, **kwargs):
-        if args[:2] == ["bd", "ready"]:
+        if args[:2] == ["bd", "list"]:
+            return _make_bd_list_empty()
+        elif args[:2] == ["bd", "ready"]:
             state["bd_ready_count"] += 1
             if state["bd_ready_count"] == 1:
                 return _make_bd_ready_result([{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}])
@@ -100,7 +114,9 @@ def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
     state = {"bd_ready_count": 0}
 
     def side_effect(args, **kwargs):
-        if args[:2] == ["bd", "ready"]:
+        if args[:2] == ["bd", "list"]:
+            return _make_bd_list_empty()
+        elif args[:2] == ["bd", "ready"]:
             idx = state["bd_ready_count"]
             state["bd_ready_count"] += 1
             if idx < len(bd_ready_results):
@@ -185,10 +201,16 @@ class TestMainClaimsIssueWithCorrectId:
             f"Expected 'bd update --claim' call, got none. All calls: {mock_run.call_args_list}"
         )
 
-        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "-s", "in_progress"]
+        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "--claim"]
         claim_args = claim_calls[0].args[0]
-        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "-s", "in_progress"], (
-            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '-s', 'in_progress'], got {claim_args}"
+        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--claim"], (
+            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--claim'], got {claim_args}"
+        )
+
+        # Verify check=True was passed
+        claim_kwargs = claim_calls[0].kwargs
+        assert claim_kwargs.get("check") is True, (
+            f"Expected check=True in bd update --claim call, got kwargs: {claim_kwargs}"
         )
 
 
@@ -208,7 +230,9 @@ class TestMainAbortsIfClaimFails:
         state = {"bd_ready_count": 0}
 
         def side_effect_claim_fails(args, **kwargs):
-            if args[:2] == ["bd", "ready"]:
+            if args[:2] == ["bd", "list"]:
+                return _make_bd_list_empty()
+            elif args[:2] == ["bd", "ready"]:
                 state["bd_ready_count"] += 1
                 if state["bd_ready_count"] == 1:
                     return _make_bd_ready_result([{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}])

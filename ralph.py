@@ -46,8 +46,15 @@ def main():
 
         if args.issue:
             issue = get_issue_by_id(args.issue)
+            needs_claim = True
         else:
-            issue = get_next_ready_issue()
+            # Check for an already in-progress issue before claiming a new one
+            issue = get_in_progress_issue()
+            if issue:
+                needs_claim = False
+            else:
+                issue = get_next_ready_issue()
+                needs_claim = True
 
         if not issue:
             if args.issue:
@@ -56,7 +63,8 @@ def main():
                 logger.info(Results.ALL_DONE)
             break
 
-        subprocess.run(["bd", "update", issue["id"], "-s", "in_progress"], capture_output=True)
+        if needs_claim:
+            subprocess.run(["bd", "update", issue["id"], "--claim"], capture_output=True, check=True)
 
         opencode_args = [
             "opencode",
@@ -120,6 +128,21 @@ def reload_production():
         logger.info("Production reloaded successfully.")
     except subprocess.CalledProcessError as e:
         logger.warning("Failed to reload production: %s", e.stderr)
+
+
+def get_in_progress_issue() -> dict[str, Any] | None:
+    """Check if there's already an in-progress issue and return it."""
+    bd_result = subprocess.run(
+        ["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],
+        capture_output=True,
+        text=True,
+    )
+    issues = json.loads(bd_result.stdout) if bd_result.stdout.strip() else []
+
+    if not issues:
+        return None
+
+    return issues[0]
 
 
 def get_next_ready_issue() -> dict[str, Any] | None:

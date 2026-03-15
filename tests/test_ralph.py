@@ -66,6 +66,8 @@ def _make_one_issue_side_effect(opencode_result_msg=Results.DONE):
     state = {"bd_ready_count": 0}
 
     def side_effect(args, **kwargs):
+        if args[:2] == ["bd", "list"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps([]), stderr="")
         if args[:2] == ["bd", "ready"]:
             state["bd_ready_count"] += 1
             if state["bd_ready_count"] == 1:
@@ -247,6 +249,8 @@ def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
     state = {"bd_ready_count": 0}
 
     def side_effect(args, **kwargs):
+        if args[:2] == ["bd", "list"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps([]), stderr="")
         if args[:2] == ["bd", "ready"]:
             idx = state["bd_ready_count"]
             state["bd_ready_count"] += 1
