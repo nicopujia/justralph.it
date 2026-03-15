@@ -171,6 +171,8 @@ bd show [id]
 
 bd dep add [blocker-id] --blocks [blocked-id]
 
+bd defer [id] # For issues that shouldn't be implemented yet
+
 # Verify the graph
 bd dep cycles  # Should report no cycles
 bd ready --json  # Should show only root issues with no blockers
