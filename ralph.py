@@ -3,13 +3,13 @@ import json
 import logging
 import subprocess
 import sys
-from logging.handlers import RotatingFileHandler
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
 LOG_DIR = Path.home() / "projects" / "just-ralph-it" / "logs"
-LOG_FILE = LOG_DIR / "ralph.log"
+LOG_FILE = Path.home() / "projects" / "just-ralph-it" / "ralph.log"
 STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 
 logger = logging.getLogger(__name__)
@@ -76,12 +76,24 @@ def main():
             "anthropic/claude-opus-4-6",
         ]
         lines = []
+
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        issue_id = issue["id"]
+        iter_log_path = LOG_DIR / f"ralph_{timestamp}_{issue_id}.log"
+        iter_log_file = open(iter_log_path, "w")
+
         proc = subprocess.Popen(opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert proc.stdout is not None
         for line in proc.stdout:
             logger.info(line.rstrip())
+            for handler in logging.getLogger().handlers:
+                if isinstance(handler, logging.FileHandler):
+                    handler.flush()
+            iter_log_file.write(line)
+            iter_log_file.flush()
             lines.append(line)
         proc.wait()
+        iter_log_file.close()
 
         last_line = ""
         for line in reversed(lines):
@@ -108,7 +120,7 @@ def setup_logging():
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter("%(message)s"))
 
-    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
+    file_handler = logging.FileHandler(LOG_FILE, mode="a")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 
     root = logging.getLogger()
