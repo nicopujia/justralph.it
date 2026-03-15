@@ -1,4 +1,4 @@
-# [Just Ralph It](https://justralph.it)
+# Just Ralph It
 
 > Rigorous intent. Autonomous execution.
 
