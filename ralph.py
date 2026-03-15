@@ -22,9 +22,6 @@ def main():
         args = [
             "opencode",
             "run",
-            "--agent",
-            "build",
-            "--prompt",
             get_prompt(issue["id"], "human"),
             "--title",
             issue["title"],
@@ -32,10 +29,10 @@ def main():
             "anthropic/claude-opus-4-6",
         ]
         result = subprocess.run(args, capture_output=True, text=True)
+        print(result.stdout)
+
         result_xml = result.stdout.split("\n")[-1].strip()
         result_msg = ElementTree.fromstring(result_xml).text
-
-        print(result.stdout)
 
         if result_msg == Results.DONE:
             continue
