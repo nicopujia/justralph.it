@@ -1,4 +1,6 @@
+import base64
 import json
+import mimetypes
 import os
 import sqlite3
 import subprocess
@@ -167,10 +169,34 @@ def chat_send(slug):
     if not session_id:
         return {"error": "no session"}, 400
 
-    data = request.get_json(force=True)
-    message = data.get("message", "").strip()
-    if not message:
-        return {"error": "empty message"}, 400
+    # Build parts from either JSON or multipart/form-data
+    parts = []
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        message = request.form.get("message", "").strip()
+        files = request.files.getlist("files")
+        if message:
+            parts.append({"type": "text", "text": message})
+        for f in files:
+            data = f.read()
+            filename = f.filename or "upload"
+            mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            b64 = base64.b64encode(data).decode()
+            parts.append(
+                {
+                    "type": "file",
+                    "mime": mime,
+                    "filename": filename,
+                    "url": f"data:{mime};base64,{b64}",
+                }
+            )
+        if not parts:
+            return {"error": "empty message"}, 400
+    else:
+        data = request.get_json(force=True)
+        message = data.get("message", "").strip()
+        if not message:
+            return {"error": "empty message"}, 400
+        parts.append({"type": "text", "text": message})
 
     opencode_url = current_app.config["OPENCODE_URL"]
 
@@ -186,10 +212,10 @@ def chat_send(slug):
         db.execute("UPDATE projects SET first_message_sent = 1 WHERE slug = ?", (slug,))
         db.commit()
 
-    # Send the user's message
+    # Send the user's message (text + files in one request)
     requests.post(
         f"{opencode_url}/session/{session_id}/prompt_async",
-        json={"parts": [{"type": "text", "text": message}], "agent": "RALPHY"},
+        json={"parts": parts, "agent": "RALPHY"},
         timeout=10,
     )
     return "", 204

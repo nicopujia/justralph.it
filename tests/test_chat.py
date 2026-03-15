@@ -15,12 +15,19 @@ Chat UI:
 
 DB migration:
 - first_message_sent column (INTEGER DEFAULT 0) in projects table
+
+File attachments:
+- POST /projects/<slug>/chat/send accepts multipart/form-data with file uploads
+- Files are converted to base64 data URIs and sent as FilePartInput parts
+- Backward compatible with JSON-only messages
 """
 
+import base64
 import json
 import os
 import sqlite3
 import tempfile
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from app import create_app
@@ -465,5 +472,265 @@ class TestChatUI:
             response = client.get("/projects/test-project")
             html = response.data.decode()
             assert 'id="chat-send"' in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+
+# ===========================================================================
+# POST /projects/<slug>/chat/send — file attachment support
+# ===========================================================================
+
+
+class TestChatSendWithFiles:
+    """POST /projects/<slug>/chat/send with multipart/form-data file uploads.
+
+    Files are converted to base64 data URIs and sent as FilePartInput parts
+    alongside the text part, using the opencode format:
+      {"type": "file", "mime": "<mime>", "filename": "<name>",
+       "url": "data:<mime>;base64,<data>"}
+    """
+
+    @patch("app.routes.requests")
+    def test_send_message_with_file_attachment(self, mock_requests):
+        """Multipart form with message + file sends both text and file parts."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, first_message_sent=1)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            png_data = b"fake-png-data"
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post(
+                "/projects/test-project/chat/send",
+                data={
+                    "message": "check this image",
+                    "files": (BytesIO(png_data), "screenshot.png"),
+                },
+                content_type="multipart/form-data",
+            )
+
+            assert response.status_code == 204
+
+            # Verify opencode was called once with both parts
+            mock_requests.post.assert_called_once()
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            parts = body["parts"]
+
+            # Should have a text part and a file part
+            text_parts = [p for p in parts if p["type"] == "text"]
+            file_parts = [p for p in parts if p["type"] == "file"]
+            assert len(text_parts) == 1
+            assert text_parts[0]["text"] == "check this image"
+            assert len(file_parts) == 1
+
+            fp = file_parts[0]
+            assert fp["filename"] == "screenshot.png"
+            assert fp["mime"] == "image/png"
+            expected_b64 = base64.b64encode(png_data).decode()
+            assert fp["url"] == f"data:image/png;base64,{expected_b64}"
+
+            # Agent must still be set
+            assert body["agent"] == "RALPHY"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_send_file_without_message_text(self, mock_requests):
+        """Multipart form with only a file (no message) sends just the file part."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, first_message_sent=1)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            pdf_data = b"fake-pdf-data"
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post(
+                "/projects/test-project/chat/send",
+                data={
+                    "message": "",
+                    "files": (BytesIO(pdf_data), "doc.pdf"),
+                },
+                content_type="multipart/form-data",
+            )
+
+            assert response.status_code == 204
+
+            mock_requests.post.assert_called_once()
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            parts = body["parts"]
+
+            # No text part since message was empty
+            text_parts = [p for p in parts if p["type"] == "text"]
+            file_parts = [p for p in parts if p["type"] == "file"]
+            assert len(text_parts) == 0
+            assert len(file_parts) == 1
+
+            fp = file_parts[0]
+            assert fp["filename"] == "doc.pdf"
+            assert fp["mime"] == "application/pdf"
+            expected_b64 = base64.b64encode(pdf_data).decode()
+            assert fp["url"] == f"data:application/pdf;base64,{expected_b64}"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_send_multiple_files(self, mock_requests):
+        """Multipart form with message + multiple files sends all file parts."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, first_message_sent=1)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            png_data = b"fake-png-data"
+            pdf_data = b"fake-pdf-data"
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post(
+                "/projects/test-project/chat/send",
+                data={
+                    "message": "check these files",
+                    "files": [
+                        (BytesIO(png_data), "image.png"),
+                        (BytesIO(pdf_data), "document.pdf"),
+                    ],
+                },
+                content_type="multipart/form-data",
+            )
+
+            assert response.status_code == 204
+
+            mock_requests.post.assert_called_once()
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            parts = body["parts"]
+
+            text_parts = [p for p in parts if p["type"] == "text"]
+            file_parts = [p for p in parts if p["type"] == "file"]
+
+            assert len(text_parts) == 1
+            assert text_parts[0]["text"] == "check these files"
+            assert len(file_parts) == 2
+
+            # Verify each file part
+            filenames = {fp["filename"] for fp in file_parts}
+            assert filenames == {"image.png", "document.pdf"}
+
+            for fp in file_parts:
+                if fp["filename"] == "image.png":
+                    assert fp["mime"] == "image/png"
+                    expected_b64 = base64.b64encode(png_data).decode()
+                    assert fp["url"] == f"data:image/png;base64,{expected_b64}"
+                elif fp["filename"] == "document.pdf":
+                    assert fp["mime"] == "application/pdf"
+                    expected_b64 = base64.b64encode(pdf_data).decode()
+                    assert fp["url"] == f"data:application/pdf;base64,{expected_b64}"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_json_message_still_works(self, mock_requests):
+        """Old JSON {"message": "text"} format continues to work (backward compat)."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, first_message_sent=1)
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post(
+                "/projects/test-project/chat/send",
+                data=json.dumps({"message": "plain text message"}),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 204
+
+            mock_requests.post.assert_called_once()
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            parts = body["parts"]
+
+            # Should be a single text part, no file parts
+            assert len(parts) == 1
+            assert parts[0]["type"] == "text"
+            assert parts[0]["text"] == "plain text message"
+            assert body["agent"] == "RALPHY"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_send_message_with_file_first_message(self, mock_requests):
+        """When first_message_sent=0, description is auto-sent, then file message."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(
+                db_path,
+                description="Build a todo app",
+                first_message_sent=0,
+            )
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            png_data = b"fake-png-data"
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post(
+                "/projects/test-project/chat/send",
+                data={
+                    "message": "here is a mockup",
+                    "files": (BytesIO(png_data), "mockup.png"),
+                },
+                content_type="multipart/form-data",
+            )
+
+            assert response.status_code == 204
+
+            # Two calls: first the description, then the user message with file
+            assert mock_requests.post.call_count == 2
+
+            # First call: description (text-only)
+            first_call = mock_requests.post.call_args_list[0]
+            first_body = first_call[1]["json"] if "json" in first_call[1] else first_call.kwargs["json"]
+            assert len(first_body["parts"]) == 1
+            assert first_body["parts"][0]["type"] == "text"
+            assert first_body["parts"][0]["text"] == "Build a todo app"
+
+            # Second call: user message + file
+            second_call = mock_requests.post.call_args_list[1]
+            second_body = second_call[1]["json"] if "json" in second_call[1] else second_call.kwargs["json"]
+            parts = second_body["parts"]
+
+            text_parts = [p for p in parts if p["type"] == "text"]
+            file_parts = [p for p in parts if p["type"] == "file"]
+            assert len(text_parts) == 1
+            assert text_parts[0]["text"] == "here is a mockup"
+            assert len(file_parts) == 1
+            assert file_parts[0]["filename"] == "mockup.png"
+            assert file_parts[0]["mime"] == "image/png"
+            expected_b64 = base64.b64encode(png_data).decode()
+            assert file_parts[0]["url"] == f"data:image/png;base64,{expected_b64}"
+
+            # Verify first_message_sent was updated to 1
+            db = sqlite3.connect(db_path)
+            row = db.execute("SELECT first_message_sent FROM projects WHERE slug='test-project'").fetchone()
+            db.close()
+            assert row[0] == 1
         finally:
             _cleanup(db_fd, db_path)
