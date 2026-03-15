@@ -1,8 +1,11 @@
 import argparse
 import json
 import subprocess
+from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
+
+STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 
 
 class Results:
@@ -10,6 +13,7 @@ class Results:
     ALL_DONE = "NO MORE ISSUES LEFT"
     HUMAN_NEEDED = "I NEED A HUMAN"
     NEW_BLOCKER = "FOUND NEW BLOCKER ISSUE"
+    STOPPED = "Stopping as requested."
 
 
 def main():
@@ -27,6 +31,11 @@ def main():
     args = parser.parse_args()
 
     while True:
+        if STOP_FILE.exists():
+            STOP_FILE.unlink()
+            print(Results.STOPPED)
+            break
+
         if args.issue:
             issue = get_issue_by_id(args.issue)
         else:

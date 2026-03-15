@@ -1,15 +1,15 @@
-"""Tests for ralph.py reload_production behavior.
+"""Tests for ralph.py behavior.
 
-After successfully completing an issue (Results.DONE), ralph.py should
-call reload_production() which runs `systemctl reload just-ralph-it.service`
-so that code changes go live in production.
+Tests cover:
+- reload_production: systemctl reload after DONE
+- graceful stop: .stop file check between loop iterations
 """
 
 import json
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from ralph import Results, main, reload_production
+from ralph import STOP_FILE, Results, main, reload_production
 
 
 # ---------------------------------------------------------------------------
@@ -192,4 +192,193 @@ class TestMainReloadsAfterDone:
         systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "systemctl"]
         assert len(systemctl_calls) == 0, (
             f"systemctl reload should NOT be called on NEW_BLOCKER, but was called {len(systemctl_calls)} time(s)"
+        )
+
+
+# ===========================================================================
+# Helpers for Popen-aware tests (opencode uses Popen, not run)
+# ===========================================================================
+
+
+def _make_mock_popen(result_msg=Results.DONE):
+    """Create a mock Popen that simulates streaming opencode output."""
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(
+        [
+            "Working on issue...\n",
+            f"<result>{result_msg}</result>\n",
+        ]
+    )
+    mock_proc.wait.return_value = 0
+    return mock_proc
+
+
+def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
+    """Return a side_effect for subprocess.run that handles bd/systemctl calls only.
+
+    bd_ready_results: list of lists-of-issues for successive bd ready calls.
+    """
+    if bd_ready_results is None:
+        bd_ready_results = []
+    state = {"bd_ready_count": 0}
+
+    def side_effect(args, **kwargs):
+        if args[:2] == ["bd", "ready"]:
+            idx = state["bd_ready_count"]
+            state["bd_ready_count"] += 1
+            if idx < len(bd_ready_results):
+                return _make_bd_ready_result(bd_ready_results[idx])
+            return _make_bd_ready_empty()
+        elif args[:2] == ["bd", "update"]:
+            return _make_claim_result()
+        elif args[0] == "systemctl":
+            return _make_systemctl_result()
+        raise ValueError(f"Unexpected subprocess.run call: {args}")
+
+    return side_effect
+
+
+# ===========================================================================
+# Test: Graceful stop via .stop file
+# ===========================================================================
+
+
+class TestGracefulStop:
+    """Tests for the .stop file graceful stop mechanism."""
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_stop_file_exists_at_start_exits_immediately(self, mock_stop_file, mock_run, mock_popen):
+        """When .stop file exists at the top of the loop, ralph exits without claiming any issue."""
+        # .stop file exists, then gets "deleted" (unlink succeeds)
+        mock_stop_file.exists.return_value = True
+        mock_stop_file.unlink.return_value = None
+
+        # bd ready should never be called
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(bd_ready_results=[])
+
+        main()
+
+        # Should NOT have called bd ready or Popen (no issue work started)
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) == 0, (
+            f"bd ready should NOT be called when .stop file exists, but was called {len(bd_ready_calls)} time(s)"
+        )
+        mock_popen.assert_not_called()
+
+        # .stop file should have been deleted
+        mock_stop_file.unlink.assert_called_once()
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_stop_file_prints_stopping_message(self, mock_stop_file, mock_run, mock_popen, capsys):
+        """When .stop file exists, ralph prints the STOPPED message."""
+        mock_stop_file.exists.return_value = True
+        mock_stop_file.unlink.return_value = None
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(bd_ready_results=[])
+
+        main()
+
+        captured = capsys.readouterr()
+        assert Results.STOPPED in captured.out
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_no_stop_file_continues_normally(self, mock_stop_file, mock_run, mock_popen):
+        """When .stop file does NOT exist, ralph continues to get the next issue."""
+        mock_stop_file.exists.return_value = False
+
+        # Return one issue, then empty
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
+
+        main()
+
+        # bd ready SHOULD have been called
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) >= 1, "bd ready should be called when .stop file doesn't exist"
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_stop_file_checked_between_issues(self, mock_stop_file, mock_run, mock_popen):
+        """The .stop file check happens after an issue completes and before the next one starts.
+
+        Scenario: first iteration has no .stop file, issue completes with DONE.
+        Second iteration finds .stop file and exits cleanly.
+        """
+        # First check: no stop file. Second check (after first issue): stop file exists.
+        mock_stop_file.exists.side_effect = [False, True]
+        mock_stop_file.unlink.return_value = None
+
+        # One issue available (would be fetched on first iteration)
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[
+                [{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}],
+                [{"id": "ISS-100", "title": "Another issue"}],  # would be fetched if no stop
+            ]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
+
+        main()
+
+        # First issue should have been worked on (Popen called once)
+        assert mock_popen.call_count == 1, f"Expected exactly 1 Popen call (first issue), got {mock_popen.call_count}"
+
+        # bd ready should have been called exactly once (for the first issue)
+        # The second iteration should stop before calling bd ready
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) == 1, (
+            f"Expected exactly 1 bd ready call (second iteration stopped by .stop file), got {len(bd_ready_calls)}"
+        )
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_stop_file_deleted_after_detection(self, mock_stop_file, mock_run, mock_popen):
+        """The .stop file is deleted when detected (so it doesn't persist)."""
+        mock_stop_file.exists.return_value = True
+        mock_stop_file.unlink.return_value = None
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(bd_ready_results=[])
+
+        main()
+
+        mock_stop_file.unlink.assert_called_once()
+
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_no_issue_left_in_broken_state(self, mock_stop_file, mock_run, mock_popen):
+        """When stop happens between issues, the completed issue went through DONE + reload.
+
+        This ensures the stop is clean — the previous issue fully completed.
+        """
+        # First iteration: no stop. Second iteration: stop.
+        mock_stop_file.exists.side_effect = [False, True]
+        mock_stop_file.unlink.return_value = None
+
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[
+                [{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}],
+            ]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
+
+        main()
+
+        # The first issue should have completed AND reload should have been called
+        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "systemctl"]
+        assert len(systemctl_calls) == 1, (
+            f"Expected systemctl reload to be called for the completed issue, got {len(systemctl_calls)} call(s)"
         )
