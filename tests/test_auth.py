@@ -238,6 +238,39 @@ class TestAuthCallback:
         finally:
             os.unlink(pem_path)
 
+    @patch("app.auth.github.create_installation_token")
+    @patch("app.auth.github.get_installation")
+    def test_auth_callback_redirect_to_projects_returns_200(self, mock_get_installation, mock_create_token):
+        """After auth callback, following the redirect to /projects returns 200 (not 404)."""
+        mock_get_installation.return_value = {
+            "id": 99999,
+            "account": {"login": "nicopujia", "id": 1234},
+        }
+        mock_create_token.return_value = {
+            "token": "ghs_test_token",
+            "expires_at": "2026-03-15T12:00:00Z",
+        }
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["oauth_state"] = "test-state"
+                # Step 1: Hit the auth callback (gets 302 to /projects)
+                response = client.get("/auth/callback?installation_id=12345&state=test-state")
+                assert response.status_code == 302
+                assert "/projects" in response.headers["Location"]
+                # Step 2: Follow the redirect — should get 200, not 404
+                response = client.get("/projects")
+                assert response.status_code == 200
+                html = response.data.decode()
+                assert "New Project" in html
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
 
 class TestAuthLogout:
     """Tests for GET /auth/logout."""
