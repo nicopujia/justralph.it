@@ -91,7 +91,7 @@ def reload_production():
     """Reload the production web server so code changes go live."""
     try:
         subprocess.run(
-            ["systemctl", "reload", "just-ralph-it.service"],
+            ["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
             check=True,
             capture_output=True,
         )
