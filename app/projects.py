@@ -51,15 +51,40 @@ def check_db_name_exists(repo_name):
     return row is not None
 
 
+GH_CLI = "/home/linuxbrew/.linuxbrew/bin/gh"
+
+
 def create_github_repo(repo_name, description, token):
-    """Create a new GitHub repo. Returns the API response JSON."""
-    resp = requests.post(
-        f"{GITHUB_API}/user/repos",
+    """Create a new GitHub repo via `gh` CLI, then fetch repo info with the installation token.
+
+    Uses the `gh` CLI (authenticated with a PAT) to create the repo, because
+    GitHub App installation tokens (ghs_...) cannot call POST /user/repos.
+    After creation, uses the installation token to GET /repos/nicopujia/{name}
+    for html_url and clone_url.
+
+    Returns a dict with at least 'html_url' and 'clone_url'.
+    """
+    cmd = [
+        GH_CLI,
+        "repo",
+        "create",
+        repo_name,
+        "--public",
+        "--description",
+        description or "",
+        "--add-readme",
+        "--clone=false",
+        "--confirm",
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+
+    # Fetch repo info using the installation token (which CAN read repos)
+    resp = requests.get(
+        f"{GITHUB_API}/repos/nicopujia/{repo_name}",
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
         },
-        json={"name": repo_name, "description": description or "", "private": False, "auto_init": True},
         timeout=15,
     )
     resp.raise_for_status()
