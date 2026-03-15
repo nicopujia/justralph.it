@@ -1,15 +1,22 @@
 import json
 import os
+import sqlite3
+import subprocess
+import sys
+import threading
 
 import markdown
 import requests
 from flask import Blueprint, Response, abort, current_app, redirect, render_template, request, session
 
+from . import PROJECT_ROOT
 from .models import get_db
 from .projects import create_project, validate_repo_name
 from .sse import publish, subscribe, unsubscribe
 
 bp = Blueprint("main", __name__)
+
+ralph_processes = {}  # slug -> subprocess.Popen
 
 
 @bp.route("/")
@@ -212,5 +219,80 @@ def chat_events(slug):
                 elif decoded.startswith(":"):
                     # SSE comment/keepalive
                     yield f"{decoded}\n\n"
+
+    return Response(stream(), mimetype="text/event-stream")
+
+
+@bp.route("/projects/<slug>/ralph/start", methods=["POST"])
+def ralph_start(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    if project["ralph_running"] == 1:
+        return {"error": "ralph already running"}, 409
+
+    db.execute("UPDATE projects SET ralph_running = 1 WHERE slug = ?", (slug,))
+    db.commit()
+
+    ralph_py_path = os.path.join(PROJECT_ROOT, "ralph.py")
+    process = subprocess.Popen(
+        [sys.executable, ralph_py_path],
+        cwd=project["vps_path"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    ralph_processes[slug] = process
+
+    publish(slug, "ralph_started", {})
+
+    db_path = current_app.config["DATABASE"]
+
+    def _watch_ralph():
+        # Drain stdout (blocks until process closes stdout)
+        if process.stdout:
+            for _ in process.stdout:
+                pass
+        rc = process.wait()
+        # Only clean up if wait() returned a real exit code (int)
+        if not isinstance(rc, int):
+            return
+        # Only clean up if this process is still the active one for this slug
+        if ralph_processes.get(slug) is not process:
+            return
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("UPDATE projects SET ralph_running = 0 WHERE slug = ?", (slug,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        publish(slug, "ralph_stopped", {})
+        ralph_processes.pop(slug, None)
+
+    t = threading.Thread(target=_watch_ralph, daemon=True)
+    t.start()
+
+    return {"status": "started"}, 200
+
+
+@bp.route("/projects/<slug>/ralph/output")
+def ralph_output(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+
+    def stream():
+        proc = ralph_processes.get(slug)
+        if proc and proc.stdout:
+            for line in proc.stdout:
+                decoded = line.decode("utf-8", errors="replace").rstrip("\n")
+                yield f"data: {decoded}\n\n"
+        yield "data: [DONE]\n\n"
 
     return Response(stream(), mimetype="text/event-stream")

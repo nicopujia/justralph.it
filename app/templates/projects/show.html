@@ -17,6 +17,11 @@
             <button id="chat-send" onclick="sendMessage()" 
                     style="background: #4fc3f7; color: #1a1a1a; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 0 4px 4px 0;">Send</button>
         </div>
+        <div style="padding: 0.5rem; border-top: 1px solid #333; text-align: center;">
+            <button id="just-ralph-it-btn" onclick="startRalph()" 
+                    style="display: none; background: #4caf50; color: white; border: none; padding: 0.75rem 1.5rem; cursor: pointer; font-family: monospace; font-size: 1.1em; border-radius: 4px;">Just Ralph It</button>
+            <div id="ralph-status" style="display: none; color: #ff9800; padding: 0.5rem;">Ralph is building...</div>
+        </div>
     </div>
 
     <!-- Tab Panel -->
@@ -49,6 +54,7 @@ var BDUI_PORT = {{ project["bdui_port"] | default(0, true) }};
 var SESSION_ID = '{{ project["opencode_session_id"] | default("", true) }}';
 var SLUG = '{{ project["slug"] }}';
 var FIRST_MSG_SENT = {{ project["first_message_sent"] | default(0, true) }};
+var RALPH_RUNNING = {{ project["ralph_running"] | default(0, true) }};
 
 function renderMessage(role, text) {
     var el = document.getElementById('chat-messages');
@@ -144,6 +150,64 @@ function switchTab(tab) {
             btn.style.borderBottom = '2px solid transparent';
         }
     }
+}
+
+/* Ralph launch: internal events SSE, start, output streaming */
+function connectInternalSSE() {
+    var evtSource = new EventSource('/internal/projects/' + SLUG + '/events');
+    evtSource.onmessage = function(event) {
+        try {
+            var data = JSON.parse(event.data);
+            if (data.type === 'show_just_ralph_it_button') {
+                document.getElementById('just-ralph-it-btn').style.display = '';
+                document.getElementById('ralph-status').style.display = 'none';
+            } else if (data.type === 'ralph_started') {
+                document.getElementById('just-ralph-it-btn').style.display = 'none';
+                document.getElementById('ralph-status').style.display = '';
+                RALPH_RUNNING = 1;
+                connectRalphOutput();
+                switchTab('terminal');
+            } else if (data.type === 'ralph_stopped') {
+                document.getElementById('ralph-status').style.display = 'none';
+                RALPH_RUNNING = 0;
+            }
+        } catch(e) {}
+    };
+    evtSource.onerror = function() {
+        setTimeout(function() { connectInternalSSE(); }, 3000);
+    };
+}
+
+function startRalph() {
+    document.getElementById('just-ralph-it-btn').style.display = 'none';
+    document.getElementById('ralph-status').style.display = '';
+    fetch('/projects/' + SLUG + '/ralph/start', { method: 'POST' });
+}
+
+function connectRalphOutput() {
+    var terminal = document.getElementById('terminal-content');
+    terminal.innerHTML = '';
+    var evtSource = new EventSource('/projects/' + SLUG + '/ralph/output');
+    evtSource.onmessage = function(event) {
+        if (event.data === '[DONE]') {
+            evtSource.close();
+            return;
+        }
+        var line = document.createElement('div');
+        line.textContent = event.data;
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+    };
+    evtSource.onerror = function() {
+        evtSource.close();
+    };
+}
+
+connectInternalSSE();
+
+if (RALPH_RUNNING) {
+    document.getElementById('ralph-status').style.display = '';
+    connectRalphOutput();
 }
 
 /* Issues tab: connect to bdui WebSocket and render issues */
