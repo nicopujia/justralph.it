@@ -10,6 +10,8 @@ from xml.etree import ElementTree
 
 import psutil
 
+from app.subprocess_env import subprocess_env
+
 LOG_DIR = Path.home() / "projects" / "just-ralph-it" / "logs"
 LOG_FILE = Path.home() / "projects" / "just-ralph-it" / "ralph.log"
 STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
@@ -85,7 +87,7 @@ def main():
                 logger.info(Results.ALL_DONE)
             break
 
-        subprocess.run(["bd", "update", issue["id"], "--status", "in_progress"], check=True)
+        subprocess.run(["bd", "update", issue["id"], "--status", "in_progress"], check=True, env=subprocess_env())
 
         opencode_args = [
             "opencode",
@@ -101,7 +103,9 @@ def main():
         iter_log_path = LOG_DIR / f"ralph_{issue_id}.log"
         iter_log_file = open(iter_log_path, "w")
 
-        proc = subprocess.Popen(opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        proc = subprocess.Popen(
+            opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=subprocess_env()
+        )
         assert proc.stdout is not None
 
         lines = []
@@ -157,6 +161,7 @@ def reload_production():
             ["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
             check=True,
             capture_output=True,
+            env=subprocess_env(),
         )
         logger.info("Production reloaded successfully.")
     except subprocess.CalledProcessError as e:
@@ -169,6 +174,7 @@ def get_in_progress_issue() -> dict[str, Any] | None:
         ["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],
         capture_output=True,
         text=True,
+        env=subprocess_env(),
     )
     issues = json.loads(bd_result.stdout) if bd_result.stdout.strip() else []
 
@@ -179,7 +185,9 @@ def get_in_progress_issue() -> dict[str, Any] | None:
 
 
 def get_next_ready_issue() -> dict[str, Any] | None:
-    bd_result = subprocess.run(["bd", "ready", "--json", "--limit", "1"], capture_output=True, text=True)
+    bd_result = subprocess.run(
+        ["bd", "ready", "--json", "--limit", "1"], capture_output=True, text=True, env=subprocess_env()
+    )
     ready_issues = json.loads(bd_result.stdout) if bd_result.stdout.strip() else []
 
     if not ready_issues:
@@ -190,7 +198,7 @@ def get_next_ready_issue() -> dict[str, Any] | None:
 
 def get_issue_by_id(issue_id: str) -> dict[str, Any] | None:
     """Get a specific issue by its ID."""
-    bd_result = subprocess.run(["bd", "show", issue_id, "--json"], capture_output=True, text=True)
+    bd_result = subprocess.run(["bd", "show", issue_id, "--json"], capture_output=True, text=True, env=subprocess_env())
 
     if bd_result.returncode != 0:
         return

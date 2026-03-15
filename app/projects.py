@@ -9,6 +9,7 @@ import requests
 from flask import current_app
 
 from .models import get_db
+from .subprocess_env import subprocess_env
 
 GITHUB_API = "https://api.github.com"
 PROJECTS_DIR = os.path.expanduser("~/projects")
@@ -79,14 +80,21 @@ def clone_repo(clone_url, dest_path, token):
     """Clone a GitHub repo to the VPS."""
     # Insert token into clone URL for auth
     auth_url = clone_url.replace("https://", f"https://x-access-token:{token}@")
-    subprocess.run(["git", "clone", auth_url, dest_path], check=True, capture_output=True, timeout=60)
+    subprocess.run(
+        ["git", "clone", auth_url, dest_path], check=True, capture_output=True, timeout=60, env=subprocess_env()
+    )
 
 
 def init_beads(project_path):
     """Initialize beads in the project directory with BEADS_DOLT_SHARED_SERVER=1."""
-    env = os.environ.copy()
-    env["BEADS_DOLT_SHARED_SERVER"] = "1"
-    subprocess.run(["bd", "init"], cwd=project_path, check=True, capture_output=True, timeout=30, env=env)
+    subprocess.run(
+        ["bd", "init"],
+        cwd=project_path,
+        check=True,
+        capture_output=True,
+        timeout=30,
+        env=subprocess_env(BEADS_DOLT_SHARED_SERVER="1"),
+    )
 
 
 def find_available_port():
@@ -103,6 +111,7 @@ def start_bdui(project_path, port):
         cwd=project_path,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=subprocess_env(),
     )
 
 
@@ -201,11 +210,12 @@ def stop_bdui(port):
             capture_output=True,
             text=True,
             timeout=5,
+            env=subprocess_env(),
         )
         pids = result.stdout.strip().split("\n")
         for pid in pids:
             if pid.strip():
-                subprocess.run(["kill", "-9", pid.strip()], timeout=5)
+                subprocess.run(["kill", "-9", pid.strip()], timeout=5, env=subprocess_env())
     except Exception:
         pass
 

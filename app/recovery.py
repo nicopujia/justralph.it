@@ -9,6 +9,7 @@ import threading
 from . import PROJECT_ROOT
 from .projects import start_bdui
 from .sse import publish
+from .subprocess_env import subprocess_env
 
 
 def recover_processes(app):
@@ -43,7 +44,7 @@ def recover_processes(app):
         if ralph_running and vps_path:
             try:
                 ralph_py_path = os.path.join(PROJECT_ROOT, "ralph.py")
-                env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+                env = subprocess_env(PYTHONUNBUFFERED="1")
                 process = subprocess.Popen(
                     [sys.executable, ralph_py_path],
                     cwd=vps_path,

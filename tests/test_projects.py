@@ -716,11 +716,11 @@ class TestPostProjectsNewSuccess:
             self._patch_and_post(client, mocks)
 
             run_calls = mocks["run"].call_args_list
-            bd_calls = [c for c in run_calls if "bd" in str(c) and "init" in str(c)]
+            # Find the bd init call by checking the actual command args (not str matching)
+            bd_calls = [c for c in run_calls if c.args and c.args[0][:2] == ["bd", "init"]]
             assert len(bd_calls) >= 1
             # Check that env contains BEADS_DOLT_SHARED_SERVER=1
             bd_call = bd_calls[0]
-            # env can be in kwargs or the args
             call_kwargs = bd_call.kwargs if bd_call.kwargs else {}
             if "env" in call_kwargs:
                 assert call_kwargs["env"].get("BEADS_DOLT_SHARED_SERVER") == "1", (

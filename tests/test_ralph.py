@@ -104,11 +104,12 @@ class TestReloadProduction:
 
         reload_production()
 
-        mock_run.assert_called_once_with(
-            ["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
-            check=True,
-            capture_output=True,
-        )
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args == (["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],)
+        assert call_kwargs["check"] is True
+        assert call_kwargs["capture_output"] is True
+        assert "env" in call_kwargs  # subprocess_env() provides the env
 
     @patch("ralph.subprocess.run")
     def test_handles_failure_gracefully(self, mock_run):

@@ -24,6 +24,7 @@ from .projects import (
     validate_repo_name,
 )
 from .sse import publish, subscribe, unsubscribe
+from .subprocess_env import subprocess_env
 
 bp = Blueprint("main", __name__)
 
@@ -399,7 +400,7 @@ def ralph_start(slug):
     db.commit()
 
     ralph_py_path = os.path.join(PROJECT_ROOT, "ralph.py")
-    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    env = subprocess_env(PYTHONUNBUFFERED="1")
     process = subprocess.Popen(
         [sys.executable, ralph_py_path],
         cwd=project["vps_path"],

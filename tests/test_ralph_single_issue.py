@@ -91,11 +91,11 @@ class TestGetInProgressIssue:
 
         result = get_in_progress_issue()
 
-        mock_run.assert_called_once_with(
-            ["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],
-            capture_output=True,
-            text=True,
-        )
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args == (["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],)
+        assert call_kwargs["capture_output"] is True
+        assert call_kwargs["text"] is True
         assert result == IN_PROGRESS_ISSUE
 
     @patch("ralph.subprocess.run")
@@ -107,11 +107,11 @@ class TestGetInProgressIssue:
 
         result = get_in_progress_issue()
 
-        mock_run.assert_called_once_with(
-            ["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],
-            capture_output=True,
-            text=True,
-        )
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args == (["bd", "list", "--status", "in_progress", "--json", "--limit", "1"],)
+        assert call_kwargs["capture_output"] is True
+        assert call_kwargs["text"] is True
         assert result is None
 
 
