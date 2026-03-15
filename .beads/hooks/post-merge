@@ -22,3 +22,17 @@ if command -v bd >/dev/null 2>&1; then
   if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
 fi
 # --- END BEADS INTEGRATION v0.60.0 ---
+
+# --- BEGIN BEADS JSONL IMPORT ---
+# Auto-import issues from JSONL after pull (cross-machine sync)
+if command -v bd >/dev/null 2>&1; then
+  _beads_dir="$(git rev-parse --show-toplevel 2>/dev/null)/.beads"
+  _jsonl="$_beads_dir/issues.jsonl"
+  if [ -f "$_jsonl" ]; then
+    # Check if JSONL was updated in the merge
+    if git diff-tree -r --name-only ORIG_HEAD HEAD 2>/dev/null | grep -q '.beads/issues.jsonl'; then
+      bd init --from-jsonl --force --quiet 2>/dev/null || true
+    fi
+  fi
+fi
+# --- END BEADS JSONL IMPORT ---

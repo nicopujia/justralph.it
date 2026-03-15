@@ -22,3 +22,14 @@ if command -v bd >/dev/null 2>&1; then
   if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
 fi
 # --- END BEADS INTEGRATION v0.60.0 ---
+
+# --- BEGIN BEADS JSONL EXPORT ---
+# Auto-export issues to JSONL for cross-machine sync
+if command -v bd >/dev/null 2>&1; then
+  _beads_dir="$(git rev-parse --show-toplevel 2>/dev/null)/.beads"
+  if [ -d "$_beads_dir" ]; then
+    bd export -o "$_beads_dir/issues.jsonl" 2>/dev/null && \
+      git add "$_beads_dir/issues.jsonl" 2>/dev/null || true
+  fi
+fi
+# --- END BEADS JSONL EXPORT ---
