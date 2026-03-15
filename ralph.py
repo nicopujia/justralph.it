@@ -143,7 +143,7 @@ def get_issue_by_id(issue_id: str) -> dict[str, Any] | None:
 
 
 def get_prompt(issue_id: str, username: str) -> str:
-    return f"""Claim and complete {issue_id}. When you finish, {output(Results.DONE)}.
+    return f"""Complete {issue_id}. When you finish, {output(Results.DONE)}.
 
 ## KEEP IN MIND
 
