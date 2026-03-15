@@ -22,7 +22,7 @@ Web app (runs on a single VPS that also executes Ralph loops).
 - Auth: GitHub App (not OAuth); must have repo read/write permissions for creating repos and pushing code
 - Each project gets its own new GitHub repo, auto-created and named after the project
 - Project files live at `~/projects/<project_name>/` on the VPS
-- Ralphy's system prompt is this repo's OpenCode system prompt, adapted for the web context. Key web-specific behaviors to add: (1) call `show_just_ralph_it_button` tool when spec is complete, (2) after a HUMAN_NEEDED stop, when the user says "done," call `show_just_ralph_it_button` again to resume the loop, (3) whenever the user asks for a recap of issues or progress, always run `bd list` first to get live data — never recap from memory
+- Ralphy's system prompt is this repo's OpenCode system prompt, adapted for the web context. It lives in the opencode config for this repo — not in AGENTS.md. See the issue for how to adapt it.
 - UI is functional only — minimal CSS for layout (two-panel, tabs, terminal view), no polish or design work in v1
 - Light and dark mode via CSS `prefers-color-scheme` (no toggle — follows system theme)
 - Ralph always looks for secrets in `~/projects/<project_name>/.env`. If a required secret is missing, Ralph files a HUMAN_NEEDED issue specifying the exact env var name needed
