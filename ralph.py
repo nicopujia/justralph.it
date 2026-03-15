@@ -41,7 +41,7 @@ def main():
         result_xml = result.stdout.split("\n")[-1].strip()
         result_msg = ElementTree.fromstring(result_xml).text
 
-        print(result_msg)
+        print(result.stdout)
 
         if result_msg == Results.DONE:
             continue
