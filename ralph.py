@@ -19,6 +19,8 @@ def main():
             print(Results.ALL_DONE)
             break
 
+        subprocess.run(["bd", "update", issue["id"], "--claim"], check=True)
+
         args = [
             "opencode",
             "run",
@@ -43,9 +45,7 @@ def main():
 
 
 def get_next_ready_issue() -> dict[str, Any] | None:
-    bd_result = subprocess.run(
-        ["bd", "ready", "--json", "--limit", "1"], capture_output=True, text=True
-    )
+    bd_result = subprocess.run(["bd", "ready", "--json", "--limit", "1"], capture_output=True, text=True)
     ready_issues = json.loads(bd_result.stdout) if bd_result.stdout.strip() else []
 
     if not ready_issues:
