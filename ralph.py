@@ -14,22 +14,6 @@ STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 logger = logging.getLogger(__name__)
 
 
-def setup_logging():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(logging.Formatter("%(message)s"))
-
-    file_fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
-    file_handler.setFormatter(file_fmt)
-
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.addHandler(stdout_handler)
-    root.addHandler(file_handler)
-
-
 class Results:
     DONE = "COMPLETED ASSIGNED ISSUE"
     ALL_DONE = "NO MORE ISSUES LEFT"
@@ -105,6 +89,22 @@ def main():
             break
         elif result_msg == Results.NEW_BLOCKER:
             break
+
+
+def setup_logging():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    stdout_handler = logging.StreamHandler()
+    stdout_handler.setFormatter(fmt)
+
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
+    file_handler.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(stdout_handler)
+    root.addHandler(file_handler)
 
 
 def reload_production():
