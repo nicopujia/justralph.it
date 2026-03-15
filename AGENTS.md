@@ -24,6 +24,7 @@ Web app (runs on a single VPS that also executes Ralph loops).
 - Project files live at `~/projects/<project_name>/` on the VPS
 - Ralphy's system prompt is this repo's OpenCode system prompt, adapted for the web context. Key web-specific behaviors to add: (1) call `show_just_ralph_it_button` tool when spec is complete, (2) after a HUMAN_NEEDED stop, when the user says "done," call `show_just_ralph_it_button` again to resume the loop
 - UI is functional only — minimal CSS for layout (two-panel, tabs, terminal view), no polish or design work in v1
+- Light and dark mode via CSS `prefers-color-scheme` (no toggle — follows system theme)
 - No per-project VPS provisioning in v1
 - No legacy codebase input in v1
 - No multi-user collaboration in v1
