@@ -19,7 +19,7 @@ class Results:
     ALL_DONE = "NO MORE ISSUES LEFT"
     HUMAN_NEEDED = "I NEED A HUMAN"
     NEW_BLOCKER = "FOUND NEW BLOCKER ISSUE"
-    STOPPED = "Stopping as requested."
+    STOPPED = "STOPPING AS REQUESTED"
 
 
 def main():
