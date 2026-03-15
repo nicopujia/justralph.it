@@ -18,9 +18,12 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     from . import auth, models, routes
+    from .recovery import recover_processes
 
     models.init_app(app)
     app.register_blueprint(routes.bp)
     app.register_blueprint(auth.bp)
+
+    recover_processes(app)
 
     return app
