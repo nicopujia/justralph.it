@@ -13,11 +13,40 @@ def test_app_creates():
     assert app is not None
 
 
-def test_index_returns_200():
+def test_index_unauthenticated_returns_200():
     app = create_app()
     client = app.test_client()
     response = client.get("/")
     assert response.status_code == 200
+
+
+def test_index_unauthenticated_shows_sign_in_button():
+    """Unauthenticated user sees 'Sign in with GitHub' on the landing page."""
+    app = create_app()
+    client = app.test_client()
+    response = client.get("/")
+    assert b"Sign in with GitHub" in response.data
+
+
+def test_index_authenticated_redirects_to_projects():
+    """Authenticated user visiting '/' is redirected to /projects."""
+    app = create_app()
+    app.config["SECRET_KEY"] = "test-secret"
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user"] = {"login": "testuser"}
+    response = client.get("/")
+    assert response.status_code == 302
+    assert "/projects" in response.headers["Location"]
+
+
+def test_index_unauthenticated_shows_app_description():
+    """Landing page shows the app name and description."""
+    app = create_app()
+    client = app.test_client()
+    response = client.get("/")
+    assert b"just-ralph-it" in response.data
+    assert b"Ralph Wiggum" in response.data
 
 
 def test_health_returns_ok():

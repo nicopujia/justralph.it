@@ -1,6 +1,6 @@
 import json
 
-from flask import Blueprint, Response, render_template
+from flask import Blueprint, Response, redirect, render_template, session
 
 from .models import get_db
 from .sse import publish, subscribe, unsubscribe
@@ -10,6 +10,8 @@ bp = Blueprint("main", __name__)
 
 @bp.route("/")
 def index():
+    if session.get("user"):
+        return redirect("/projects")
     return render_template("index.html")
 
 
