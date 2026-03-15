@@ -1,6 +1,6 @@
 {
-    "name": "just-ralph-it",
-    "short_name": "ralph-it",
+    "name": "justralph.it",
+    "short_name": "justralph.it",
     "start_url": "/",
     "display": "standalone"
 }

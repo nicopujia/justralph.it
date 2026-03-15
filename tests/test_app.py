@@ -45,7 +45,7 @@ def test_index_unauthenticated_shows_app_description():
     app = create_app()
     client = app.test_client()
     response = client.get("/")
-    assert b"just-ralph-it" in response.data
+    assert b"justralph.it" in response.data
     assert b"Ralph Wiggum" in response.data
 
 

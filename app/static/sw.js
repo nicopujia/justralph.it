@@ -1,7 +1,7 @@
 self.addEventListener('push', function(event) {
     var data = event.data ? event.data.text() : 'Ralph has an update for you.';
     event.waitUntil(
-        self.registration.showNotification('just-ralph-it', {
+        self.registration.showNotification('justralph.it', {
             body: data,
             icon: null
         })
