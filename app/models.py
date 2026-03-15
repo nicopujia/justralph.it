@@ -23,8 +23,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            slug TEXT UNIQUE,
             repo_url TEXT,
             status TEXT DEFAULT 'draft',
+            ralph_running INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
