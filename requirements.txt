@@ -5,3 +5,4 @@ PyJWT
 cryptography
 requests
 markdown
+gunicorn
