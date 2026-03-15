@@ -126,8 +126,8 @@ class TestAuthGitHubRedirect:
 class TestAuthCallback:
     """Tests for GET /auth/callback."""
 
-    def test_auth_callback_rejects_missing_installation_id(self):
-        """GET /auth/callback without installation_id returns 400."""
+    def test_auth_callback_rejects_missing_installation_id_and_code(self):
+        """GET /auth/callback without installation_id or code returns 400."""
         pem_path = _write_test_pem()
         try:
             app, db_path, db_fd = _make_app(pem_path)
@@ -137,6 +137,7 @@ class TestAuthCallback:
                     sess["oauth_state"] = "test-state"
                 response = client.get("/auth/callback?state=test-state")
                 assert response.status_code == 400
+                assert b"Missing installation_id or code" in response.data
             finally:
                 _cleanup(db_fd, db_path)
         finally:
@@ -271,6 +272,100 @@ class TestAuthCallback:
         finally:
             os.unlink(pem_path)
 
+    @patch("app.auth.github.create_installation_token")
+    @patch("app.auth.github.list_installations")
+    def test_auth_callback_reauth_with_code_only(self, mock_list_installations, mock_create_token):
+        """Re-auth with code (no installation_id) finds installation and succeeds."""
+        mock_list_installations.return_value = [
+            {"id": 99999, "account": {"login": "nicopujia", "id": 1234}, "app_id": 12345}
+        ]
+        mock_create_token.return_value = {
+            "token": "ghs_reauth_token",
+            "expires_at": "2026-03-15T14:00:00Z",
+        }
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["oauth_state"] = "test-state"
+                response = client.get("/auth/callback?code=test-oauth-code&state=test-state")
+                assert response.status_code == 302
+                assert "/projects" in response.headers["Location"]
+                with client.session_transaction() as sess:
+                    assert sess["user"] == "nicopujia"
+                    assert sess["installation_id"] == "99999"
+                    assert sess["installation_token"] == "ghs_reauth_token"
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+    @patch("app.auth.github.list_installations")
+    def test_auth_callback_reauth_no_installations(self, mock_list_installations):
+        """Re-auth with code but no installations returns 400."""
+        mock_list_installations.return_value = []
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["oauth_state"] = "test-state"
+                response = client.get("/auth/callback?code=test-oauth-code&state=test-state")
+                assert response.status_code == 400
+                assert b"No installations found" in response.data
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+    @patch("app.auth.github.list_installations")
+    def test_auth_callback_reauth_non_nicopujia(self, mock_list_installations):
+        """Re-auth where installation belongs to non-nicopujia user."""
+        mock_list_installations.return_value = [
+            {"id": 99999, "account": {"login": "someoneelse", "id": 5678}, "app_id": 12345}
+        ]
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["oauth_state"] = "test-state"
+                response = client.get("/auth/callback?code=test-oauth-code&state=test-state")
+                assert response.status_code == 200
+                assert b"Not available yet." in response.data
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+    @patch("app.auth.github.create_installation_token")
+    @patch("app.auth.github.get_installation")
+    def test_auth_callback_with_both_code_and_installation_id(self, mock_get_installation, mock_create_token):
+        """Callback with both code and installation_id uses installation_id flow."""
+        mock_get_installation.return_value = {"id": 99999, "account": {"login": "nicopujia", "id": 1234}}
+        mock_create_token.return_value = {
+            "token": "ghs_test_token",
+            "expires_at": "2026-03-15T12:00:00Z",
+        }
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["oauth_state"] = "test-state"
+                response = client.get("/auth/callback?installation_id=12345&code=test-code&state=test-state")
+                assert response.status_code == 302
+                mock_get_installation.assert_called_once_with("12345")
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
 
 class TestAuthLogout:
     """Tests for GET /auth/logout."""
@@ -360,6 +455,54 @@ class TestGenerateJWT:
                     # exp should be ~10 minutes from now
                     assert decoded["exp"] - decoded["iat"] <= 660
                     assert decoded["exp"] - decoded["iat"] >= 600
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+
+class TestListInstallations:
+    """Tests for the list_installations helper."""
+
+    @patch("app.github.requests.get")
+    def test_list_installations_returns_list(self, mock_get):
+        """list_installations() returns a list of installation dicts."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = [{"id": 99999, "account": {"login": "nicopujia"}}]
+        mock_get.return_value = mock_resp
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                with app.app_context():
+                    from app.github import list_installations
+
+                    result = list_installations()
+                    assert result == [{"id": 99999, "account": {"login": "nicopujia"}}]
+                    mock_get.assert_called_once()
+                    call_args = mock_get.call_args
+                    assert "/app/installations" in call_args[0][0]
+                    assert "Bearer" in call_args[1]["headers"]["Authorization"]
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+    @patch("app.github.requests.get")
+    def test_list_installations_returns_empty_list(self, mock_get):
+        """list_installations() returns empty list when no installations exist."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = []
+        mock_get.return_value = mock_resp
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                with app.app_context():
+                    from app.github import list_installations
+
+                    result = list_installations()
+                    assert result == []
             finally:
                 _cleanup(db_fd, db_path)
         finally:

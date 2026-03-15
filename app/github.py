@@ -48,6 +48,25 @@ def get_installation(installation_id):
     return resp.json()
 
 
+def list_installations():
+    """List all installations of this GitHub App.
+
+    Calls GET /app/installations with JWT auth.
+    Returns a list of installation dicts.
+    """
+    token = generate_jwt()
+    resp = requests.get(
+        f"{GITHUB_API}/app/installations",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def create_installation_token(installation_id):
     """Create an installation access token.
 
