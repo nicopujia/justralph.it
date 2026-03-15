@@ -215,6 +215,7 @@ Tell them that:
 - If they find out a *needed* fix or refactor, they should check — using a subagent — if there's already an issue for that. If there isn't already, they should file a new issue. If it's a blocker for {issue_id}, they must report back to you and you must {output(Results.NEW_BLOCKER)}. Otherwise, they MUST NOT report anything back whether they file the issue or not.
 - If they're blocked because they ABSOLUTELY NEED human help (e.g. for real identity verification), they must think AGAIN and HARDER if they could *possibly* do it themselves. If they REALLY cannot, they should file a new issue. It must be assigned to `{username}` and specify what, how, and why needs to be done, and why the human help is *absolutely* necessary. Then, {output(Results.HUMAN_NEEDED)}.
 - All subagents must run non-interactively. Never use commands that prompt for input. Always use non-interactive flags: `apt-get -y`, `cp -f`, `mv -f`, `rm -f`, `rm -rf`, `npm --yes`, etc. If a command requires interaction, fail fast and report back.
+- They should use subagents for each of their discrete tasks. Example: if they need to analyze 5 directories, they should use 5 subagents.
 
 ## CONSTRAINTS
 
