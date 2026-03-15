@@ -5,9 +5,49 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
     <h1 style="margin: 0;">{{ project["name"] }}</h1>
-    <form action="/projects/{{ project['slug'] }}/delete" method="post" onsubmit="return confirm('Delete this project? This will remove the GitHub repo, all files, and running processes. This cannot be undone.');">
-        <button type="submit" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
-    </form>
+    <button onclick="document.getElementById('delete-dialog').showModal()" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
+    <dialog id="delete-dialog">
+        <style>
+            #delete-dialog {
+                background: #1e1e1e;
+                color: #e0e0e0;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 1.5rem;
+                font-family: monospace;
+                max-width: 400px;
+            }
+            #delete-dialog::backdrop {
+                background: rgba(0, 0, 0, 0.6);
+            }
+            @media (prefers-color-scheme: light) {
+                #delete-dialog {
+                    background: #fff;
+                    color: #222;
+                    border-color: #ccc;
+                }
+                #delete-dialog::backdrop {
+                    background: rgba(0, 0, 0, 0.3);
+                }
+                #delete-dialog .dlg-cancel {
+                    background: #e0e0e0 !important;
+                    color: #222 !important;
+                    border-color: #bbb !important;
+                }
+            }
+        </style>
+        <form action="/projects/{{ project['slug'] }}/delete" method="post">
+            <p style="margin-top: 0;">Delete this project? This will remove all files and running processes. This cannot be undone.</p>
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; cursor: pointer;">
+                <input type="checkbox" name="delete_github_repo" id="delete-github-repo-cb">
+                Also delete the GitHub repository
+            </label>
+            <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                <button type="button" class="dlg-cancel" onclick="document.getElementById('delete-dialog').close()" style="background: #333; color: #e0e0e0; border: 1px solid #555; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Cancel</button>
+                <button type="submit" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete</button>
+            </div>
+        </form>
+    </dialog>
 </div>
 <div style="display: flex; gap: 1rem; height: calc(100vh - 4rem);">
     <!-- Chat Panel -->

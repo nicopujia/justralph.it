@@ -196,8 +196,27 @@ class TestDeleteProjectGitHub:
     @patch("app.routes.stop_bdui")
     @patch("app.routes.delete_opencode_session")
     @patch("app.routes.remove_vps_directory")
-    def test_github_repo_deleted(self, mock_rm_vps, mock_del_oc, mock_stop_bdui, mock_del_gh):
-        """delete_github_repo is called with the project name and token."""
+    def test_github_repo_deleted_when_checkbox_checked(self, mock_rm_vps, mock_del_oc, mock_stop_bdui, mock_del_gh):
+        """delete_github_repo is called when delete_github_repo checkbox is checked."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, name="my-repo", slug="my-repo")
+            client = app.test_client()
+            _auth_session(client)
+            client.post("/projects/my-repo/delete", data={"delete_github_repo": "on"})
+
+            mock_del_gh.assert_called_once_with("my-repo", "ghs_test_token")
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.delete_github_repo")
+    @patch("app.routes.stop_bdui")
+    @patch("app.routes.delete_opencode_session")
+    @patch("app.routes.remove_vps_directory")
+    def test_github_repo_not_deleted_when_checkbox_unchecked(
+        self, mock_rm_vps, mock_del_oc, mock_stop_bdui, mock_del_gh
+    ):
+        """delete_github_repo is NOT called when delete_github_repo checkbox is not in form data."""
         app, db_path, db_fd = _make_app()
         try:
             _insert_project(db_path, name="my-repo", slug="my-repo")
@@ -205,7 +224,24 @@ class TestDeleteProjectGitHub:
             _auth_session(client)
             client.post("/projects/my-repo/delete")
 
-            mock_del_gh.assert_called_once_with("my-repo", "ghs_test_token")
+            mock_del_gh.assert_not_called()
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.delete_github_repo")
+    @patch("app.routes.stop_bdui")
+    @patch("app.routes.delete_opencode_session")
+    @patch("app.routes.remove_vps_directory")
+    def test_github_repo_not_deleted_by_default(self, mock_rm_vps, mock_del_oc, mock_stop_bdui, mock_del_gh):
+        """delete_github_repo is NOT called when no form data is sent (default is unchecked)."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, name="my-repo", slug="my-repo")
+            client = app.test_client()
+            _auth_session(client)
+            client.post("/projects/my-repo/delete", data={})
+
+            mock_del_gh.assert_not_called()
         finally:
             _cleanup(db_fd, db_path)
 
@@ -220,7 +256,7 @@ class TestDeleteProjectGitHub:
             _insert_project(db_path)
             client = app.test_client()
             _auth_session(client)
-            response = client.post("/projects/test-project/delete")
+            response = client.post("/projects/test-project/delete", data={"delete_github_repo": "on"})
 
             # Should still redirect successfully
             assert response.status_code == 302
@@ -474,6 +510,32 @@ class TestDeleteProjectUI:
             html = response.data.decode()
             # Should have a delete button or a form with a delete action
             assert "delete" in html.lower() or "Delete" in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.delete_github_repo")
+    @patch("app.routes.stop_bdui")
+    @patch("app.routes.delete_opencode_session")
+    @patch("app.routes.remove_vps_directory")
+    def test_project_page_has_delete_github_checkbox(self, mock_rm_vps, mock_del_oc, mock_stop_bdui, mock_del_gh):
+        """GET /projects/<slug> has an unchecked checkbox named delete_github_repo."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project")
+            html = response.data.decode()
+            # Should have a checkbox input named delete_github_repo
+            assert 'name="delete_github_repo"' in html
+            # The checkbox should NOT be checked by default
+            # Find the input element and verify it doesn't have the checked attribute
+            import re
+
+            checkbox_match = re.search(r'<input[^>]*name="delete_github_repo"[^>]*>', html)
+            assert checkbox_match is not None, "delete_github_repo checkbox not found in HTML"
+            checkbox_html = checkbox_match.group(0)
+            assert "checked" not in checkbox_html, "delete_github_repo checkbox should not be checked by default"
         finally:
             _cleanup(db_fd, db_path)
 

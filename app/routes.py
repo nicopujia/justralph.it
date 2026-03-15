@@ -116,11 +116,12 @@ def delete_project(slug):
         except Exception:
             pass
 
-    # Best-effort cleanup: GitHub repo, bdui, opencode session, VPS directory
-    try:
-        delete_github_repo(project["name"], token)
-    except Exception:
-        pass
+    # Best-effort cleanup: GitHub repo (only if user opted in), bdui, opencode session, VPS directory
+    if request.form.get("delete_github_repo"):
+        try:
+            delete_github_repo(project["name"], token)
+        except Exception:
+            pass
     try:
         stop_bdui(project["bdui_port"])
     except Exception:
