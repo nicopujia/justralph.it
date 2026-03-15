@@ -1,8 +1,11 @@
 import os
 
+from dotenv import load_dotenv
 from flask import Flask
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 
 def create_app(test_config=None):
@@ -20,6 +23,14 @@ def create_app(test_config=None):
 
     if test_config is not None:
         app.config.update(test_config)
+
+    # Validate SECRET_KEY in non-test mode
+    if not app.config.get("TESTING"):
+        secret = app.config.get("SECRET_KEY")
+        if not secret or secret == "dev":
+            raise RuntimeError(
+                "SECRET_KEY is not set or is insecure. Set a cryptographically secure SECRET_KEY in your .env file."
+            )
 
     from . import auth, models, routes
     from .compaction import start_compaction_monitor

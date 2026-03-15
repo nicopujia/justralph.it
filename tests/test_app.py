@@ -258,3 +258,38 @@ def test_sse_events_endpoint_streams():
         assert payload["type"] == "show_just_ralph_it_button"
     finally:
         _cleanup(db_fd, db_path)
+
+
+# --- SECRET_KEY validation tests ---
+
+
+def test_secret_key_missing_raises(monkeypatch):
+    """create_app() raises RuntimeError when SECRET_KEY env var is not set."""
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        create_app()
+
+
+def test_secret_key_dev_raises(monkeypatch):
+    """create_app() raises RuntimeError when SECRET_KEY env var is 'dev'."""
+    monkeypatch.setenv("SECRET_KEY", "dev")
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        create_app()
+
+
+def test_secret_key_from_env(monkeypatch):
+    """When SECRET_KEY env var is set to a valid value, the app uses it."""
+    monkeypatch.setenv("SECRET_KEY", "a-real-secret-key-for-testing")
+    app = create_app({"TESTING": True})
+    assert app.config["SECRET_KEY"] == "a-real-secret-key-for-testing"
+
+
+def test_secret_key_from_test_config(monkeypatch):
+    """When test_config provides SECRET_KEY, it's used even without env var."""
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    app = create_app({"TESTING": True, "SECRET_KEY": "test-override"})
+    assert app.config["SECRET_KEY"] == "test-override"
