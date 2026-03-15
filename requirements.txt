@@ -3,6 +3,7 @@ flask-sock
 python-dotenv
 ruff
 pytest
+pyyaml
 PyJWT
 cryptography
 requests
