@@ -13,7 +13,14 @@ from flask import Blueprint, Response, abort, current_app, redirect, render_temp
 
 from . import PROJECT_ROOT
 from .models import get_db
-from .projects import create_project, validate_repo_name
+from .projects import (
+    create_project,
+    delete_github_repo,
+    delete_opencode_session,
+    remove_vps_directory,
+    stop_bdui,
+    validate_repo_name,
+)
 from .sse import publish, subscribe, unsubscribe
 
 bp = Blueprint("main", __name__)
@@ -86,6 +93,51 @@ def show_project(slug):
     if project is None:
         abort(404)
     return render_template("projects/show.html", project=project)
+
+
+@bp.route("/projects/<slug>/delete", methods=["POST"])
+def delete_project(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+
+    token = session.get("installation_token")
+
+    # Kill ralph process if running
+    proc = ralph_processes.pop(slug, None)
+    if proc:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    # Best-effort cleanup: GitHub repo, bdui, opencode session, VPS directory
+    try:
+        delete_github_repo(project["name"], token)
+    except Exception:
+        pass
+    try:
+        stop_bdui(project["bdui_port"])
+    except Exception:
+        pass
+    try:
+        delete_opencode_session(project["opencode_session_id"])
+    except Exception:
+        pass
+    try:
+        remove_vps_directory(project["vps_path"])
+    except Exception:
+        pass
+
+    # Remove push subscriptions and project from DB
+    db.execute("DELETE FROM push_subscriptions WHERE project_slug = ?", (slug,))
+    db.execute("DELETE FROM projects WHERE slug = ?", (slug,))
+    db.commit()
+
+    return redirect("/projects")
 
 
 @bp.route("/projects/<slug>/spec")

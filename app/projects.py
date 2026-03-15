@@ -165,3 +165,60 @@ def create_project(repo_name, description, token):
     db.commit()
 
     return {"slug": slug}
+
+
+def delete_github_repo(repo_name, token):
+    """Delete a GitHub repo. Best-effort — exceptions are suppressed."""
+    try:
+        resp = requests.delete(
+            f"{GITHUB_API}/repos/nicopujia/{repo_name}",
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            timeout=15,
+        )
+    except Exception:
+        pass
+
+
+def stop_bdui(port):
+    """Kill the bdui sidecar running on the given port. Best-effort."""
+    if port is None:
+        return
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        pids = result.stdout.strip().split("\n")
+        for pid in pids:
+            if pid.strip():
+                subprocess.run(["kill", "-9", pid.strip()], timeout=5)
+    except Exception:
+        pass
+
+
+def delete_opencode_session(session_id):
+    """Delete an opencode session via DELETE /session/<id>. Best-effort."""
+    if session_id is None:
+        return
+    try:
+        opencode_url = current_app.config["OPENCODE_URL"]
+        requests.delete(f"{opencode_url}/session/{session_id}", timeout=10)
+    except Exception:
+        pass
+
+
+def remove_vps_directory(vps_path):
+    """Remove the project's VPS directory. Best-effort."""
+    if vps_path is None:
+        return
+    try:
+        import shutil
+
+        shutil.rmtree(vps_path)
+    except Exception:
+        pass

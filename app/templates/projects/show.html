@@ -3,6 +3,12 @@
 {% block title %}{{ project["name"] }} — just-ralph-it{% endblock %}
 
 {% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+    <h1 style="margin: 0;">{{ project["name"] }}</h1>
+    <form action="/projects/{{ project['slug'] }}/delete" method="post" onsubmit="return confirm('Delete this project? This will remove the GitHub repo, all files, and running processes. This cannot be undone.');">
+        <button type="submit" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
+    </form>
+</div>
 <div style="display: flex; gap: 1rem; height: calc(100vh - 4rem);">
     <!-- Chat Panel -->
     <div id="chat-panel" style="width: 40%; border: 1px solid #333; border-radius: 4px; display: flex; flex-direction: column; overflow: hidden;">
