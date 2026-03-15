@@ -5,9 +5,18 @@
 {% block content %}
 <div style="display: flex; gap: 1rem; height: calc(100vh - 4rem);">
     <!-- Chat Panel -->
-    <div id="chat-panel" style="width: 40%; border: 1px solid #333; border-radius: 4px; padding: 1rem; overflow-y: auto;">
-        <h2 style="color: #4fc3f7; margin-top: 0;">Chat</h2>
-        <p style="color: #888;">Ralphy chat will appear here.</p>
+    <div id="chat-panel" style="width: 40%; border: 1px solid #333; border-radius: 4px; display: flex; flex-direction: column; overflow: hidden;">
+        <h2 style="color: #4fc3f7; margin: 0; padding: 1rem; border-bottom: 1px solid #333;">Chat</h2>
+        <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 1rem;">
+            <p id="chat-loading" style="color: #888;">Loading chat history...</p>
+        </div>
+        <div style="display: flex; border-top: 1px solid #333; padding: 0.5rem;">
+            <input id="chat-input" type="text" placeholder="Type a message..." 
+                   style="flex: 1; background: #2a2a2a; border: 1px solid #444; color: #e0e0e0; padding: 0.5rem; font-family: monospace; border-radius: 4px 0 0 4px;"
+                   onkeydown="if(event.key==='Enter')sendMessage()">
+            <button id="chat-send" onclick="sendMessage()" 
+                    style="background: #4fc3f7; color: #1a1a1a; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 0 4px 4px 0;">Send</button>
+        </div>
     </div>
 
     <!-- Tab Panel -->
@@ -37,6 +46,88 @@
 
 <script>
 var BDUI_PORT = {{ project["bdui_port"] | default(0, true) }};
+var SESSION_ID = '{{ project["opencode_session_id"] | default("", true) }}';
+var SLUG = '{{ project["slug"] }}';
+var FIRST_MSG_SENT = {{ project["first_message_sent"] | default(0, true) }};
+
+function renderMessage(role, text) {
+    var el = document.getElementById('chat-messages');
+    var div = document.createElement('div');
+    div.style.marginBottom = '0.75rem';
+    div.style.padding = '0.5rem';
+    div.style.borderRadius = '4px';
+    if (role === 'user') {
+        div.style.background = '#2a3a4a';
+        div.style.textAlign = 'right';
+    } else {
+        div.style.background = '#2a2a2a';
+    }
+    div.textContent = text;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+function loadHistory() {
+    fetch('/projects/' + SLUG + '/chat/history')
+        .then(function(r) { return r.json(); })
+        .then(function(messages) {
+            var loading = document.getElementById('chat-loading');
+            if (loading) loading.remove();
+            messages.forEach(function(msg) {
+                var role = msg.info ? msg.info.role : (msg.role || 'assistant');
+                var text = '';
+                var parts = msg.parts || [];
+                parts.forEach(function(p) {
+                    if (p.type === 'text' && p.text) text += p.text;
+                });
+                if (!text && msg.content) text = msg.content;
+                if (text) renderMessage(role, text);
+            });
+        })
+        .catch(function() {
+            var loading = document.getElementById('chat-loading');
+            if (loading) loading.textContent = 'Failed to load chat history.';
+        });
+}
+
+function sendMessage() {
+    var input = document.getElementById('chat-input');
+    var message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    renderMessage('user', message);
+    fetch('/projects/' + SLUG + '/chat/send', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: message})
+    });
+}
+
+function connectChatSSE() {
+    if (!SESSION_ID) return;
+    var evtSource = new EventSource('/projects/' + SLUG + '/chat/events');
+    evtSource.onmessage = function(event) {
+        try {
+            var data = JSON.parse(event.data);
+            if (data.type === 'message.part' || data.type === 'message') {
+                var text = '';
+                if (data.content) text = data.content;
+                if (data.parts) {
+                    data.parts.forEach(function(p) {
+                        if (p.type === 'text' && p.text) text += p.text;
+                    });
+                }
+                if (text) renderMessage('assistant', text);
+            }
+        } catch(e) {}
+    };
+    evtSource.onerror = function() {
+        setTimeout(function() { connectChatSSE(); }, 3000);
+    };
+}
+
+loadHistory();
+connectChatSSE();
 
 function switchTab(tab) {
     var tabs = ['spec', 'issues', 'terminal'];

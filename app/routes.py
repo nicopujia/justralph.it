@@ -2,7 +2,8 @@ import json
 import os
 
 import markdown
-from flask import Blueprint, Response, abort, redirect, render_template, request, session
+import requests
+from flask import Blueprint, Response, abort, current_app, redirect, render_template, request, session
 
 from .models import get_db
 from .projects import create_project, validate_repo_name
@@ -118,5 +119,98 @@ def sse_events(slug):
                     yield ": keepalive\n\n"
         except GeneratorExit:
             unsubscribe(slug, q)
+
+    return Response(stream(), mimetype="text/event-stream")
+
+
+@bp.route("/projects/<slug>/chat/history")
+def chat_history(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    session_id = project["opencode_session_id"]
+    if not session_id:
+        return json.dumps([]), 200, {"Content-Type": "application/json"}
+    opencode_url = current_app.config["OPENCODE_URL"]
+    resp = requests.get(f"{opencode_url}/session/{session_id}/message", timeout=10)
+    return resp.json(), 200
+
+
+@bp.route("/projects/<slug>/chat/send", methods=["POST"])
+def chat_send(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    session_id = project["opencode_session_id"]
+    if not session_id:
+        return {"error": "no session"}, 400
+
+    data = request.get_json(force=True)
+    message = data.get("message", "").strip()
+    if not message:
+        return {"error": "empty message"}, 400
+
+    opencode_url = current_app.config["OPENCODE_URL"]
+
+    # If first message hasn't been sent yet, send description first
+    if not project["first_message_sent"]:
+        description = project["description"] or ""
+        if description:
+            requests.post(
+                f"{opencode_url}/session/{session_id}/prompt_async",
+                json={"parts": [{"type": "text", "text": description}], "agent": "RALPHY"},
+                timeout=10,
+            )
+        db.execute("UPDATE projects SET first_message_sent = 1 WHERE slug = ?", (slug,))
+        db.commit()
+
+    # Send the user's message
+    requests.post(
+        f"{opencode_url}/session/{session_id}/prompt_async",
+        json={"parts": [{"type": "text", "text": message}], "agent": "RALPHY"},
+        timeout=10,
+    )
+    return "", 204
+
+
+@bp.route("/projects/<slug>/chat/events")
+def chat_events(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    session_id = project["opencode_session_id"]
+    if not session_id:
+        return Response("data: []\n\n", mimetype="text/event-stream")
+
+    opencode_url = current_app.config["OPENCODE_URL"]
+
+    def stream():
+        with requests.get(f"{opencode_url}/event", stream=True, timeout=None) as resp:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                decoded = line.decode("utf-8") if isinstance(line, bytes) else line
+                if decoded.startswith("data: "):
+                    try:
+                        payload = json.loads(decoded[6:])
+                        # Filter: only pass events for this session
+                        event_session = payload.get("properties", {}).get("sessionID") or payload.get("sessionId")
+                        if event_session == session_id:
+                            yield f"{decoded}\n\n"
+                    except (json.JSONDecodeError, KeyError):
+                        # Non-JSON data lines or malformed — pass through keepalives
+                        pass
+                elif decoded.startswith(":"):
+                    # SSE comment/keepalive
+                    yield f"{decoded}\n\n"
 
     return Response(stream(), mimetype="text/event-stream")
