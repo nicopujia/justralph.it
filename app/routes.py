@@ -41,6 +41,11 @@ def index():
     return render_template("index.html")
 
 
+@bp.route("/prd")
+def prd():
+    return redirect("https://nicolaspujia.com/ralph")
+
+
 @bp.route("/projects")
 def list_projects():
     if not session.get("user"):
