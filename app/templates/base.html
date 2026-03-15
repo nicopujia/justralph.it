@@ -9,11 +9,15 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
 <body>
+    {% block body %}
+    <div class="container">
     {% if session.get("user") %}
     <nav style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
         <a href="/auth/logout">Logout</a>
     </nav>
     {% endif %}
     {% block content %}{% endblock %}
+    </div>
+    {% endblock %}
 </body>
 </html>

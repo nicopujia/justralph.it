@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project["name"] }} — justralph.it{% endblock %}
+{% block title %}{{ project["name"] }} • justralph.it{% endblock %}
 
-{% block content %}
+{% block body %}
+{% if session.get("user") %}
+<nav style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+    <a href="/auth/logout">Logout</a>
+</nav>
+{% endif %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
     <h1 style="margin: 0;">{{ project["name"] }}</h1>
     <button onclick="document.getElementById('delete-dialog').showModal()" style="background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
