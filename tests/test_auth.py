@@ -298,6 +298,40 @@ class TestAuthLogout:
         finally:
             os.unlink(pem_path)
 
+    def test_authenticated_page_shows_logout_link(self):
+        """Authenticated pages (e.g. /projects) contain a logout link."""
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                with client.session_transaction() as sess:
+                    sess["user"] = "nicopujia"
+                    sess["installation_id"] = "12345"
+                response = client.get("/projects")
+                html = response.data.decode()
+                assert "/auth/logout" in html
+                assert "Logout" in html
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
+    def test_unauthenticated_landing_page_no_logout_link(self):
+        """The landing page when not authenticated does NOT show a logout link."""
+        pem_path = _write_test_pem()
+        try:
+            app, db_path, db_fd = _make_app(pem_path)
+            try:
+                client = app.test_client()
+                response = client.get("/")
+                html = response.data.decode()
+                assert "/auth/logout" not in html
+            finally:
+                _cleanup(db_fd, db_path)
+        finally:
+            os.unlink(pem_path)
+
 
 class TestGenerateJWT:
     """Tests for the generate_jwt helper."""
