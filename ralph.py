@@ -55,6 +55,8 @@ def main():
                 logger.info(Results.ALL_DONE)
             break
 
+        subprocess.run(["bd", "update", issue["id"], "-s", "in_progress"], capture_output=True)
+
         opencode_args = [
             "opencode",
             "run",
