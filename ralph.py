@@ -105,7 +105,7 @@ def get_issue_by_id(issue_id: str) -> dict[str, Any] | None:
     if bd_result.returncode != 0:
         return
 
-    return json.loads(bd_result.stdout) if bd_result.stdout.strip() else None
+    return json.loads(bd_result.stdout)[0] if bd_result.stdout.strip() else None
 
 
 def get_prompt(issue_id: str, username: str) -> str:
