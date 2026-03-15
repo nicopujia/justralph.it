@@ -192,6 +192,32 @@ class TestRalphStartSuccess:
             _cleanup(db_fd, db_path)
 
     @patch("app.routes.subprocess.Popen")
+    def test_spawns_ralph_with_unbuffered_env(self, mock_popen):
+        """Spawns ralph.py with PYTHONUNBUFFERED=1 in the environment for real-time output."""
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])
+        mock_popen.return_value = mock_process
+
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, ralph_running=0)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/test-project/ralph/start")
+            assert response.status_code == 200
+
+            # Verify PYTHONUNBUFFERED=1 is in the env
+            mock_popen.assert_called_once()
+            call_kwargs = mock_popen.call_args
+            env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
+            assert env is not None, "Popen should be called with an env parameter"
+            assert env.get("PYTHONUNBUFFERED") == "1", (
+                f"PYTHONUNBUFFERED should be '1' in env, got: {env.get('PYTHONUNBUFFERED')}"
+            )
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.subprocess.Popen")
     def test_spawns_ralph_subprocess(self, mock_popen):
         """Spawns ralph.py as a subprocess with correct cwd."""
         mock_process = MagicMock()

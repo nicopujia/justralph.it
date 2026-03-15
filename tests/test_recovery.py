@@ -168,6 +168,40 @@ class TestRalphRecovery:
     @patch("app.recovery.threading.Thread")
     @patch("app.recovery.subprocess.Popen")
     @patch("app.recovery.start_bdui")
+    def test_spawns_ralph_with_unbuffered_env(self, mock_start_bdui, mock_popen, mock_thread):
+        """Spawns ralph.py with PYTHONUNBUFFERED=1 in the environment for real-time output."""
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])
+        mock_popen.return_value = mock_process
+        mock_thread_instance = MagicMock()
+        mock_thread.return_value = mock_thread_instance
+
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(
+                db_path,
+                name="active",
+                slug="active",
+                ralph_running=1,
+                vps_path="/home/nico/projects/active",
+                bdui_port=9001,
+            )
+
+            recover_processes(app)
+
+            mock_popen.assert_called_once()
+            call_kwargs = mock_popen.call_args
+            env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
+            assert env is not None, "Popen should be called with an env parameter"
+            assert env.get("PYTHONUNBUFFERED") == "1", (
+                f"PYTHONUNBUFFERED should be '1' in env, got: {env.get('PYTHONUNBUFFERED')}"
+            )
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.recovery.threading.Thread")
+    @patch("app.recovery.subprocess.Popen")
+    @patch("app.recovery.start_bdui")
     def test_stores_process_in_ralph_processes(self, mock_start_bdui, mock_popen, mock_thread):
         """After recovery, the spawned process is stored in routes.ralph_processes."""
         mock_process = MagicMock()

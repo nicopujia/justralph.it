@@ -387,11 +387,13 @@ def ralph_start(slug):
     db.commit()
 
     ralph_py_path = os.path.join(PROJECT_ROOT, "ralph.py")
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     process = subprocess.Popen(
         [sys.executable, ralph_py_path],
         cwd=project["vps_path"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        env=env,
     )
     ralph_processes[slug] = process
 

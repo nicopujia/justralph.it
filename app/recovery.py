@@ -41,11 +41,13 @@ def recover_processes(app):
         if ralph_running and vps_path:
             try:
                 ralph_py_path = os.path.join(PROJECT_ROOT, "ralph.py")
+                env = {**os.environ, "PYTHONUNBUFFERED": "1"}
                 process = subprocess.Popen(
                     [sys.executable, ralph_py_path],
                     cwd=vps_path,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    env=env,
                 )
                 routes.ralph_processes[slug] = process
 
