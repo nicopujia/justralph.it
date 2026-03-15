@@ -9,7 +9,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from ralph import STOP_FILE, Results, main, reload_production
+from ralph import STOP_FILE, Results, get_prompt, main, reload_production
 
 
 # ---------------------------------------------------------------------------
@@ -410,3 +410,54 @@ class TestGracefulStop:
         assert len(systemctl_calls) == 1, (
             f"Expected systemctl reload to be called for the completed issue, got {len(systemctl_calls)} call(s)"
         )
+
+
+# ===========================================================================
+# Test: get_prompt() includes non-interactive subagent instructions
+# ===========================================================================
+
+
+class TestNonInteractivePromptInstructions:
+    """Verify that get_prompt() instructs subagents to run non-interactively.
+
+    These tests are RED — the prompt does not yet contain these instructions.
+    """
+
+    def _get_prompt(self) -> str:
+        return get_prompt(issue_id="ISS-1", username="testuser")
+
+    def test_prompt_contains_non_interactive_instruction(self):
+        """The prompt must instruct subagents to run all commands non-interactively."""
+        prompt = self._get_prompt()
+        prompt_lower = prompt.lower()
+        assert (
+            "non-interactive" in prompt_lower
+            or "never wait for input" in prompt_lower
+            or ("never" in prompt_lower and "prompt for input" in prompt_lower)
+        ), (
+            "get_prompt() must instruct subagents to run commands non-interactively / never wait for input. "
+            f"Prompt was:\n{prompt}"
+        )
+
+    def test_prompt_contains_non_interactive_flags(self):
+        """The prompt must mention key non-interactive flags for common commands."""
+        prompt = self._get_prompt()
+        required_flags = {
+            "apt-get -y": "apt-get -y",
+            "cp -f": "cp -f",
+            "mv -f": "mv -f",
+            "rm -f": "rm -f",
+            "npm --yes": "npm --yes",
+        }
+        missing = [label for label, flag in required_flags.items() if flag not in prompt]
+        assert not missing, f"get_prompt() must mention these non-interactive flags: {missing}. Prompt was:\n{prompt}"
+
+    def test_prompt_contains_fail_fast_instruction(self):
+        """The prompt must instruct subagents to fail fast if interaction is required."""
+        prompt = self._get_prompt()
+        prompt_lower = prompt.lower()
+        assert (
+            "fail fast" in prompt_lower
+            or "fail immediately" in prompt_lower
+            or ("fail" in prompt_lower and ("interaction" in prompt_lower or "interactive" in prompt_lower))
+        ), f"get_prompt() must instruct subagents to fail fast if a command requires interaction. Prompt was:\n{prompt}"
