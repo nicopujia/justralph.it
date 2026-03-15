@@ -1,19 +1,17 @@
 # app/ — Agent Notes
 
-## GitHub Auth: Two Token Types
+## GitHub Auth: OAuth Token
 
-This app uses a **GitHub App** (not OAuth). There are two distinct token types:
-
-1. **Installation token** (`ghs_...`): Obtained via the GitHub App installation. Stored in `session["installation_token"]`. Can read/write repos the app is installed on (`GET /repos/{owner}/{name}`, git clone/push). **Cannot** call user-scoped endpoints like `POST /user/repos` (returns 403).
-
-2. **`gh` CLI PAT**: The `gh` CLI at `/home/linuxbrew/.linuxbrew/bin/gh` is authenticated as `nicopujia` with a personal access token that has `repo` scope. This **can** create repos via `gh repo create`.
+This app uses **GitHub OAuth** (not a GitHub App). Users sign in with GitHub and receive an OAuth access token stored in the session. This single token is used for all GitHub API operations.
 
 ### Repo creation flow
 
-`create_github_repo()` in `projects.py` uses a two-step approach:
-1. Calls `gh repo create` via subprocess (uses the PAT-authenticated CLI)
-2. Fetches repo info via `GET /repos/nicopujia/{name}` using the installation token (to get `html_url`, `clone_url`)
+`create_github_repo()` in `projects.py` calls `POST /user/repos` with the user's OAuth token. This creates the repo under the authenticated user and returns the full repo JSON (including `html_url`, `clone_url`).
 
 ### clone_repo
 
-`clone_repo()` uses the installation token inserted into the clone URL (`x-access-token:{token}@`). This works because installation tokens can access repos the app is installed on.
+`clone_repo()` uses the OAuth token inserted into the clone URL (`x-access-token:{token}@`). This works because OAuth tokens with `repo` scope can access the user's repos.
+
+### Repo existence / deletion
+
+`check_repo_exists_on_github()` and `delete_github_repo()` both accept a `username` parameter and hit `GET/DELETE /repos/{username}/{repo_name}` with the OAuth token.

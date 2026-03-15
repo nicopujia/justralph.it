@@ -10,7 +10,6 @@ Feature: GET/POST /projects/new
 
 import os
 import sqlite3
-import subprocess
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -38,9 +37,7 @@ def _auth_session(client):
     """Set session vars to simulate an authenticated user."""
     with client.session_transaction() as sess:
         sess["user"] = "nicopujia"
-        sess["installation_id"] = "12345"
-        sess["installation_token"] = "ghs_test_token"
-        sess["token_expires_at"] = "2026-03-15T12:00:00Z"
+        sess["github_token"] = "gho_test_token"
 
 
 def _get_project_by_slug(db_path, slug):
@@ -363,123 +360,71 @@ class TestPostProjectsNewAvailability:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — create_github_repo (uses gh CLI + API GET)
+# Unit tests — create_github_repo (uses POST /user/repos)
 # ---------------------------------------------------------------------------
 
 
 class TestCreateGithubRepo:
-    """create_github_repo uses `gh repo create` via subprocess, then fetches repo info via API."""
+    """create_github_repo uses POST /user/repos via the GitHub API."""
 
-    @patch("app.projects.requests.get")
-    @patch("app.projects.subprocess.run")
-    def test_calls_gh_repo_create(self, mock_run, mock_get):
-        """gh repo create is invoked with correct args."""
-        mock_run.return_value = MagicMock(returncode=0)
+    @patch("app.projects.requests.post")
+    def test_creates_repo_via_api(self, mock_post):
+        """POST /user/repos is called with correct body and auth header."""
         mock_resp = MagicMock()
-        mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "html_url": "https://github.com/nicopujia/test-repo",
             "clone_url": "https://github.com/nicopujia/test-repo.git",
         }
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
-        create_github_repo("test-repo", "A description", "ghs_fake_token")
+        create_github_repo("test-repo", "A description", "gho_fake_token")
 
-        # Find the gh call among subprocess.run calls
-        gh_calls = [c for c in mock_run.call_args_list if "gh" in str(c)]
-        assert len(gh_calls) == 1
-        args = gh_calls[0][0][0]  # first positional arg (the command list)
-        assert args[0].endswith("gh")
-        assert "repo" in args
-        assert "create" in args
-        assert "test-repo" in args
+        mock_post.assert_called_once()
+        call_url = mock_post.call_args[0][0]
+        assert "api.github.com/user/repos" in call_url
+        call_kwargs = mock_post.call_args[1]
+        assert call_kwargs["json"] == {"name": "test-repo", "description": "A description", "auto_init": True}
+        assert "gho_fake_token" in call_kwargs["headers"]["Authorization"]
 
-    @patch("app.projects.requests.get")
-    @patch("app.projects.subprocess.run")
-    def test_passes_description_and_flags(self, mock_run, mock_get):
-        """gh repo create includes --public, --add-readme, and --description."""
-        mock_run.return_value = MagicMock(returncode=0)
+    @patch("app.projects.requests.post")
+    def test_passes_description_in_body(self, mock_post):
+        """The description is included in the request JSON body."""
         mock_resp = MagicMock()
-        mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "html_url": "https://github.com/nicopujia/test-repo",
             "clone_url": "https://github.com/nicopujia/test-repo.git",
         }
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
-        create_github_repo("test-repo", "My cool project", "ghs_fake_token")
+        create_github_repo("test-repo", "My cool project", "gho_fake_token")
 
-        gh_calls = [c for c in mock_run.call_args_list if "gh" in str(c)]
-        args = gh_calls[0][0][0]
-        assert "--public" in args
-        assert "--add-readme" in args
-        # Description should be passed
-        assert "--description" in args
-        desc_idx = args.index("--description")
-        assert args[desc_idx + 1] == "My cool project"
+        call_kwargs = mock_post.call_args[1]
+        assert call_kwargs["json"]["description"] == "My cool project"
 
-    @patch("app.projects.requests.get")
-    @patch("app.projects.subprocess.run")
-    def test_fetches_repo_info_with_token(self, mock_run, mock_get):
-        """After creation, fetches repo info via GET /repos/nicopujia/{name} using the installation token."""
-        mock_run.return_value = MagicMock(returncode=0)
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "html_url": "https://github.com/nicopujia/test-repo",
-            "clone_url": "https://github.com/nicopujia/test-repo.git",
-        }
-        mock_get.return_value = mock_resp
-
-        create_github_repo("test-repo", "desc", "ghs_fake_token")
-
-        mock_get.assert_called_once()
-        call_url = mock_get.call_args[0][0]
-        assert "api.github.com/repos/nicopujia/test-repo" in call_url
-        call_headers = mock_get.call_args[1].get("headers", {})
-        assert "ghs_fake_token" in call_headers.get("Authorization", "")
-
-    @patch("app.projects.requests.get")
-    @patch("app.projects.subprocess.run")
-    def test_returns_dict_with_html_url_and_clone_url(self, mock_run, mock_get):
+    @patch("app.projects.requests.post")
+    def test_returns_dict_with_html_url_and_clone_url(self, mock_post):
         """Returns a dict with html_url and clone_url from the API response."""
-        mock_run.return_value = MagicMock(returncode=0)
         mock_resp = MagicMock()
-        mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "html_url": "https://github.com/nicopujia/test-repo",
             "clone_url": "https://github.com/nicopujia/test-repo.git",
         }
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
-        result = create_github_repo("test-repo", "desc", "ghs_fake_token")
+        result = create_github_repo("test-repo", "desc", "gho_fake_token")
 
         assert result["html_url"] == "https://github.com/nicopujia/test-repo"
         assert result["clone_url"] == "https://github.com/nicopujia/test-repo.git"
 
-    @patch("app.projects.subprocess.run")
-    def test_raises_on_gh_failure(self, mock_run):
-        """Raises RuntimeError when gh repo create fails."""
-        mock_run.side_effect = subprocess.CalledProcessError(1, "gh", stderr=b"repo already exists")
-
-        try:
-            create_github_repo("test-repo", "desc", "ghs_fake_token")
-            assert False, "Should have raised"
-        except (RuntimeError, subprocess.CalledProcessError):
-            pass
-
-    @patch("app.projects.requests.get")
-    @patch("app.projects.subprocess.run")
-    def test_raises_on_api_fetch_failure(self, mock_run, mock_get):
-        """Raises RuntimeError when the repo info fetch fails (e.g. 404)."""
-        mock_run.return_value = MagicMock(returncode=0)
+    @patch("app.projects.requests.post")
+    def test_raises_on_api_failure(self, mock_post):
+        """Raises an exception when the API call fails."""
         mock_resp = MagicMock()
-        mock_resp.status_code = 404
-        mock_resp.raise_for_status.side_effect = Exception("404 Not Found")
-        mock_get.return_value = mock_resp
+        mock_resp.raise_for_status.side_effect = Exception("422 Unprocessable Entity")
+        mock_post.return_value = mock_resp
 
         try:
-            create_github_repo("test-repo", "desc", "ghs_fake_token")
+            create_github_repo("test-repo", "desc", "gho_fake_token")
             assert False, "Should have raised"
         except Exception:
             pass
@@ -495,15 +440,14 @@ class TestPostProjectsNewSuccess:
 
     def _setup_mocks(self):
         """Return a dict of mock objects for a successful project creation."""
-        # GitHub API GET responses:
-        # - First call: existence check => 404 (repo does not exist)
-        # - Second call: post-creation fetch => 200 with repo data
+        # GitHub API GET response: existence check => 404 (repo does not exist)
         mock_github_get_404 = MagicMock()
         mock_github_get_404.status_code = 404
 
-        mock_github_get_200 = MagicMock()
-        mock_github_get_200.status_code = 200
-        mock_github_get_200.json.return_value = {
+        # GitHub API POST response: repo creation => 201 with repo data
+        mock_github_repo_created = MagicMock()
+        mock_github_repo_created.status_code = 201
+        mock_github_repo_created.json.return_value = {
             "full_name": "nicopujia/my-new-project",
             "html_url": "https://github.com/nicopujia/my-new-project",
             "clone_url": "https://github.com/nicopujia/my-new-project.git",
@@ -514,7 +458,7 @@ class TestPostProjectsNewSuccess:
         mock_opencode_resp.status_code = 200
         mock_opencode_resp.json.return_value = {"id": "session-abc-123"}
 
-        # subprocess calls (gh repo create, git clone, beads init, bdui start)
+        # subprocess calls (git clone, beads init, bdui start)
         mock_run = MagicMock()
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -531,7 +475,7 @@ class TestPostProjectsNewSuccess:
 
         return {
             "github_get_404": mock_github_get_404,
-            "github_get_200": mock_github_get_200,
+            "github_repo_created": mock_github_repo_created,
             "opencode_resp": mock_opencode_resp,
             "run": mock_run,
             "popen": mock_popen,
@@ -541,18 +485,15 @@ class TestPostProjectsNewSuccess:
 
     def _patch_and_post(self, client, mocks, repo_name="my-new-project", description="A cool project"):
         """Apply all patches and POST to /projects/new. Returns the response."""
-        # Track GET call count to distinguish existence check (1st) from post-creation fetch (2nd)
-        get_call_count = {"n": 0}
 
         def requests_get_side_effect(url, **kwargs):
             if "api.github.com/repos/" in url:
-                get_call_count["n"] += 1
-                if get_call_count["n"] == 1:
-                    return mocks["github_get_404"]  # existence check => 404
-                return mocks["github_get_200"]  # post-creation fetch => 200
+                return mocks["github_get_404"]  # existence check => 404
             return MagicMock(status_code=200)
 
         def requests_post_side_effect(url, **kwargs):
+            if "api.github.com/user/repos" in url:
+                return mocks["github_repo_created"]  # repo creation => 201
             if "/session" in url:
                 return mocks["opencode_resp"]
             return MagicMock(status_code=200)
@@ -619,19 +560,44 @@ class TestPostProjectsNewSuccess:
         finally:
             _cleanup(db_fd, db_path)
 
-    def test_github_repo_created_via_gh_cli(self):
-        """gh CLI is called via subprocess.run to create the repo."""
+    def test_github_repo_created_via_api(self):
+        """GitHub repo is created via POST to api.github.com/user/repos."""
         app, db_path, db_fd = _make_app()
         try:
             client = app.test_client()
             _auth_session(client)
             mocks = self._setup_mocks()
-            self._patch_and_post(client, mocks)
 
-            # subprocess.run should have been called with gh repo create
-            run_calls = mocks["run"].call_args_list
-            gh_calls = [c for c in run_calls if "gh" in str(c) and "create" in str(c)]
-            assert len(gh_calls) >= 1, f"Expected gh repo create call, got: {run_calls}"
+            post_calls = []
+
+            def requests_get_side_effect(url, **kwargs):
+                if "api.github.com/repos/" in url:
+                    return mocks["github_get_404"]
+                return MagicMock(status_code=200)
+
+            def requests_post_side_effect(url, **kwargs):
+                post_calls.append((url, kwargs))
+                if "api.github.com/user/repos" in url:
+                    return mocks["github_repo_created"]
+                if "/session" in url:
+                    return mocks["opencode_resp"]
+                return MagicMock(status_code=200)
+
+            with (
+                patch("app.projects.requests.get", side_effect=requests_get_side_effect),
+                patch("app.projects.requests.post", side_effect=requests_post_side_effect),
+                patch("app.projects.subprocess.run", mocks["run"]),
+                patch("app.projects.subprocess.Popen", mocks["popen"]),
+                patch("app.projects.os.path.isdir", return_value=False),
+                patch("app.projects.socket.socket", return_value=mocks["socket_instance"]),
+            ):
+                client.post(
+                    "/projects/new",
+                    data={"repo_name": "my-new-project", "description": "A cool project"},
+                )
+
+            repo_api_calls = [c for c in post_calls if "api.github.com/user/repos" in c[0]]
+            assert len(repo_api_calls) >= 1, f"Expected POST to api.github.com/user/repos, got: {post_calls}"
         finally:
             _cleanup(db_fd, db_path)
 
@@ -691,9 +657,10 @@ class TestPostProjectsNewSuccess:
             mocks = self._setup_mocks()
 
             opencode_calls = []
-            get_call_count = {"n": 0}
 
             def requests_post_side_effect(url, **kwargs):
+                if "api.github.com/user/repos" in url:
+                    return mocks["github_repo_created"]
                 if "/session" in url:
                     opencode_calls.append((url, kwargs))
                     return mocks["opencode_resp"]
@@ -701,10 +668,7 @@ class TestPostProjectsNewSuccess:
 
             def requests_get_side_effect(url, **kwargs):
                 if "api.github.com/repos/" in url:
-                    get_call_count["n"] += 1
-                    if get_call_count["n"] == 1:
-                        return mocks["github_get_404"]
-                    return mocks["github_get_200"]
+                    return mocks["github_get_404"]
                 return MagicMock(status_code=200)
 
             with (
@@ -776,8 +740,8 @@ class TestPostProjectsNewSuccess:
             _auth_session(client)
             mocks = self._setup_mocks()
 
-            # Update the GitHub GET response (post-creation fetch) for this specific name
-            mocks["github_get_200"].json.return_value = {
+            # Update the GitHub POST response (repo creation) for this specific name
+            mocks["github_repo_created"].json.return_value = {
                 "full_name": "nicopujia/My.Cool_App",
                 "html_url": "https://github.com/nicopujia/My.Cool_App",
                 "clone_url": "https://github.com/nicopujia/My.Cool_App.git",

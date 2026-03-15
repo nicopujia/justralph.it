@@ -41,9 +41,7 @@ def _auth_session(client):
     """Set session vars to simulate an authenticated user."""
     with client.session_transaction() as sess:
         sess["user"] = "nicopujia"
-        sess["installation_id"] = "12345"
-        sess["installation_token"] = "ghs_test_token"
-        sess["token_expires_at"] = "2026-03-15T12:00:00Z"
+        sess["github_token"] = "gho_test_token"
 
 
 def _insert_project(db_path, name="test-project", slug="test-project", **kwargs):
@@ -205,7 +203,7 @@ class TestDeleteProjectGitHub:
             _auth_session(client)
             client.post("/projects/my-repo/delete", data={"delete_github_repo": "on"})
 
-            mock_del_gh.assert_called_once_with("my-repo", "ghs_test_token")
+            mock_del_gh.assert_called_once_with("my-repo", "gho_test_token", "nicopujia")
         finally:
             _cleanup(db_fd, db_path)
 

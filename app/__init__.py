@@ -16,9 +16,8 @@ def create_app(test_config=None):
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["DATABASE"] = os.path.join(app.instance_path, "..", "just_ralph_it.db")
     app.config["OPENCODE_URL"] = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096")
-    app.config["GITHUB_APP_ID"] = int(os.environ.get("GITHUB_APP_ID", "0"))
-    app.config["GITHUB_APP_SLUG"] = "just-ralph-it"
-    app.config["GITHUB_PRIVATE_KEY_PATH"] = os.path.join(PROJECT_ROOT, "just-ralph-it.2026-03-14.private-key.pem")
+    app.config["GITHUB_CLIENT_ID"] = os.environ.get("GITHUB_CLIENT_ID", "")
+    app.config["GITHUB_CLIENT_SECRET"] = os.environ.get("GITHUB_CLIENT_SECRET", "")
     app.config["VAPID_PRIVATE_KEY_PATH"] = os.environ.get(
         "VAPID_PRIVATE_KEY_PATH", os.path.join(PROJECT_ROOT, "vapid_private.pem")
     )

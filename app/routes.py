@@ -76,9 +76,9 @@ def new_project_submit():
         return render_template("projects/new.html", error=error, repo_name=repo_name, description=description), 400
 
     # Create the project
-    token = session.get("installation_token")
+    token = session.get("github_token")
     try:
-        result = create_project(repo_name, description, token)
+        result = create_project(repo_name, description, token, session.get("user"))
     except ValueError as e:
         return render_template("projects/new.html", error=str(e), repo_name=repo_name, description=description), 400
     except Exception as e:
@@ -115,7 +115,7 @@ def delete_project(slug):
     if project is None:
         abort(404)
 
-    token = session.get("installation_token")
+    token = session.get("github_token")
 
     # Kill ralph process if running
     proc = ralph_processes.pop(slug, None)
@@ -128,7 +128,7 @@ def delete_project(slug):
     # Best-effort cleanup: GitHub repo (only if user opted in), bdui, opencode session, VPS directory
     if request.form.get("delete_github_repo"):
         try:
-            delete_github_repo(project["name"], token)
+            delete_github_repo(project["name"], token, session.get("user"))
         except Exception:
             pass
     try:

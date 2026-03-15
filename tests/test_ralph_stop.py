@@ -50,9 +50,7 @@ def _auth_session(client):
     """Set session vars to simulate an authenticated user."""
     with client.session_transaction() as sess:
         sess["user"] = "nicopujia"
-        sess["installation_id"] = "12345"
-        sess["installation_token"] = "ghs_test_token"
-        sess["token_expires_at"] = "2026-03-15T12:00:00Z"
+        sess["github_token"] = "gho_test_token"
 
 
 def _insert_project(

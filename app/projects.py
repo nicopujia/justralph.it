@@ -26,10 +26,10 @@ def validate_repo_name(name):
     return None
 
 
-def check_repo_exists_on_github(repo_name, token):
-    """Check if a repo already exists on GitHub for the authenticated user. Returns True if it exists."""
+def check_repo_exists_on_github(repo_name, token, username):
+    """Check if a repo already exists on GitHub for the given user. Returns True if it exists."""
     resp = requests.get(
-        f"{GITHUB_API}/repos/nicopujia/{repo_name}",
+        f"{GITHUB_API}/repos/{username}/{repo_name}",
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
@@ -51,41 +51,25 @@ def check_db_name_exists(repo_name):
     return row is not None
 
 
-GH_CLI = "/home/linuxbrew/.linuxbrew/bin/gh"
-
-
 def create_github_repo(repo_name, description, token):
-    """Create a new GitHub repo via `gh` CLI, then fetch repo info with the installation token.
+    """Create a new GitHub repo via the GitHub API using the user's OAuth token.
 
-    Uses the `gh` CLI (authenticated with a PAT) to create the repo, because
-    GitHub App installation tokens (ghs_...) cannot call POST /user/repos.
-    After creation, uses the installation token to GET /repos/nicopujia/{name}
-    for html_url and clone_url.
+    Uses POST /user/repos which creates the repo under the authenticated user.
 
-    Returns a dict with at least 'html_url' and 'clone_url'.
+    Returns the response JSON (contains 'html_url', 'clone_url', etc.).
     """
-    cmd = [
-        GH_CLI,
-        "repo",
-        "create",
-        repo_name,
-        "--public",
-        "--description",
-        description or "",
-        "--add-readme",
-        "--clone=false",
-        "--confirm",
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=30)
-
-    # Fetch repo info using the installation token (which CAN read repos)
-    resp = requests.get(
-        f"{GITHUB_API}/repos/nicopujia/{repo_name}",
+    resp = requests.post(
+        f"{GITHUB_API}/user/repos",
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
         },
-        timeout=15,
+        json={
+            "name": repo_name,
+            "description": description or "",
+            "auto_init": True,
+        },
+        timeout=30,
     )
     resp.raise_for_status()
     return resp.json()
@@ -134,7 +118,7 @@ def create_opencode_session(repo_name):
     return resp.json()["id"]
 
 
-def create_project(repo_name, description, token):
+def create_project(repo_name, description, token, username):
     """Full project creation flow. Returns dict with project info.
 
     Steps:
@@ -149,7 +133,7 @@ def create_project(repo_name, description, token):
     Raises ValueError on validation/availability errors.
     """
     # Availability checks
-    if check_repo_exists_on_github(repo_name, token):
+    if check_repo_exists_on_github(repo_name, token, username):
         raise ValueError("A GitHub repo with this name already exists.")
 
     if check_local_dir_exists(repo_name):
@@ -192,11 +176,11 @@ def create_project(repo_name, description, token):
     return {"slug": slug}
 
 
-def delete_github_repo(repo_name, token):
+def delete_github_repo(repo_name, token, username):
     """Delete a GitHub repo. Best-effort — exceptions are suppressed."""
     try:
         resp = requests.delete(
-            f"{GITHUB_API}/repos/nicopujia/{repo_name}",
+            f"{GITHUB_API}/repos/{username}/{repo_name}",
             headers={
                 "Authorization": f"token {token}",
                 "Accept": "application/vnd.github+json",
