@@ -21,11 +21,14 @@ Web app (runs on a single VPS that also executes Ralph loops).
 - Issue tracking: beads (`bd`) — already initialized
 - Auth: GitHub OAuth only; must request repo creation + push permissions
 - Each project gets its own new GitHub repo, auto-created and named after the project
-- Project files live at `~/projects/<github_username>/<project_name>/` on the VPS
+- Project files live at `~/projects/<project_name>/` on the VPS
+- Ralphy's system prompt is this repo's Claude Code system prompt, adapted for the web context. Key web-specific behaviors to add: (1) call `show_just_ralph_it_button` tool when spec is complete, (2) after a HUMAN_NEEDED stop, when the user says "done," call `show_just_ralph_it_button` again to resume the loop
 - No per-project VPS provisioning in v1
 - No legacy codebase input in v1
 - No multi-user collaboration in v1
-- No framework/language preference specified — Ralph decides, keeping it simple
+- Backend: Python
+- Frontend: HTMX (server-rendered HTML, SSE/WebSocket for real-time)
+- Database: SQLite
 
 ## Issue Tracking
 
