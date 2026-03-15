@@ -1,9 +1,12 @@
 import argparse
 import json
+import logging
 import subprocess
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
+
+logger = logging.getLogger(__name__)
 
 STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 
@@ -33,7 +36,7 @@ def main():
     while True:
         if STOP_FILE.exists():
             STOP_FILE.unlink()
-            print(Results.STOPPED)
+            logger.info(Results.STOPPED)
             break
 
         if args.issue:
@@ -43,9 +46,9 @@ def main():
 
         if not issue:
             if args.issue:
-                print(f"Error: Issue {args.issue} not found")
+                logger.error("Issue %s not found", args.issue)
             else:
-                print(Results.ALL_DONE)
+                logger.info(Results.ALL_DONE)
             break
 
         opencode_args = [
@@ -61,7 +64,7 @@ def main():
         proc = subprocess.Popen(opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert proc.stdout is not None
         for line in proc.stdout:
-            print(line, end="", flush=True)
+            logger.info(line.rstrip())
             lines.append(line)
         proc.wait()
 
@@ -92,9 +95,9 @@ def reload_production():
             check=True,
             capture_output=True,
         )
-        print("Production reloaded successfully.")
+        logger.info("Production reloaded successfully.")
     except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to reload production: {e.stderr}")
+        logger.warning("Failed to reload production: %s", e.stderr)
 
 
 def get_next_ready_issue() -> dict[str, Any] | None:
