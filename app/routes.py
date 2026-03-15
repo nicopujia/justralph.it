@@ -26,6 +26,15 @@ def index():
     return render_template("index.html")
 
 
+@bp.route("/projects")
+def list_projects():
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    projects = db.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
+    return render_template("projects/list.html", projects=projects)
+
+
 @bp.route("/projects/new", methods=["GET"])
 def new_project_form():
     if not session.get("user"):
