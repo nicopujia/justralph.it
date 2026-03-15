@@ -1,3 +1,6 @@
 flask
 ruff
 pytest
+PyJWT
+cryptography
+requests
