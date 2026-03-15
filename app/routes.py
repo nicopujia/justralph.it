@@ -1,8 +1,9 @@
 import json
 
-from flask import Blueprint, Response, redirect, render_template, session
+from flask import Blueprint, Response, redirect, render_template, request, session
 
 from .models import get_db
+from .projects import create_project, validate_repo_name
 from .sse import publish, subscribe, unsubscribe
 
 bp = Blueprint("main", __name__)
@@ -13,6 +14,46 @@ def index():
     if session.get("user"):
         return redirect("/projects")
     return render_template("index.html")
+
+
+@bp.route("/projects/new", methods=["GET"])
+def new_project_form():
+    if not session.get("user"):
+        return redirect("/")
+    return render_template("projects/new.html")
+
+
+@bp.route("/projects/new", methods=["POST"])
+def new_project_submit():
+    if not session.get("user"):
+        return redirect("/")
+
+    repo_name = request.form.get("repo_name", "").strip()
+    description = request.form.get("description", "").strip()
+
+    # Validate repo name
+    error = validate_repo_name(repo_name)
+    if error:
+        return render_template("projects/new.html", error=error, repo_name=repo_name, description=description), 400
+
+    # Create the project
+    token = session.get("installation_token")
+    try:
+        result = create_project(repo_name, description, token)
+    except ValueError as e:
+        return render_template("projects/new.html", error=str(e), repo_name=repo_name, description=description), 400
+    except Exception as e:
+        return (
+            render_template(
+                "projects/new.html",
+                error=f"Failed to create project: {e}",
+                repo_name=repo_name,
+                description=description,
+            ),
+            500,
+        )
+
+    return redirect(f"/projects/{result['slug']}")
 
 
 @bp.route("/health")

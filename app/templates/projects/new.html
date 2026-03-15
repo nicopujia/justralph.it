@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}New Project — just-ralph-it{% endblock %}
+{% block content %}
+<h1>New Project</h1>
+{% if error %}
+<p style="color: #ff5252;">Error: {{ error }}</p>
+{% endif %}
+<form method="post" action="/projects/new">
+    <div style="margin-bottom: 1rem;">
+        <label for="repo_name">Repo name</label><br>
+        <input type="text" id="repo_name" name="repo_name"
+               value="{{ repo_name or '' }}"
+               pattern="[A-Za-z0-9._\-]+"
+               title="Alphanumeric characters, hyphens, underscores, and dots only"
+               required
+               style="padding: 0.4rem; background: #2a2a2a; color: #e0e0e0; border: 1px solid #555; font-family: monospace;">
+    </div>
+    <div style="margin-bottom: 1rem;">
+        <label for="description">Description</label><br>
+        <textarea id="description" name="description"
+                  placeholder="What do you want to build?"
+                  rows="3"
+                  style="padding: 0.4rem; background: #2a2a2a; color: #e0e0e0; border: 1px solid #555; font-family: monospace; width: 100%; max-width: 400px;">{{ description or '' }}</textarea>
+    </div>
+    <button type="submit" style="padding: 0.5rem 1rem; background: #4fc3f7; color: #1a1a1a; border: none; cursor: pointer; font-family: monospace;">
+        Create Project
+    </button>
+</form>
+<p><a href="/projects">Back to projects</a></p>
+{% endblock %}
