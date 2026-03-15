@@ -28,6 +28,33 @@ def test_health_returns_ok():
     assert response.json["status"] == "ok"
 
 
+# --- OPENCODE_URL config tests ---
+
+
+def test_opencode_url_default():
+    """App config has OPENCODE_URL set to the default value."""
+    app = create_app()
+    assert app.config["OPENCODE_URL"] == "http://127.0.0.1:4096"
+
+
+def test_opencode_url_from_env(monkeypatch):
+    """App config uses a custom value when OPENCODE_URL env var is set."""
+    monkeypatch.setenv("OPENCODE_URL", "http://custom-host:9999")
+    app = create_app()
+    assert app.config["OPENCODE_URL"] == "http://custom-host:9999"
+
+
+def test_opencode_url_default_value():
+    """The default for OPENCODE_URL is exactly http://127.0.0.1:4096."""
+    env_backup = os.environ.pop("OPENCODE_URL", None)
+    try:
+        app = create_app()
+        assert app.config["OPENCODE_URL"] == "http://127.0.0.1:4096"
+    finally:
+        if env_backup is not None:
+            os.environ["OPENCODE_URL"] = env_backup
+
+
 def test_init_db_creates_projects_table():
     """DB is initialized on app startup with a projects table."""
     db_fd, db_path = tempfile.mkstemp()

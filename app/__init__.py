@@ -7,6 +7,7 @@ def create_app(test_config=None):
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["DATABASE"] = os.path.join(app.instance_path, "..", "just_ralph_it.db")
+    app.config["OPENCODE_URL"] = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096")
 
     if test_config is not None:
         app.config.update(test_config)
