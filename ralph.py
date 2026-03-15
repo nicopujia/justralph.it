@@ -48,10 +48,20 @@ def main():
             "--model",
             "anthropic/claude-opus-4-6",
         ]
-        result = subprocess.run(opencode_args, capture_output=True, text=True)
-        print(result.stdout)
+        lines = []
+        proc = subprocess.Popen(opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            lines.append(line)
+        proc.wait()
 
-        result_xml = result.stdout.split("\n")[-1].strip()
+        last_line = ""
+        for line in reversed(lines):
+            if line.strip():
+                last_line = line.strip()
+                break
+        result_xml = last_line
         result_msg = ElementTree.fromstring(result_xml).text
 
         if result_msg == Results.DONE:
