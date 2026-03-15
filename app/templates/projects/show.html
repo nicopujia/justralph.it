@@ -5,35 +5,20 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
     <h1 style="margin: 0;">{{ project["name"] }}</h1>
-    <button onclick="document.getElementById('delete-dialog').showModal()" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
+    <button onclick="document.getElementById('delete-dialog').showModal()" style="background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete Project</button>
     <dialog id="delete-dialog">
         <style>
             #delete-dialog {
-                background: #1e1e1e;
-                color: #e0e0e0;
-                border: 1px solid #333;
+                background: var(--bg-dialog);
+                color: var(--text-primary);
+                border: 1px solid var(--border-primary);
                 border-radius: 4px;
                 padding: 1.5rem;
                 font-family: monospace;
                 max-width: 400px;
             }
             #delete-dialog::backdrop {
-                background: rgba(0, 0, 0, 0.6);
-            }
-            @media (prefers-color-scheme: light) {
-                #delete-dialog {
-                    background: #fff;
-                    color: #222;
-                    border-color: #ccc;
-                }
-                #delete-dialog::backdrop {
-                    background: rgba(0, 0, 0, 0.3);
-                }
-                #delete-dialog .dlg-cancel {
-                    background: #e0e0e0 !important;
-                    color: #222 !important;
-                    border-color: #bbb !important;
-                }
+                background: var(--backdrop-bg);
             }
         </style>
         <form action="/projects/{{ project['slug'] }}/delete" method="post">
@@ -43,58 +28,58 @@
                 Also delete the GitHub repository
             </label>
             <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-                <button type="button" class="dlg-cancel" onclick="document.getElementById('delete-dialog').close()" style="background: #333; color: #e0e0e0; border: 1px solid #555; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Cancel</button>
-                <button type="submit" style="background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete</button>
+                <button type="button" class="dlg-cancel" onclick="document.getElementById('delete-dialog').close()" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-tertiary); padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Cancel</button>
+                <button type="submit" style="background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Delete</button>
             </div>
         </form>
     </dialog>
 </div>
 <div style="display: flex; gap: 1rem; height: calc(100vh - 4rem);">
     <!-- Chat Panel -->
-    <div id="chat-panel" style="width: 40%; border: 1px solid #333; border-radius: 4px; display: flex; flex-direction: column; overflow: hidden;">
-        <h2 style="color: #4fc3f7; margin: 0; padding: 1rem; border-bottom: 1px solid #333;">Chat</h2>
+    <div id="chat-panel" style="width: 40%; border: 1px solid var(--border-primary); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden;">
+        <h2 style="color: var(--color-accent); margin: 0; padding: 1rem; border-bottom: 1px solid var(--border-primary);">Chat</h2>
         <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 1rem;">
-            <p id="chat-loading" style="color: #888;">Loading chat history...</p>
+            <p id="chat-loading" style="color: var(--text-secondary);">Loading chat history...</p>
         </div>
-        <div id="file-preview" style="display: none; border-top: 1px solid #333; padding: 0.25rem 0.5rem; flex-wrap: wrap; gap: 0.25rem;"></div>
+        <div id="file-preview" style="display: none; border-top: 1px solid var(--border-primary); padding: 0.25rem 0.5rem; flex-wrap: wrap; gap: 0.25rem;"></div>
         <input type="file" id="file-input" multiple style="display: none;" onchange="handleFileSelect(this.files)">
-        <div style="display: flex; border-top: 1px solid #333; padding: 0.5rem;">
+        <div style="display: flex; border-top: 1px solid var(--border-primary); padding: 0.5rem;">
             <button id="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach files"
-                    style="background: #2a2a2a; border: 1px solid #444; color: #888; padding: 0.5rem; cursor: pointer; font-family: monospace; border-radius: 4px 0 0 4px; font-size: 1.1em;">&#128206;</button>
+                    style="background: var(--bg-secondary); border: 1px solid var(--border-secondary); color: var(--text-secondary); padding: 0.5rem; cursor: pointer; font-family: monospace; border-radius: 4px 0 0 4px; font-size: 1.1em;">&#128206;</button>
             <input id="chat-input" type="text" placeholder="Type a message..." 
-                   style="flex: 1; background: #2a2a2a; border: 1px solid #444; border-left: none; color: #e0e0e0; padding: 0.5rem; font-family: monospace;"
+                   style="flex: 1; background: var(--bg-secondary); border: 1px solid var(--border-secondary); border-left: none; color: var(--text-primary); padding: 0.5rem; font-family: monospace;"
                    onkeydown="if(event.key==='Enter')sendMessage()">
             <button id="chat-send" onclick="sendMessage()" 
-                    style="background: #4fc3f7; color: #1a1a1a; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 0 4px 4px 0;">Send</button>
+                    style="background: var(--color-accent); color: var(--bg-primary); border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 0 4px 4px 0;">Send</button>
         </div>
-        <div style="padding: 0.5rem; border-top: 1px solid #333; text-align: center;">
+        <div style="padding: 0.5rem; border-top: 1px solid var(--border-primary); text-align: center;">
             <button id="just-ralph-it-btn" onclick="startRalph()" 
-                    style="display: none; background: #4caf50; color: white; border: none; padding: 0.75rem 1.5rem; cursor: pointer; font-family: monospace; font-size: 1.1em; border-radius: 4px;">Just Ralph It</button>
-            <div id="ralph-status" style="display: none; color: #ff9800; padding: 0.5rem;">Ralph is building...</div>
+                    style="display: none; background: var(--color-success); color: white; border: none; padding: 0.75rem 1.5rem; cursor: pointer; font-family: monospace; font-size: 1.1em; border-radius: 4px;">Just Ralph It</button>
+            <div id="ralph-status" style="display: none; color: var(--color-warning); padding: 0.5rem;">Ralph is building...</div>
             <button id="ralph-stop-btn"
-                    style="display: none; background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;" onclick="stopRalph()">Stop</button>
+                    style="display: none; background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;" onclick="stopRalph()">Stop</button>
         </div>
     </div>
 
     <!-- Tab Panel -->
-    <div id="tab-panel" style="width: 60%; display: flex; flex-direction: column; border: 1px solid #333; border-radius: 4px; overflow: hidden;">
+    <div id="tab-panel" style="width: 60%; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 4px; overflow: hidden;">
         <!-- Tab Buttons -->
-        <div style="display: flex; border-bottom: 1px solid #333;">
-            <button onclick="switchTab('spec')" id="tab-btn-spec" style="flex: 1; padding: 0.5rem; background: #2a2a2a; color: #4fc3f7; border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid #4fc3f7;">Spec</button>
-            <button onclick="switchTab('issues')" id="tab-btn-issues" style="flex: 1; padding: 0.5rem; background: #2a2a2a; color: #888; border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid transparent;">Issues</button>
-            <button onclick="switchTab('terminal')" id="tab-btn-terminal" style="flex: 1; padding: 0.5rem; background: #2a2a2a; color: #888; border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid transparent;">Terminal</button>
+        <div style="display: flex; border-bottom: 1px solid var(--border-primary);">
+            <button onclick="switchTab('spec')" id="tab-btn-spec" style="flex: 1; padding: 0.5rem; background: var(--bg-secondary); color: var(--color-accent); border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid var(--color-accent);">Spec</button>
+            <button onclick="switchTab('issues')" id="tab-btn-issues" style="flex: 1; padding: 0.5rem; background: var(--bg-secondary); color: var(--text-secondary); border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid transparent;">Issues</button>
+            <button onclick="switchTab('terminal')" id="tab-btn-terminal" style="flex: 1; padding: 0.5rem; background: var(--bg-secondary); color: var(--text-secondary); border: none; cursor: pointer; font-family: monospace; border-bottom: 2px solid transparent;">Terminal</button>
         </div>
 
         <!-- Tab Content -->
         <div style="flex: 1; overflow-y: auto; padding: 1rem;">
             <div id="spec-content" hx-get="/projects/{{ project['slug'] }}/spec" hx-trigger="load, every 3s" hx-swap="innerHTML">
-                <p style="color: #888;">Loading...</p>
+                <p style="color: var(--text-secondary);">Loading...</p>
             </div>
             <div id="issues-content" style="display: none;">
-                <p id="issues-placeholder" style="color: #888;">Continue chatting to let Ralphy create the spec</p>
+                <p id="issues-placeholder" style="color: var(--text-secondary);">Continue chatting to let Ralphy create the spec</p>
                 <div id="issues-list"></div>
             </div>
-            <div id="terminal-content" style="display: none; font-family: monospace; background: #111; padding: 1rem; border-radius: 4px; color: #0f0; min-height: 200px;">
+            <div id="terminal-content" style="display: none; font-family: monospace; background: var(--bg-terminal); padding: 1rem; border-radius: 4px; color: var(--terminal-text); min-height: 200px;">
                 <p>When the Ralph loop starts, you'll see its stdout here</p>
             </div>
         </div>
@@ -133,9 +118,9 @@ function updateFilePreview() {
     preview.style.display = 'flex';
     var html = '';
     for (var i = 0; i < pendingFiles.length; i++) {
-        html += '<span style="background: #333; color: #e0e0e0; padding: 0.2rem 0.5rem; border-radius: 3px; font-family: monospace; font-size: 0.85em; display: inline-flex; align-items: center; gap: 0.25rem;">';
+        html += '<span style="background: var(--bg-elevated); color: var(--text-primary); padding: 0.2rem 0.5rem; border-radius: 3px; font-family: monospace; font-size: 0.85em; display: inline-flex; align-items: center; gap: 0.25rem;">';
         html += pendingFiles[i].name;
-        html += ' <span onclick="removeFile(' + i + ')" style="cursor: pointer; color: #f44336; font-weight: bold;">&times;</span>';
+        html += ' <span onclick="removeFile(' + i + ')" style="cursor: pointer; color: var(--color-delete); font-weight: bold;">&times;</span>';
         html += '</span>';
     }
     preview.innerHTML = html;
@@ -146,7 +131,7 @@ function setupDragAndDrop() {
     panel.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        panel.style.outline = '2px dashed #4fc3f7';
+        panel.style.outline = '2px dashed var(--color-accent)';
         panel.style.outlineOffset = '-4px';
     });
     panel.addEventListener('dragleave', function(e) {
@@ -173,10 +158,10 @@ function renderMessage(role, text) {
     div.style.padding = '0.5rem';
     div.style.borderRadius = '4px';
     if (role === 'user') {
-        div.style.background = '#2a3a4a';
+        div.style.background = 'var(--bg-user-msg)';
         div.style.textAlign = 'right';
     } else {
-        div.style.background = '#2a2a2a';
+        div.style.background = 'var(--bg-assistant-msg)';
     }
     div.textContent = text;
     el.appendChild(div);
@@ -277,11 +262,11 @@ function switchTab(tab) {
         var btn = document.getElementById('tab-btn-' + tabs[i]);
         if (tabs[i] === tab) {
             content.style.display = '';
-            btn.style.color = '#4fc3f7';
-            btn.style.borderBottom = '2px solid #4fc3f7';
+            btn.style.color = 'var(--color-accent)';
+            btn.style.borderBottom = '2px solid var(--color-accent)';
         } else {
             content.style.display = 'none';
-            btn.style.color = '#888';
+            btn.style.color = 'var(--text-secondary)';
             btn.style.borderBottom = '2px solid transparent';
         }
     }
@@ -427,10 +412,10 @@ if (RALPH_RUNNING) {
     }
 
     function statusColor(status) {
-        if (status === 'open') return '#888';
-        if (status === 'in_progress') return '#ff9800';
-        if (status === 'closed') return '#4caf50';
-        return '#888';
+        if (status === 'open') return 'var(--text-secondary)';
+        if (status === 'in_progress') return 'var(--color-warning)';
+        if (status === 'closed') return 'var(--color-success)';
+        return 'var(--text-secondary)';
     }
 
     function renderIssues() {
@@ -447,12 +432,12 @@ if (RALPH_RUNNING) {
             var color = statusColor(issue.status);
             var label = statusLabel(issue.status);
             var priority = issue.priority !== undefined ? 'P' + issue.priority : '';
-            html += '<div style="padding: 0.5rem 0; border-bottom: 1px solid #333;">';
+            html += '<div style="padding: 0.5rem 0; border-bottom: 1px solid var(--border-primary);">';
             html += '<span style="color: ' + color + '; font-weight: bold;">[' + label + ']</span> ';
-            if (priority) html += '<span style="color: #666;">' + priority + '</span> ';
+            if (priority) html += '<span style="color: var(--text-secondary);">' + priority + '</span> ';
             html += '<span>' + (issue.title || issue.id) + '</span>';
-            html += ' <span style="color: #555; font-size: 0.85em;">' + issue.id + '</span>';
-            if (issue.assignee) html += ' <span style="color: #666; font-size: 0.85em;">@ ' + issue.assignee + '</span>';
+            html += ' <span style="color: var(--border-tertiary); font-size: 0.85em;">' + issue.id + '</span>';
+            if (issue.assignee) html += ' <span style="color: var(--text-secondary); font-size: 0.85em;">@ ' + issue.assignee + '</span>';
             html += '</div>';
         });
         listEl.innerHTML = html;
