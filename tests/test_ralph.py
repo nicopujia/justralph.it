@@ -9,7 +9,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from ralph import STOP_FILE, Results, get_prompt, main, reload_production
+from ralph import STOP_FILE, Results, check_resources, get_prompt, main, reload_production
 
 
 # ---------------------------------------------------------------------------
@@ -461,3 +461,253 @@ class TestNonInteractivePromptInstructions:
             or "fail immediately" in prompt_lower
             or ("fail" in prompt_lower and ("interaction" in prompt_lower or "interactive" in prompt_lower))
         ), f"get_prompt() must instruct subagents to fail fast if a command requires interaction. Prompt was:\n{prompt}"
+
+
+# ===========================================================================
+# Helpers for resource-check mocking
+# ===========================================================================
+
+
+def _make_virtual_memory(percent):
+    """Create a mock psutil.virtual_memory() return value."""
+    mock = MagicMock()
+    mock.percent = percent
+    return mock
+
+
+def _make_disk_usage(used_percent):
+    """Create a mock shutil.disk_usage('/') return value.
+
+    shutil.disk_usage returns a named tuple with (total, used, free).
+    We set total=100 so used equals the percentage directly.
+    """
+    mock = MagicMock()
+    mock.total = 100
+    mock.used = used_percent
+    return mock
+
+
+# ===========================================================================
+# Test: VPS resource checking
+# ===========================================================================
+
+
+class TestResourceCheck:
+    """Tests for the check_resources() function and its integration into main()."""
+
+    # -----------------------------------------------------------------------
+    # Unit tests for check_resources()
+    # -----------------------------------------------------------------------
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_returns_false_when_below_threshold(self, mock_vmem, mock_disk):
+        """When RAM=50% and disk=60%, returns (False, '')."""
+        mock_vmem.return_value = _make_virtual_memory(50)
+        mock_disk.return_value = _make_disk_usage(60)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is False
+        assert message == ""
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_returns_true_for_high_ram(self, mock_vmem, mock_disk):
+        """When RAM=95% and disk=50%, returns (True, message with '95%' and 'RAM')."""
+        mock_vmem.return_value = _make_virtual_memory(95)
+        mock_disk.return_value = _make_disk_usage(50)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is True
+        assert "95%" in message
+        assert "RAM" in message
+        assert "Free up space or upgrade before continuing." in message
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_returns_true_for_high_disk(self, mock_vmem, mock_disk):
+        """When RAM=50% and disk=92%, returns (True, message with '92%' and 'disk')."""
+        mock_vmem.return_value = _make_virtual_memory(50)
+        mock_disk.return_value = _make_disk_usage(92)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is True
+        assert "92%" in message
+        assert "disk" in message
+        assert "Free up space or upgrade before continuing." in message
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_reports_higher_when_both_exceed(self, mock_vmem, mock_disk):
+        """When RAM=95% and disk=98%, returns (True, message with '98%' and 'disk')."""
+        mock_vmem.return_value = _make_virtual_memory(95)
+        mock_disk.return_value = _make_disk_usage(98)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is True
+        assert "98%" in message
+        assert "disk" in message
+        # Should NOT report 95% RAM since disk is higher
+        assert "RAM" not in message
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_at_exactly_90_continues(self, mock_vmem, mock_disk):
+        """At exactly 90%, returns (False, '') — 'exceeds 90%' means strictly above."""
+        mock_vmem.return_value = _make_virtual_memory(90)
+        mock_disk.return_value = _make_disk_usage(90)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is False
+        assert message == ""
+
+    @patch("ralph.shutil.disk_usage")
+    @patch("ralph.psutil.virtual_memory")
+    def test_check_resources_at_91_stops(self, mock_vmem, mock_disk):
+        """At 91% RAM, returns (True, ...) — just above the 90% threshold."""
+        mock_vmem.return_value = _make_virtual_memory(91)
+        mock_disk.return_value = _make_disk_usage(50)
+
+        exceeded, message = check_resources()
+
+        assert exceeded is True
+        assert "91%" in message
+        assert "RAM" in message
+
+    # -----------------------------------------------------------------------
+    # Integration tests: check_resources() in main()
+    # -----------------------------------------------------------------------
+
+    @patch("ralph.check_resources")
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_main_stops_on_high_resources(self, mock_stop_file, mock_run, mock_popen, mock_check):
+        """main() exits cleanly without claiming any issue when resources are high."""
+        mock_stop_file.exists.return_value = False
+        mock_check.return_value = (
+            True,
+            "Ralph stopped: VPS resources at 95% RAM. Free up space or upgrade before continuing.",
+        )
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+
+        main()
+
+        # bd ready should NOT have been called — resources stopped the loop first
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) == 0, (
+            f"bd ready should NOT be called when resources are exhausted, but was called {len(bd_ready_calls)} time(s)"
+        )
+        mock_popen.assert_not_called()
+
+    @patch("ralph.check_resources")
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_main_stops_on_high_resources_logs_message(self, mock_stop_file, mock_run, mock_popen, mock_check, capsys):
+        """main() logs RESOURCES_EXHAUSTED when resources are high."""
+        mock_stop_file.exists.return_value = False
+        mock_check.return_value = (
+            True,
+            "Ralph stopped: VPS resources at 95% RAM. Free up space or upgrade before continuing.",
+        )
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(bd_ready_results=[])
+
+        main()
+
+        captured = capsys.readouterr()
+        assert Results.RESOURCES_EXHAUSTED in captured.out
+
+    @patch("ralph.check_resources")
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_main_continues_on_normal_resources(self, mock_stop_file, mock_run, mock_popen, mock_check):
+        """main() continues normally when resources are fine."""
+        mock_stop_file.exists.return_value = False
+        mock_check.return_value = (False, "")
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
+
+        main()
+
+        # bd ready SHOULD have been called
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) >= 1, "bd ready should be called when resources are fine"
+
+    @patch("ralph.check_resources")
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_resource_check_happens_before_claiming_issue(self, mock_stop_file, mock_run, mock_popen, mock_check):
+        """Verify resource check happens before bd ready is called."""
+        mock_stop_file.exists.return_value = False
+        mock_check.return_value = (
+            True,
+            "Ralph stopped: VPS resources at 95% RAM. Free up space or upgrade before continuing.",
+        )
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+
+        main()
+
+        # check_resources was called
+        mock_check.assert_called_once()
+
+        # bd ready was NOT called (stopped before reaching it)
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) == 0, (
+            f"Resource check should prevent bd ready from being called, but got {len(bd_ready_calls)} call(s)"
+        )
+
+    @patch("ralph.check_resources")
+    @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
+    @patch("ralph.subprocess.run")
+    @patch("ralph.STOP_FILE")
+    def test_resource_check_between_iterations(self, mock_stop_file, mock_run, mock_popen, mock_check):
+        """After first issue completes with DONE, resource check on second iteration stops the loop.
+
+        Scenario: first iteration resources OK, issue completes. Second iteration resources exhausted.
+        """
+        mock_stop_file.exists.return_value = False
+        # First call: OK. Second call: exhausted.
+        mock_check.side_effect = [
+            (False, ""),
+            (True, "Ralph stopped: VPS resources at 95% RAM. Free up space or upgrade before continuing."),
+        ]
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[
+                [{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}],
+                [{"id": "ISS-100", "title": "Another issue"}],
+            ]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
+
+        main()
+
+        # First issue was worked on
+        assert mock_popen.call_count == 1, f"Expected exactly 1 Popen call (first issue), got {mock_popen.call_count}"
+
+        # bd ready called once (first iteration), NOT called for second (resource check stopped it)
+        bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
+        assert len(bd_ready_calls) == 1, (
+            f"Expected exactly 1 bd ready call (second iteration stopped by resource check), got {len(bd_ready_calls)}"
+        )
+
+        # check_resources called twice (once per iteration)
+        assert mock_check.call_count == 2, f"Expected 2 check_resources calls, got {mock_check.call_count}"

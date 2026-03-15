@@ -411,13 +411,15 @@ def ralph_start(slug):
     vapid_claims_email = current_app.config["VAPID_CLAIMS_EMAIL"]
 
     def _watch_ralph():
-        # Drain stdout and capture the last non-empty line to detect exit reason
+        # Drain stdout and capture the last two non-empty lines to detect exit reason
+        prev_line = ""
         last_line = ""
         if process.stdout:
             for raw_line in process.stdout:
                 decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
                 stripped = decoded.strip()
                 if stripped:
+                    prev_line = last_line
                     last_line = stripped
         rc = process.wait()
         # Only clean up if wait() returned a real exit code (int)
@@ -438,6 +440,8 @@ def ralph_start(slug):
             reason = "all_done"
         elif last_line == "STOPPING AS REQUESTED":
             reason = "stopped"
+        elif last_line == "STOPPING: VPS RESOURCES EXCEEDED":
+            reason = "resources_exhausted"
         else:
             reason = "human_needed"
         publish(slug, "ralph_stopped", {"reason": reason})
@@ -447,6 +451,12 @@ def ralph_start(slug):
             push_message = "Ralph is done building your project."
         elif reason == "stopped":
             push_message = "Ralph was stopped. Click Continue to resume."
+        elif reason == "resources_exhausted":
+            push_message = (
+                prev_line
+                if prev_line.startswith("Ralph stopped: VPS resources")
+                else "Ralph stopped: VPS resources critically low. Free up space or upgrade before continuing."
+            )
         else:
             push_message = "Ralph is blocked and needs your help."
         send_push_notification(slug, push_message, db_path, vapid_private_key_path, vapid_claims_email)

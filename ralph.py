@@ -1,11 +1,14 @@
 import argparse
 import json
 import logging
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
+
+import psutil
 
 LOG_DIR = Path.home() / "projects" / "just-ralph-it" / "logs"
 LOG_FILE = Path.home() / "projects" / "just-ralph-it" / "ralph.log"
@@ -20,6 +23,30 @@ class Results:
     HUMAN_NEEDED = "I NEED A HUMAN"
     NEW_BLOCKER = "FOUND NEW BLOCKER ISSUE"
     STOPPED = "STOPPING AS REQUESTED"
+    RESOURCES_EXHAUSTED = "STOPPING: VPS RESOURCES EXCEEDED"
+
+
+def check_resources(threshold: float = 90.0) -> tuple[bool, str]:
+    """Check RAM and disk usage; return (exceeded, message)."""
+    ram_percent = psutil.virtual_memory().percent
+    disk = shutil.disk_usage("/")
+    disk_percent = disk.used / disk.total * 100
+
+    exceeded = {}
+    if ram_percent > threshold:
+        exceeded["RAM"] = ram_percent
+    if disk_percent > threshold:
+        exceeded["disk"] = disk_percent
+
+    if not exceeded:
+        return False, ""
+
+    # Report the resource with the highest usage
+    resource, percent = max(exceeded.items(), key=lambda x: x[1])
+    message = (
+        f"Ralph stopped: VPS resources at {round(percent)}% {resource}. Free up space or upgrade before continuing."
+    )
+    return True, message
 
 
 def main():
@@ -41,6 +68,12 @@ def main():
         if STOP_FILE.exists():
             STOP_FILE.unlink()
             logger.info(Results.STOPPED)
+            break
+
+        resources_exceeded, resource_msg = check_resources()
+        if resources_exceeded:
+            logger.info(resource_msg)
+            logger.info(Results.RESOURCES_EXHAUSTED)
             break
 
         issue = get_issue_by_id(args.issue) if args.issue else get_in_progress_issue() or get_next_ready_issue()

@@ -17,6 +17,8 @@ def recover_processes(app):
     Called during create_app() to handle crash recovery.
     """
     db_path = app.config["DATABASE"]
+    vapid_private_key_path = app.config["VAPID_PRIVATE_KEY_PATH"]
+    vapid_claims_email = app.config["VAPID_CLAIMS_EMAIL"]
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT slug, vps_path, bdui_port, ralph_running FROM projects").fetchall()
@@ -52,6 +54,7 @@ def recover_processes(app):
                 routes.ralph_processes[slug] = process
 
                 def _watch_ralph(process=process, slug=slug):
+                    prev_line = ""
                     last_line = ""
                     if process.stdout:
                         for raw_line in process.stdout:
@@ -60,6 +63,7 @@ def recover_processes(app):
                             )
                             stripped = decoded.strip()
                             if stripped:
+                                prev_line = last_line
                                 last_line = stripped
                     rc = process.wait()
                     if not isinstance(rc, int):
@@ -80,9 +84,19 @@ def recover_processes(app):
                         reason = "all_done"
                     elif last_line == "STOPPING AS REQUESTED":
                         reason = "stopped"
+                    elif last_line == "STOPPING: VPS RESOURCES EXCEEDED":
+                        reason = "resources_exhausted"
                     else:
                         reason = "human_needed"
                     publish(slug, "ralph_stopped", {"reason": reason})
+                    if reason == "resources_exhausted":
+                        from .push import send_push_notification
+
+                        fallback = (
+                            "Ralph stopped: VPS resources critically low. Free up space or upgrade before continuing."
+                        )
+                        push_msg = prev_line if prev_line.startswith("Ralph stopped: VPS resources") else fallback
+                        send_push_notification(slug, push_msg, db_path, vapid_private_key_path, vapid_claims_email)
                     routes.ralph_processes.pop(slug, None)
 
                 t = threading.Thread(target=_watch_ralph, daemon=True)
