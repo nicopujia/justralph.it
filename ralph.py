@@ -221,7 +221,7 @@ Tell them that:
 
 - DO NOT work on ANYTHING ELSE other than {issue_id}.
 - NEVER assume a feature or preference that isn't explicitly specified in the issue.
-- Be an ORCHESTRATOR, not a worker. You must offload your work to subagents instead of doing it yourself. Whether for research, planning, coding, testing, or anything else, use AS MANY SUBAGENTS AS YOU NEED—which might even be hundreds of them. However, verify the final result using A SINGLE subagent after all the rest have finished working.
+- Be an ORCHESTRATOR, not a worker. You must offload your work to subagents instead of doing it yourself. Whether for research, planning, coding, debugging, testing, or anything else, use AS MANY SUBAGENTS AS YOU NEED—which might even be hundreds of them. However, verify the final result using A SINGLE subagent after all the rest have finished working.
 """
 
 
