@@ -3,7 +3,6 @@ import json
 import logging
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -44,17 +43,7 @@ def main():
             logger.info(Results.STOPPED)
             break
 
-        if args.issue:
-            issue = get_issue_by_id(args.issue)
-            needs_claim = True
-        else:
-            # Check for an already in-progress issue before claiming a new one
-            issue = get_in_progress_issue()
-            if issue:
-                needs_claim = False
-            else:
-                issue = get_next_ready_issue()
-                needs_claim = True
+        issue = get_issue_by_id(args.issue) if args.issue else get_in_progress_issue() or get_next_ready_issue()
 
         if not issue:
             if args.issue:
@@ -63,27 +52,26 @@ def main():
                 logger.info(Results.ALL_DONE)
             break
 
-        if needs_claim:
-            subprocess.run(["bd", "update", issue["id"], "--claim"], capture_output=True, check=True)
+        subprocess.run(["bd", "update", issue["id"], "--status", "in_progress"], check=True)
 
         opencode_args = [
             "opencode",
             "run",
-            get_prompt(issue["id"], "human"),
+            get_prompt(issue["id"], "Human"),
             "--title",
             issue["title"],
             "--model",
             "anthropic/claude-opus-4-6",
         ]
-        lines = []
 
-        timestamp = datetime.now().isoformat(timespec="seconds")
         issue_id = issue["id"]
-        iter_log_path = LOG_DIR / f"ralph_{timestamp}_{issue_id}.log"
+        iter_log_path = LOG_DIR / f"ralph_{issue_id}.log"
         iter_log_file = open(iter_log_path, "w")
 
         proc = subprocess.Popen(opencode_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert proc.stdout is not None
+
+        lines = []
         for line in proc.stdout:
             logger.info(line.rstrip())
             for handler in logging.getLogger().handlers:
