@@ -19,7 +19,7 @@ Web app (runs on a single VPS that also executes Ralph loops).
 - Coding agent: headless opencode (already installed at `~/.npm-global/bin/opencode`), using Kimi K2 Thinking via OpenCode Zen
 - Ralph loop: based on existing `ralph.py` in this repo
 - Issue tracking: beads (`bd`) — already initialized
-- Auth: GitHub App (not OAuth); must have repo read/write permissions for creating repos and pushing code
+- Auth: GitHub OAuth (not GitHub App); scopes: repo (create + push), read:user
 - Each project gets its own new GitHub repo, auto-created and named after the project
 - Project files live at `~/projects/<project_name>/` on the VPS
 - Ralphy's system prompt is this repo's OpenCode system prompt, adapted for the web context. It lives in the opencode config for this repo — not in AGENTS.md. See the issue for how to adapt it.
