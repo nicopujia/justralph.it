@@ -1,13 +1,7 @@
 import json
 import subprocess
-from dataclasses import dataclass
+from typing import Any
 from xml.etree import ElementTree
-
-
-@dataclass
-class Issue:
-    id: str
-    title: str
 
 
 class Results:
@@ -31,9 +25,9 @@ def main():
             "--agent",
             "build",
             "--prompt",
-            get_prompt(issue.id, "human"),
+            get_prompt(issue["id"], "human"),
             "--title",
-            issue.title,
+            issue["title"],
             "--model",
             "anthropic/claude-opus-4-6",
         ]
@@ -51,7 +45,7 @@ def main():
             break
 
 
-def get_next_ready_issue() -> Issue | None:
+def get_next_ready_issue() -> dict[str, Any] | None:
     bd_result = subprocess.run(
         ["bd", "ready", "--json", "--limit", "1"], capture_output=True, text=True
     )
@@ -60,7 +54,7 @@ def get_next_ready_issue() -> Issue | None:
     if not ready_issues:
         return
 
-    return Issue(**ready_issues[0])
+    return ready_issues[0]
 
 
 def get_prompt(issue_id: str, username: str) -> str:
