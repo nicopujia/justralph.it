@@ -37,11 +37,25 @@ def main():
         result_msg = ElementTree.fromstring(result_xml).text
 
         if result_msg == Results.DONE:
+            reload_production()
             continue
         elif result_msg == Results.HUMAN_NEEDED:
             break
         elif result_msg == Results.NEW_BLOCKER:
             break
+
+
+def reload_production():
+    """Reload the production web server so code changes go live."""
+    try:
+        subprocess.run(
+            ["systemctl", "reload", "just-ralph-it.service"],
+            check=True,
+            capture_output=True,
+        )
+        print("Production reloaded successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Failed to reload production: {e.stderr}")
 
 
 def get_next_ready_issue() -> dict[str, Any] | None:

@@ -73,6 +73,8 @@ def _make_one_issue_side_effect():
             return _make_claim_result()
         elif args[0] == "opencode":
             return _make_opencode_result()
+        elif args[0] == "systemctl":
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         raise ValueError(f"Unexpected subprocess.run call: {args}")
 
     return side_effect
