@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -96,7 +97,7 @@ def main():
 def setup_logging():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    stdout_handler = logging.StreamHandler()
+    stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter("%(message)s"))
 
     file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)

@@ -54,7 +54,7 @@ def _make_opencode_result(result_msg=Results.DONE):
 
 def _make_systemctl_result():
     return subprocess.CompletedProcess(
-        args=["systemctl", "reload", "just-ralph-it.service"],
+        args=["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
         returncode=0,
         stdout="",
         stderr="",
@@ -75,7 +75,7 @@ def _make_one_issue_side_effect(opencode_result_msg=Results.DONE):
             return _make_claim_result()
         elif args[0] == "opencode":
             return _make_opencode_result(opencode_result_msg)
-        elif args[0] == "systemctl":
+        elif args[0] == "sudo" and "systemctl" in args:
             return _make_systemctl_result()
         raise ValueError(f"Unexpected subprocess.run call: {args}")
 
@@ -94,7 +94,7 @@ class TestReloadProduction:
     def test_calls_systemctl_reload(self, mock_run):
         """reload_production() should call systemctl reload just-ralph-it.service."""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["systemctl", "reload", "just-ralph-it.service"],
+            args=["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
             returncode=0,
             stdout="",
             stderr="",
@@ -103,7 +103,7 @@ class TestReloadProduction:
         reload_production()
 
         mock_run.assert_called_once_with(
-            ["systemctl", "reload", "just-ralph-it.service"],
+            ["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
             check=True,
             capture_output=True,
         )
@@ -113,7 +113,7 @@ class TestReloadProduction:
         """reload_production() should not raise on failure, just print a warning."""
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            cmd=["systemctl", "reload", "just-ralph-it.service"],
+            cmd=["sudo", "-n", "systemctl", "reload", "just-ralph-it.service"],
             stderr="Failed to reload",
         )
 
@@ -129,6 +129,7 @@ class TestReloadProduction:
 class TestMainReloadsAfterDone:
     """Verify that main() calls systemctl reload after a successful issue."""
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_systemctl_reload_called_after_done(self, mock_run):
         """After opencode returns DONE, systemctl reload must be called."""
@@ -140,17 +141,24 @@ class TestMainReloadsAfterDone:
         systemctl_calls = [
             c
             for c in mock_run.call_args_list
-            if len(c.args) > 0 and len(c.args[0]) >= 2 and c.args[0][0] == "systemctl" and c.args[0][1] == "reload"
+            if len(c.args) > 0
+            and len(c.args[0]) >= 2
+            and c.args[0][0] == "sudo"
+            and "systemctl" in c.args[0]
+            and "reload" in c.args[0]
         ]
         assert len(systemctl_calls) >= 1, (
-            f"Expected at least one 'systemctl reload' call after DONE, got none. All calls: {mock_run.call_args_list}"
+            f"Expected at least one 'sudo -n systemctl reload' call after DONE, got none. All calls: {mock_run.call_args_list}"
         )
         assert systemctl_calls[0].args[0] == [
+            "sudo",
+            "-n",
             "systemctl",
             "reload",
             "just-ralph-it.service",
         ]
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_systemctl_reload_called_after_opencode(self, mock_run):
         """systemctl reload must be called AFTER opencode finishes."""
@@ -161,7 +169,7 @@ class TestMainReloadsAfterDone:
         all_calls = mock_run.call_args_list
 
         opencode_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "opencode"]
-        systemctl_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "systemctl"]
+        systemctl_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "sudo"]
 
         assert len(opencode_indices) >= 1
         assert len(systemctl_indices) >= 1
@@ -170,6 +178,7 @@ class TestMainReloadsAfterDone:
             f"AFTER 'opencode' (index {opencode_indices[0]})"
         )
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_no_reload_on_human_needed(self, mock_run):
         """systemctl reload should NOT be called when result is HUMAN_NEEDED."""
@@ -177,11 +186,12 @@ class TestMainReloadsAfterDone:
 
         main()
 
-        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "systemctl"]
+        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "sudo"]
         assert len(systemctl_calls) == 0, (
             f"systemctl reload should NOT be called on HUMAN_NEEDED, but was called {len(systemctl_calls)} time(s)"
         )
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_no_reload_on_new_blocker(self, mock_run):
         """systemctl reload should NOT be called when result is NEW_BLOCKER."""
@@ -189,7 +199,7 @@ class TestMainReloadsAfterDone:
 
         main()
 
-        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "systemctl"]
+        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "sudo"]
         assert len(systemctl_calls) == 0, (
             f"systemctl reload should NOT be called on NEW_BLOCKER, but was called {len(systemctl_calls)} time(s)"
         )
@@ -231,7 +241,7 @@ def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
             return _make_bd_ready_empty()
         elif args[:2] == ["bd", "update"]:
             return _make_claim_result()
-        elif args[0] == "systemctl":
+        elif args[0] == "sudo" and "systemctl" in args:
             return _make_systemctl_result()
         raise ValueError(f"Unexpected subprocess.run call: {args}")
 
@@ -378,7 +388,7 @@ class TestGracefulStop:
         main()
 
         # The first issue should have completed AND reload should have been called
-        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "systemctl"]
+        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "sudo"]
         assert len(systemctl_calls) == 1, (
             f"Expected systemctl reload to be called for the completed issue, got {len(systemctl_calls)} call(s)"
         )

@@ -73,7 +73,7 @@ def _make_one_issue_side_effect():
             return _make_claim_result()
         elif args[0] == "opencode":
             return _make_opencode_result()
-        elif args[0] == "systemctl":
+        elif args[0] == "sudo" and "systemctl" in args:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
         raise ValueError(f"Unexpected subprocess.run call: {args}")
 
@@ -88,6 +88,7 @@ def _make_one_issue_side_effect():
 class TestMainClaimsIssueBeforeRunningOpencode:
     """Verify that `bd update <id> --claim` is called BEFORE spawning opencode."""
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_main_claims_issue_before_running_opencode(self, mock_run):
         """bd update --claim must be called after getting an issue and before opencode."""
@@ -128,6 +129,7 @@ class TestMainClaimsIssueBeforeRunningOpencode:
 class TestMainClaimsIssueWithCorrectId:
     """Verify the correct issue ID is passed to `bd update <id> --claim`."""
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_main_claims_issue_with_correct_id(self, mock_run):
         """The issue ID from get_next_ready_issue() must be passed to bd update --claim."""
@@ -160,6 +162,7 @@ class TestMainClaimsIssueWithCorrectId:
 class TestMainAbortsIfClaimFails:
     """Verify that if `bd update --claim` raises CalledProcessError, main handles it."""
 
+    @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.run")
     def test_main_aborts_if_claim_fails(self, mock_run):
         """If bd update --claim fails (check=True raises), opencode must NOT be called."""
