@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 import markdown
 import requests
@@ -26,6 +27,7 @@ from .sse import publish, subscribe, unsubscribe
 bp = Blueprint("main", __name__)
 
 ralph_processes = {}  # slug -> subprocess.Popen
+STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 
 
 @bp.route("/")
@@ -427,13 +429,21 @@ def ralph_start(slug):
         except Exception:
             pass
         # Determine exit reason from last stdout line
-        reason = "all_done" if last_line == "NO MORE ISSUES LEFT" else "human_needed"
+        if last_line == "NO MORE ISSUES LEFT":
+            reason = "all_done"
+        elif last_line == "Stopping as requested.":
+            reason = "stopped"
+        else:
+            reason = "human_needed"
         publish(slug, "ralph_stopped", {"reason": reason})
         from .push import send_push_notification
 
-        push_message = (
-            "Ralph is done building your project." if reason == "all_done" else "Ralph is blocked and needs your help."
-        )
+        if reason == "all_done":
+            push_message = "Ralph is done building your project."
+        elif reason == "stopped":
+            push_message = "Ralph was stopped. Click Continue to resume."
+        else:
+            push_message = "Ralph is blocked and needs your help."
         send_push_notification(slug, push_message, db_path, vapid_private_key_path, vapid_claims_email)
         ralph_processes.pop(slug, None)
 
@@ -441,6 +451,23 @@ def ralph_start(slug):
     t.start()
 
     return {"status": "started"}, 200
+
+
+@bp.route("/projects/<slug>/ralph/stop", methods=["POST"])
+def ralph_stop(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    if project["ralph_running"] != 1:
+        return {"error": "ralph not running"}, 409
+
+    STOP_FILE.touch()
+    publish(slug, "ralph_stopping", {})
+
+    return {"status": "stopping"}, 200
 
 
 @bp.route("/projects/<slug>/ralph/output")

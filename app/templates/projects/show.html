@@ -31,6 +31,8 @@
             <button id="just-ralph-it-btn" onclick="startRalph()" 
                     style="display: none; background: #4caf50; color: white; border: none; padding: 0.75rem 1.5rem; cursor: pointer; font-family: monospace; font-size: 1.1em; border-radius: 4px;">Just Ralph It</button>
             <div id="ralph-status" style="display: none; color: #ff9800; padding: 0.5rem;">Ralph is building...</div>
+            <button id="ralph-stop-btn"
+                    style="display: none; background: #f44336; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;" onclick="stopRalph()">Stop</button>
         </div>
     </div>
 
@@ -257,11 +259,17 @@ function connectInternalSSE() {
             } else if (data.type === 'ralph_started') {
                 document.getElementById('just-ralph-it-btn').style.display = 'none';
                 document.getElementById('ralph-status').style.display = '';
+                document.getElementById('ralph-status').textContent = 'Ralph is building...';
+                document.getElementById('ralph-stop-btn').style.display = '';
                 RALPH_RUNNING = 1;
                 connectRalphOutput();
                 switchTab('terminal');
+            } else if (data.type === 'ralph_stopping') {
+                document.getElementById('ralph-stop-btn').style.display = 'none';
+                document.getElementById('ralph-status').textContent = 'Ralph is stopping...';
             } else if (data.type === 'ralph_stopped') {
                 document.getElementById('ralph-status').style.display = 'none';
+                document.getElementById('ralph-stop-btn').style.display = 'none';
                 RALPH_RUNNING = 0;
                 var reason = data.data && data.data.reason;
                 if (reason === 'all_done') {
@@ -271,6 +279,8 @@ function connectInternalSSE() {
                     doneDiv.style.marginTop = '1rem';
                     doneDiv.style.fontWeight = 'bold';
                     terminal.appendChild(doneDiv);
+                } else if (reason === 'stopped') {
+                    document.getElementById('just-ralph-it-btn').style.display = '';
                 } else if (reason === 'human_needed') {
                     renderMessage('assistant', 'Ralph is blocked \u2014 check the Issues tab');
                     switchTab('issues');
@@ -325,6 +335,12 @@ function startRalph() {
     });
 }
 
+function stopRalph() {
+    document.getElementById('ralph-stop-btn').style.display = 'none';
+    document.getElementById('ralph-status').textContent = 'Ralph is stopping...';
+    fetch('/projects/' + SLUG + '/ralph/stop', { method: 'POST' });
+}
+
 function connectRalphOutput() {
     var terminal = document.getElementById('terminal-content');
     terminal.innerHTML = '';
@@ -348,6 +364,7 @@ connectInternalSSE();
 
 if (RALPH_RUNNING) {
     document.getElementById('ralph-status').style.display = '';
+    document.getElementById('ralph-stop-btn').style.display = '';
     connectRalphOutput();
 }
 

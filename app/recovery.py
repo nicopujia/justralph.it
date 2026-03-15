@@ -52,9 +52,15 @@ def recover_processes(app):
                 routes.ralph_processes[slug] = process
 
                 def _watch_ralph(process=process, slug=slug):
+                    last_line = ""
                     if process.stdout:
-                        for _ in process.stdout:
-                            pass
+                        for raw_line in process.stdout:
+                            decoded = (
+                                raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+                            )
+                            stripped = decoded.strip()
+                            if stripped:
+                                last_line = stripped
                     rc = process.wait()
                     if not isinstance(rc, int):
                         return
@@ -70,7 +76,13 @@ def recover_processes(app):
                         conn.close()
                     except Exception:
                         pass
-                    publish(slug, "ralph_stopped", {})
+                    if last_line == "NO MORE ISSUES LEFT":
+                        reason = "all_done"
+                    elif last_line == "Stopping as requested.":
+                        reason = "stopped"
+                    else:
+                        reason = "human_needed"
+                    publish(slug, "ralph_stopped", {"reason": reason})
                     routes.ralph_processes.pop(slug, None)
 
                 t = threading.Thread(target=_watch_ralph, daemon=True)
