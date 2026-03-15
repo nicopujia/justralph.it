@@ -16,7 +16,7 @@ Web app (runs on a single VPS that also executes Ralph loops).
 
 ## Constraints
 
-- Coding agent: headless opencode (already installed at `~/.npm-global/bin/opencode`)
+- Coding agent: headless opencode (already installed at `~/.npm-global/bin/opencode`), using Kimi K2 Thinking via OpenCode Zen
 - Ralph loop: based on existing `ralph.py` in this repo
 - Issue tracking: beads (`bd`) — already initialized
 - Auth: GitHub App (not OAuth); must have repo read/write permissions for creating repos and pushing code
