@@ -1,3 +1,4 @@
+import argparse
 import json
 import subprocess
 from typing import Any
@@ -12,16 +13,35 @@ class Results:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Ralph Wiggum technique automation")
+    parser.add_argument(
+        "--one",
+        action="store_true",
+        help="Run only one iteration instead of looping until all issues are done",
+    )
+    parser.add_argument(
+        "--issue",
+        type=str,
+        help="Specify a particular issue ID to work on (e.g., bd-42)",
+    )
+    args = parser.parse_args()
+
     while True:
-        issue = get_next_ready_issue()
+        if args.issue:
+            issue = get_issue_by_id(args.issue)
+        else:
+            issue = get_next_ready_issue()
 
         if not issue:
-            print(Results.ALL_DONE)
+            if args.issue:
+                print(f"Error: Issue {args.issue} not found")
+            else:
+                print(Results.ALL_DONE)
             break
 
         subprocess.run(["bd", "update", issue["id"], "--claim"], check=True)
 
-        args = [
+        opencode_args = [
             "opencode",
             "run",
             get_prompt(issue["id"], "human"),
@@ -30,7 +50,7 @@ def main():
             "--model",
             "anthropic/claude-opus-4-6",
         ]
-        result = subprocess.run(args, capture_output=True, text=True)
+        result = subprocess.run(opencode_args, capture_output=True, text=True)
         print(result.stdout)
 
         result_xml = result.stdout.split("\n")[-1].strip()
@@ -38,6 +58,8 @@ def main():
 
         if result_msg == Results.DONE:
             reload_production()
+            if args.one or args.issue:
+                break
             continue
         elif result_msg == Results.HUMAN_NEEDED:
             break
@@ -66,6 +88,16 @@ def get_next_ready_issue() -> dict[str, Any] | None:
         return
 
     return ready_issues[0]
+
+
+def get_issue_by_id(issue_id: str) -> dict[str, Any] | None:
+    """Get a specific issue by its ID."""
+    bd_result = subprocess.run(["bd", "show", issue_id, "--json"], capture_output=True, text=True)
+
+    if bd_result.returncode != 0:
+        return
+
+    return json.loads(bd_result.stdout) if bd_result.stdout.strip() else None
 
 
 def get_prompt(issue_id: str, username: str) -> str:
