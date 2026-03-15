@@ -2,13 +2,32 @@ import argparse
 import json
 import logging
 import subprocess
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+LOG_DIR = Path.home() / "projects" / "just-ralph-it" / "logs"
+LOG_FILE = LOG_DIR / "ralph.log"
+STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
+
 logger = logging.getLogger(__name__)
 
-STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
+
+def setup_logging():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    stdout_handler = logging.StreamHandler()
+    stdout_handler.setFormatter(fmt)
+
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
+    file_handler.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(stdout_handler)
+    root.addHandler(file_handler)
 
 
 class Results:
@@ -20,6 +39,7 @@ class Results:
 
 
 def main():
+    setup_logging()
     parser = argparse.ArgumentParser(description="Ralph Wiggum technique automation")
     parser.add_argument(
         "--one",
