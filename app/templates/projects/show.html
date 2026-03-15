@@ -25,7 +25,8 @@
                 <p style="color: #888;">AGENTS.md content will appear here.</p>
             </div>
             <div id="issues-content" style="display: none;">
-                <p style="color: #888;">Beads issues will appear here.</p>
+                <p id="issues-placeholder" style="color: #888;">Continue chatting to let Ralphy create the spec</p>
+                <div id="issues-list"></div>
             </div>
             <div id="terminal-content" style="display: none; font-family: monospace; background: #111; padding: 1rem; border-radius: 4px; color: #0f0; min-height: 200px;">
                 <p>Ralph stdout will appear here.</p>
@@ -35,6 +36,8 @@
 </div>
 
 <script>
+var BDUI_PORT = {{ project["bdui_port"] | default(0, true) }};
+
 function switchTab(tab) {
     var tabs = ['spec', 'issues', 'terminal'];
     for (var i = 0; i < tabs.length; i++) {
@@ -51,5 +54,104 @@ function switchTab(tab) {
         }
     }
 }
+
+/* Issues tab: connect to bdui WebSocket and render issues */
+(function() {
+    if (!BDUI_PORT) return;
+
+    var issues = {};
+    var listEl = document.getElementById('issues-list');
+    var placeholderEl = document.getElementById('issues-placeholder');
+    var subId = 'issues-sub-' + Date.now();
+    var ws;
+    var reconnectDelay = 1000;
+
+    function statusLabel(status) {
+        if (status === 'open') return 'OPEN';
+        if (status === 'in_progress') return 'IN PROGRESS';
+        if (status === 'closed') return 'COMPLETED';
+        return status ? status.toUpperCase() : 'UNKNOWN';
+    }
+
+    function statusColor(status) {
+        if (status === 'open') return '#888';
+        if (status === 'in_progress') return '#ff9800';
+        if (status === 'closed') return '#4caf50';
+        return '#888';
+    }
+
+    function renderIssues() {
+        var ids = Object.keys(issues);
+        if (ids.length === 0) {
+            placeholderEl.style.display = '';
+            listEl.innerHTML = '';
+            return;
+        }
+        placeholderEl.style.display = 'none';
+        var html = '';
+        ids.forEach(function(id) {
+            var issue = issues[id];
+            var color = statusColor(issue.status);
+            var label = statusLabel(issue.status);
+            var priority = issue.priority !== undefined ? 'P' + issue.priority : '';
+            html += '<div style="padding: 0.5rem 0; border-bottom: 1px solid #333;">';
+            html += '<span style="color: ' + color + '; font-weight: bold;">[' + label + ']</span> ';
+            if (priority) html += '<span style="color: #666;">' + priority + '</span> ';
+            html += '<span>' + (issue.title || issue.id) + '</span>';
+            html += ' <span style="color: #555; font-size: 0.85em;">' + issue.id + '</span>';
+            if (issue.assignee) html += ' <span style="color: #666; font-size: 0.85em;">@ ' + issue.assignee + '</span>';
+            html += '</div>';
+        });
+        listEl.innerHTML = html;
+    }
+
+    function connect() {
+        var wsUrl = 'ws://' + window.location.hostname + ':' + BDUI_PORT + '/ws';
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function() {
+            reconnectDelay = 1000;
+            ws.send(JSON.stringify({
+                id: subId,
+                type: 'subscribe-list',
+                payload: { id: subId, type: 'all-issues' }
+            }));
+        };
+
+        ws.onmessage = function(event) {
+            var msg;
+            try { msg = JSON.parse(event.data); } catch(e) { return; }
+
+            if (msg.type === 'snapshot' && msg.payload && msg.payload.issues) {
+                issues = {};
+                msg.payload.issues.forEach(function(issue) {
+                    issues[issue.id] = issue;
+                });
+                renderIssues();
+            } else if (msg.type === 'upsert' && msg.payload && msg.payload.issue) {
+                issues[msg.payload.issue.id] = msg.payload.issue;
+                renderIssues();
+            } else if (msg.type === 'delete' && msg.payload && msg.payload.issue_id) {
+                delete issues[msg.payload.issue_id];
+                renderIssues();
+            } else if (msg.type === 'ping') {
+                ws.send(JSON.stringify({ id: msg.id, type: 'pong', payload: {} }));
+            }
+        };
+
+        ws.onclose = function() {
+            setTimeout(function() {
+                reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+                connect();
+            }, reconnectDelay);
+        };
+
+        ws.onerror = function() {
+            ws.close();
+        };
+    }
+
+    connect();
+})();
 </script>
 {% endblock %}

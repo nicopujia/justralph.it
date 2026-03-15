@@ -90,7 +90,7 @@ def find_available_port():
 def start_bdui(project_path, port):
     """Start a bdui sidecar process on the given port. Returns the Popen object."""
     return subprocess.Popen(
-        ["bdui", "start", "--port", str(port)],
+        ["bdui", "start", "--host", "0.0.0.0", "--port", str(port)],
         cwd=project_path,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
