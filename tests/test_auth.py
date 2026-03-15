@@ -77,6 +77,22 @@ class TestAuthGitHubRedirect:
         finally:
             _cleanup(db_fd, db_path)
 
+    def test_auth_github_scope_contains_repo_and_read_user(self):
+        """GET /auth/github redirect URL includes both 'repo' and 'read:user' scopes."""
+        app, db_path, db_fd = _make_app()
+        try:
+            client = app.test_client()
+            response = client.get("/auth/github")
+            location = response.headers["Location"]
+            qs = parse_qs(urlparse(location).query)
+            scope_value = qs["scope"][0]
+            # Scopes may be space-delimited, comma-delimited, or URL-encoded.
+            # Just verify both required scopes appear in the raw value.
+            assert "repo" in scope_value
+            assert "read:user" in scope_value or "read%3Auser" in scope_value
+        finally:
+            _cleanup(db_fd, db_path)
+
     def test_auth_github_stores_state_in_session(self):
         """GET /auth/github stores the OAuth state in the session."""
         app, db_path, db_fd = _make_app()
@@ -346,3 +362,53 @@ class TestIndexSignInLink:
             assert b"Sign in with GitHub" in response.data
         finally:
             _cleanup(db_fd, db_path)
+
+
+class TestLoadDotenvOverride:
+    """Verify that .env values override pre-existing OS environment variables."""
+
+    def test_dotenv_overrides_stale_env_var(self):
+        """load_dotenv(override=True) ensures .env wins over pre-set env vars.
+
+        Simulates the systemd EnvironmentFile scenario: a stale GITHUB_CLIENT_ID
+        is already in os.environ before load_dotenv runs. After importing the app
+        module (which calls load_dotenv at import time), the .env value must win.
+        """
+        import importlib
+
+        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+
+        # Read the real GITHUB_CLIENT_ID from .env
+        real_client_id = None
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith("GITHUB_CLIENT_ID="):
+                    real_client_id = line.strip().split("=", 1)[1]
+                    break
+        assert real_client_id is not None, ".env must contain GITHUB_CLIENT_ID"
+
+        stale_id = "Iv23liLbwSkcZh1rfD2Z"
+        assert stale_id != real_client_id, "stale ID must differ from real .env value"
+
+        # Set a stale value (simulating systemd EnvironmentFile)
+        original = os.environ.get("GITHUB_CLIENT_ID")
+        os.environ["GITHUB_CLIENT_ID"] = stale_id
+        import app as app_module
+
+        try:
+            # Re-import app module to re-run load_dotenv at module scope
+            importlib.reload(app_module)
+
+            # After reload, os.environ should have the .env value, not the stale one
+            assert os.environ["GITHUB_CLIENT_ID"] == real_client_id, (
+                f"Expected .env value '{real_client_id}' but got '{os.environ['GITHUB_CLIENT_ID']}'. "
+                "load_dotenv must be called with override=True."
+            )
+        finally:
+            # Restore original env
+            if original is None:
+                os.environ.pop("GITHUB_CLIENT_ID", None)
+            else:
+                os.environ["GITHUB_CLIENT_ID"] = original
+            # Reload again to restore clean state
+            importlib.reload(app_module)
