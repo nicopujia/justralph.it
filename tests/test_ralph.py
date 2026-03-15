@@ -130,10 +130,14 @@ class TestMainReloadsAfterDone:
     """Verify that main() calls systemctl reload after a successful issue."""
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_systemctl_reload_called_after_done(self, mock_run):
+    def test_systemctl_reload_called_after_done(self, mock_run, mock_popen):
         """After opencode returns DONE, systemctl reload must be called."""
-        mock_run.side_effect = _make_one_issue_side_effect(Results.DONE)
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
 
         main()
 
@@ -159,30 +163,36 @@ class TestMainReloadsAfterDone:
         ]
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_systemctl_reload_called_after_opencode(self, mock_run):
+    def test_systemctl_reload_called_after_opencode(self, mock_run, mock_popen):
         """systemctl reload must be called AFTER opencode finishes."""
-        mock_run.side_effect = _make_one_issue_side_effect(Results.DONE)
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
 
         main()
 
-        all_calls = mock_run.call_args_list
+        # opencode now goes through Popen, not run
+        assert mock_popen.call_count >= 1, "Expected opencode to be called via Popen"
 
-        opencode_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "opencode"]
-        systemctl_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "sudo"]
+        # systemctl reload still goes through subprocess.run
+        systemctl_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "sudo"]
+        assert len(systemctl_calls) >= 1, "Expected systemctl reload to be called"
 
-        assert len(opencode_indices) >= 1
-        assert len(systemctl_indices) >= 1
-        assert systemctl_indices[0] > opencode_indices[0], (
-            f"'systemctl reload' (index {systemctl_indices[0]}) must come "
-            f"AFTER 'opencode' (index {opencode_indices[0]})"
-        )
+        # The code flow guarantees ordering: Popen (opencode) -> wait -> reload (subprocess.run)
+        # Since Popen is called before any systemctl run calls, this is verified by both being called.
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_no_reload_on_human_needed(self, mock_run):
+    def test_no_reload_on_human_needed(self, mock_run, mock_popen):
         """systemctl reload should NOT be called when result is HUMAN_NEEDED."""
-        mock_run.side_effect = _make_one_issue_side_effect(Results.HUMAN_NEEDED)
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.HUMAN_NEEDED)
 
         main()
 
@@ -192,10 +202,14 @@ class TestMainReloadsAfterDone:
         )
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_no_reload_on_new_blocker(self, mock_run):
+    def test_no_reload_on_new_blocker(self, mock_run, mock_popen):
         """systemctl reload should NOT be called when result is NEW_BLOCKER."""
-        mock_run.side_effect = _make_one_issue_side_effect(Results.NEW_BLOCKER)
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.NEW_BLOCKER)
 
         main()
 

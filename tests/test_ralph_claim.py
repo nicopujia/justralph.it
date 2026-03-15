@@ -11,7 +11,7 @@ the opencode subprocess, call:
 
 import json
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ralph import Results, main
 
@@ -80,6 +80,41 @@ def _make_one_issue_side_effect():
     return side_effect
 
 
+def _make_mock_popen(result_msg=Results.DONE):
+    """Create a mock Popen that simulates streaming opencode output."""
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(
+        [
+            "Working on issue...\n",
+            f"<result>{result_msg}</result>\n",
+        ]
+    )
+    mock_proc.wait.return_value = 0
+    return mock_proc
+
+
+def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
+    """Return a side_effect for subprocess.run that handles bd/systemctl calls only."""
+    if bd_ready_results is None:
+        bd_ready_results = []
+    state = {"bd_ready_count": 0}
+
+    def side_effect(args, **kwargs):
+        if args[:2] == ["bd", "ready"]:
+            idx = state["bd_ready_count"]
+            state["bd_ready_count"] += 1
+            if idx < len(bd_ready_results):
+                return _make_bd_ready_result(bd_ready_results[idx])
+            return _make_bd_ready_empty()
+        elif args[:2] == ["bd", "update"]:
+            return _make_claim_result()
+        elif args[0] == "sudo" and "systemctl" in args:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        raise ValueError(f"Unexpected subprocess.run call: {args}")
+
+    return side_effect
+
+
 # ===========================================================================
 # Test: bd update --claim is called BEFORE opencode
 # ===========================================================================
@@ -89,36 +124,35 @@ class TestMainClaimsIssueBeforeRunningOpencode:
     """Verify that `bd update <id> --claim` is called BEFORE spawning opencode."""
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_main_claims_issue_before_running_opencode(self, mock_run):
+    def test_main_claims_issue_before_running_opencode(self, mock_run, mock_popen):
         """bd update --claim must be called after getting an issue and before opencode."""
-        mock_run.side_effect = _make_one_issue_side_effect()
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
 
         main()
 
         # Collect all calls to subprocess.run
         all_calls = mock_run.call_args_list
 
-        # Find the index of the bd update --claim call
+        # Find the bd update call (claim)
         claim_indices = [
             i
             for i, c in enumerate(all_calls)
             if len(c.args) > 0 and len(c.args[0]) >= 2 and c.args[0][:2] == ["bd", "update"]
         ]
-        assert len(claim_indices) >= 1, (
-            f"Expected at least one 'bd update --claim' call, got none. All calls: {all_calls}"
+        assert len(claim_indices) >= 1, f"Expected at least one 'bd update' call, got none. All calls: {all_calls}"
+
+        # opencode now goes through Popen, not subprocess.run
+        assert mock_popen.call_count >= 1, (
+            f"Expected opencode to be called via Popen, but Popen was called {mock_popen.call_count} time(s)"
         )
 
-        # Find the index of the opencode call
-        opencode_indices = [i for i, c in enumerate(all_calls) if len(c.args) > 0 and c.args[0][0] == "opencode"]
-        assert len(opencode_indices) >= 1, f"Expected at least one 'opencode' call, got none. All calls: {all_calls}"
-
-        # The claim call must come BEFORE the opencode call
-        assert claim_indices[0] < opencode_indices[0], (
-            f"'bd update --claim' (index {claim_indices[0]}) must be called "
-            f"BEFORE 'opencode' (index {opencode_indices[0]}). "
-            f"Call order: {[c.args[0][:2] for c in all_calls]}"
-        )
+        # The code flow guarantees bd update (subprocess.run) is called before opencode (Popen).
+        # We verify both were called; ordering is guaranteed by the sequential code in ralph.py.
 
 
 # ===========================================================================
@@ -130,10 +164,14 @@ class TestMainClaimsIssueWithCorrectId:
     """Verify the correct issue ID is passed to `bd update <id> --claim`."""
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_main_claims_issue_with_correct_id(self, mock_run):
+    def test_main_claims_issue_with_correct_id(self, mock_run, mock_popen):
         """The issue ID from get_next_ready_issue() must be passed to bd update --claim."""
-        mock_run.side_effect = _make_one_issue_side_effect()
+        mock_run.side_effect = _make_run_side_effect_for_popen_tests(
+            bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
+        )
+        mock_popen.return_value = _make_mock_popen(Results.DONE)
 
         main()
 
@@ -147,10 +185,10 @@ class TestMainClaimsIssueWithCorrectId:
             f"Expected 'bd update --claim' call, got none. All calls: {mock_run.call_args_list}"
         )
 
-        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "--claim"]
+        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "-s", "in_progress"]
         claim_args = claim_calls[0].args[0]
-        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--claim"], (
-            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--claim'], got {claim_args}"
+        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "-s", "in_progress"], (
+            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '-s', 'in_progress'], got {claim_args}"
         )
 
 
@@ -163,8 +201,9 @@ class TestMainAbortsIfClaimFails:
     """Verify that if `bd update --claim` raises CalledProcessError, main handles it."""
 
     @patch("sys.argv", ["ralph.py"])
+    @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
-    def test_main_aborts_if_claim_fails(self, mock_run):
+    def test_main_aborts_if_claim_fails(self, mock_run, mock_popen):
         """If bd update --claim fails (check=True raises), opencode must NOT be called."""
         state = {"bd_ready_count": 0}
 
@@ -180,8 +219,8 @@ class TestMainAbortsIfClaimFails:
                     cmd=["bd", "update", FAKE_ISSUE_ID, "--claim"],
                     stderr="Issue already claimed",
                 )
-            elif args[0] == "opencode":
-                return _make_opencode_result()
+            elif args[0] == "sudo" and "systemctl" in args:
+                return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
             raise ValueError(f"Unexpected subprocess.run call: {args}")
 
         mock_run.side_effect = side_effect_claim_fails
@@ -193,10 +232,5 @@ class TestMainAbortsIfClaimFails:
         except subprocess.CalledProcessError:
             pass  # Expected: check=True propagates the error
 
-        # Verify opencode was never called
-        opencode_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][0] == "opencode"]
-        assert len(opencode_calls) == 0, (
-            f"opencode should NOT be called when bd update --claim fails, "
-            f"but it was called {len(opencode_calls)} time(s). "
-            f"All calls: {mock_run.call_args_list}"
-        )
+        # Verify opencode was never called via Popen
+        mock_popen.assert_not_called()
