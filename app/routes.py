@@ -1,6 +1,6 @@
 import json
 
-from flask import Blueprint, Response, redirect, render_template, request, session
+from flask import Blueprint, Response, abort, redirect, render_template, request, session
 
 from .models import get_db
 from .projects import create_project, validate_repo_name
@@ -54,6 +54,17 @@ def new_project_submit():
         )
 
     return redirect(f"/projects/{result['slug']}")
+
+
+@bp.route("/projects/<slug>")
+def show_project(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    return render_template("projects/show.html", project=project)
 
 
 @bp.route("/health")
