@@ -444,7 +444,8 @@ if (RALPH_RUNNING) {
     }
 
     function connect() {
-        var wsUrl = 'ws://' + window.location.hostname + ':' + BDUI_PORT + '/ws';
+        var wsProto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+        var wsUrl = wsProto + '//' + window.location.host + '/projects/' + SLUG + '/bdui/ws';
         ws = new WebSocket(wsUrl);
 
         ws.onopen = function() {

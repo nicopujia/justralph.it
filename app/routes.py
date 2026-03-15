@@ -10,9 +10,10 @@ from pathlib import Path
 
 import markdown
 import requests
+import websocket as websocket_client
 from flask import Blueprint, Response, abort, current_app, redirect, render_template, request, session
 
-from . import PROJECT_ROOT
+from . import PROJECT_ROOT, sock
 from .models import get_db
 from .projects import (
     create_project,
@@ -28,6 +29,9 @@ bp = Blueprint("main", __name__)
 
 ralph_processes = {}  # slug -> subprocess.Popen
 STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
+
+# Read-only WebSocket message types allowed through the bdui proxy
+ALLOWED_WS_TYPES = {"subscribe-list", "unsubscribe-list", "pong"}
 
 
 @bp.route("/")
@@ -489,3 +493,57 @@ def ralph_output(slug):
         yield "data: [DONE]\n\n"
 
     return Response(stream(), mimetype="text/event-stream")
+
+
+@sock.route("/projects/<slug>/bdui/ws")
+def bdui_ws_proxy(ws, slug):
+    """WebSocket proxy to bdui — only forwards read-only messages from client to bdui."""
+    if not session.get("user"):
+        ws.close(reason="unauthorized")
+        return
+
+    db = get_db()
+    project = db.execute("SELECT bdui_port FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if not project or not project["bdui_port"]:
+        ws.close(reason="not found")
+        return
+
+    port = project["bdui_port"]
+
+    backend_ws = websocket_client.WebSocket()
+    backend_ws.connect(f"ws://127.0.0.1:{port}/ws")
+
+    closed = threading.Event()
+
+    def forward_from_backend():
+        try:
+            while not closed.is_set():
+                data = backend_ws.recv()
+                if data:
+                    ws.send(data)
+        except Exception:
+            closed.set()
+
+    t = threading.Thread(target=forward_from_backend, daemon=True)
+    t.start()
+
+    try:
+        while not closed.is_set():
+            data = ws.receive(timeout=30)
+            if data is None:
+                break
+            # Filter: only allow read-only message types
+            try:
+                msg = json.loads(data)
+                if msg.get("type") in ALLOWED_WS_TYPES:
+                    backend_ws.send(data)
+            except (json.JSONDecodeError, KeyError):
+                pass  # Drop malformed messages
+    except Exception:
+        pass
+    finally:
+        closed.set()
+        try:
+            backend_ws.close()
+        except Exception:
+            pass

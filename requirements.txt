@@ -1,4 +1,5 @@
 flask
+flask-sock
 python-dotenv
 ruff
 pytest
@@ -8,3 +9,4 @@ requests
 markdown
 gunicorn
 pywebpush
+websocket-client

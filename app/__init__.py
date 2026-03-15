@@ -2,10 +2,13 @@ import os
 
 from dotenv import load_dotenv
 from flask import Flask
+from flask_sock import Sock
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
+sock = Sock()
 
 
 def create_app(test_config=None):
@@ -39,6 +42,7 @@ def create_app(test_config=None):
     models.init_app(app)
     app.register_blueprint(routes.bp)
     app.register_blueprint(auth.bp)
+    sock.init_app(app)
 
     recover_processes(app)
 
