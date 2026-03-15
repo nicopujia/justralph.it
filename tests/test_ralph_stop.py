@@ -192,13 +192,13 @@ class TestRalphStopSuccess:
 
 
 class TestRalphStoppedReasonDetection:
-    """When ralph.py exits with 'Stopping as requested.', reason should be 'stopped'."""
+    """When ralph.py exits with 'STOPPING AS REQUESTED', reason should be 'stopped'."""
 
     @patch("app.routes.subprocess.Popen")
     def test_stopped_reason_when_stop_message(self, mock_popen):
-        """When stdout last line is 'Stopping as requested.', ralph_stopped event has reason='stopped'."""
+        """When stdout last line is 'STOPPING AS REQUESTED', ralph_stopped event has reason='stopped'."""
         mock_process = MagicMock()
-        mock_process.stdout = iter([b"Working...\n", b"Stopping as requested.\n"])
+        mock_process.stdout = iter([b"Working...\n", b"STOPPING AS REQUESTED\n"])
         mock_process.wait.return_value = 0
         mock_process.returncode = 0
         mock_popen.return_value = mock_process

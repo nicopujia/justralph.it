@@ -95,13 +95,12 @@ def main():
 
 def setup_logging():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
 
     stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(fmt)
+    stdout_handler.setFormatter(logging.Formatter("%(message)s"))
 
     file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
-    file_handler.setFormatter(fmt)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)

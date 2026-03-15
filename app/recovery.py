@@ -78,7 +78,7 @@ def recover_processes(app):
                         pass
                     if last_line == "NO MORE ISSUES LEFT":
                         reason = "all_done"
-                    elif last_line == "Stopping as requested.":
+                    elif last_line == "STOPPING AS REQUESTED":
                         reason = "stopped"
                     else:
                         reason = "human_needed"
