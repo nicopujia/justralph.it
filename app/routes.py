@@ -491,6 +491,35 @@ def ralph_stop(slug):
     return {"status": "stopping"}, 200
 
 
+@bp.route("/projects/<slug>/ralph/force-stop", methods=["POST"])
+def ralph_force_stop(slug):
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    if project["ralph_running"] != 1:
+        return {"error": "ralph not running"}, 409
+
+    proc = ralph_processes.pop(slug, None)
+    if proc:
+        proc.kill()
+
+    subprocess.run(
+        "git reset --hard origin/main && git clean -fd",
+        shell=True,
+        cwd=project["vps_path"],
+    )
+
+    db.execute("UPDATE projects SET ralph_running = 0 WHERE slug = ?", (slug,))
+    db.commit()
+
+    publish(slug, "ralph_stopped", {"reason": "force_stopped", "message": "Force stopped and reset to origin"})
+
+    return {"status": "force_stopped"}, 200
+
+
 @bp.route("/projects/<slug>/ralph/output")
 def ralph_output(slug):
     if not session.get("user"):

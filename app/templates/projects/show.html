@@ -38,6 +38,27 @@
             </div>
         </form>
     </dialog>
+    <dialog id="force-stop-dialog">
+        <style>
+            #force-stop-dialog {
+                background: var(--bg-dialog);
+                color: var(--text-primary);
+                border: 1px solid var(--border-primary);
+                border-radius: 4px;
+                padding: 1.5rem;
+                font-family: monospace;
+                max-width: 400px;
+            }
+            #force-stop-dialog::backdrop {
+                background: var(--backdrop-bg);
+            }
+        </style>
+        <p style="margin-top: 0;">This will immediately kill Ralph and hard reset the repo to match origin. Any uncommitted changes will be lost. Are you sure?</p>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button type="button" onclick="document.getElementById('force-stop-dialog').close()" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-tertiary); padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;">Cancel</button>
+            <button type="button" onclick="confirmForceStop()" style="background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px; font-weight: bold;">Force Stop</button>
+        </div>
+    </dialog>
 </div>
 <div style="display: flex; gap: 1rem; height: calc(100vh - 4rem);">
     <!-- Chat Panel -->
@@ -63,6 +84,8 @@
             <div id="ralph-status" style="display: none; color: var(--color-warning); padding: 0.5rem;">Ralph is building...</div>
             <button id="ralph-stop-btn"
                     style="display: none; background: var(--color-delete); color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px;" onclick="stopRalph()">Stop</button>
+            <button id="ralph-force-stop-btn" onclick="forceStopRalph()"
+                    style="display: none; background: var(--color-delete); color: white; border: 2px solid white; padding: 0.5rem 1rem; cursor: pointer; font-family: monospace; border-radius: 4px; font-weight: bold;" >Force Stop</button>
         </div>
     </div>
 
@@ -291,15 +314,18 @@ function connectInternalSSE() {
                 document.getElementById('ralph-status').style.display = '';
                 document.getElementById('ralph-status').textContent = 'Ralph is building...';
                 document.getElementById('ralph-stop-btn').style.display = '';
+                document.getElementById('ralph-force-stop-btn').style.display = '';
                 RALPH_RUNNING = 1;
                 connectRalphOutput();
                 switchTab('terminal');
             } else if (data.type === 'ralph_stopping') {
                 document.getElementById('ralph-stop-btn').style.display = 'none';
+                document.getElementById('ralph-force-stop-btn').style.display = 'none';
                 document.getElementById('ralph-status').textContent = 'Ralph is stopping...';
             } else if (data.type === 'ralph_stopped') {
                 document.getElementById('ralph-status').style.display = 'none';
                 document.getElementById('ralph-stop-btn').style.display = 'none';
+                document.getElementById('ralph-force-stop-btn').style.display = 'none';
                 RALPH_RUNNING = 0;
                 var reason = data.data && data.data.reason;
                 if (reason === 'all_done') {
@@ -310,6 +336,14 @@ function connectInternalSSE() {
                     doneDiv.style.fontWeight = 'bold';
                     terminal.appendChild(doneDiv);
                 } else if (reason === 'stopped') {
+                    document.getElementById('just-ralph-it-btn').style.display = '';
+                } else if (reason === 'force_stopped') {
+                    var terminal = document.getElementById('terminal-content');
+                    var fsDiv = document.createElement('div');
+                    fsDiv.textContent = (data.data && data.data.message) || 'Force stopped and reset to origin';
+                    fsDiv.style.marginTop = '1rem';
+                    fsDiv.style.fontWeight = 'bold';
+                    terminal.appendChild(fsDiv);
                     document.getElementById('just-ralph-it-btn').style.display = '';
                 } else if (reason === 'human_needed') {
                     renderMessage('assistant', 'Ralph is blocked \u2014 check the Issues tab');
@@ -371,6 +405,18 @@ function stopRalph() {
     fetch('/projects/' + SLUG + '/ralph/stop', { method: 'POST' });
 }
 
+function forceStopRalph() {
+    document.getElementById('force-stop-dialog').showModal();
+}
+
+function confirmForceStop() {
+    document.getElementById('force-stop-dialog').close();
+    document.getElementById('ralph-force-stop-btn').style.display = 'none';
+    document.getElementById('ralph-stop-btn').style.display = 'none';
+    document.getElementById('ralph-status').textContent = 'Force stopping...';
+    fetch('/projects/' + SLUG + '/ralph/force-stop', { method: 'POST' });
+}
+
 function connectRalphOutput() {
     var terminal = document.getElementById('terminal-content');
     terminal.innerHTML = '';
@@ -395,6 +441,7 @@ connectInternalSSE();
 if (RALPH_RUNNING) {
     document.getElementById('ralph-status').style.display = '';
     document.getElementById('ralph-stop-btn').style.display = '';
+    document.getElementById('ralph-force-stop-btn').style.display = '';
     connectRalphOutput();
 }
 
