@@ -232,7 +232,7 @@ When building a project, create or update a concise README.md covering: (1) prer
 
 ### After UI or integration changes
 
-- Unit tests alone are NOT sufficient. You MUST also verify changes as a human would — in a real browser.
+- Unit tests alone are NOT sufficient. You MUST also verify changes as a human would — in a real browser, in [production](https://justralph.it).
 - Use the project's E2E test framework to simulate real user flows: click buttons, fill forms, navigate pages, and check what appears on screen.
 - Verify the happy path works end-to-end before closing any UI or integration issue.
 - Check for obvious visual or functional regressions.
