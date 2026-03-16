@@ -239,6 +239,7 @@ Besides, anything you do that is .gitignored or is outside the repo (e.g. system
 - Verify the happy path works end-to-end before closing any UI or integration issue.
 - Check for obvious visual or functional regressions.
 - Do NOT close an issue until browser-level verification passes.
+- Delete the repos you created during testing, but NEVER other repos.
 
 ### How to manage subagents
 
