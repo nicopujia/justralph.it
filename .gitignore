@@ -16,3 +16,4 @@ __pycache__/
 # Misc
 *.log
 logs/
+*.swp
