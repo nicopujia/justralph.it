@@ -214,6 +214,10 @@ def get_prompt(issue_id: str, username: str) -> str:
 - While always matching the specs, (1) AVOID human help and (2) do the SIMPLEST thing that could possibly work.
 - ALWAYS follow TDD principles. Exception: documentation (README, AGENTS.md, comments, etc.), system prompts, opencode config, and other non-code text files do not need automated tests — but you must manually verify they are correct and complete after changes. Do not write automated tests to verify documentation content, prompt content, or config values.
 
+### Documentation
+
+When building a project, create or update a concise README.md covering: (1) prerequisites, (2) environment variables in .env, (3) how to run locally, (4) how to run tests, (5) how to deploy. No fluff — only what's necessary for a fresh clone to work. Manually verify the README is accurate and complete.
+
 ### After UI or integration changes
 
 - Unit tests alone are NOT sufficient. You MUST also verify changes as a human would — in a real browser.
