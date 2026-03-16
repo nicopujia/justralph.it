@@ -1,7 +1,8 @@
 import os
 
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, redirect, session
 from flask_sock import Sock
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,6 +49,24 @@ def create_app(test_config=None):
     # Start background session compaction monitor (skip in tests)
     if not app.config.get("TESTING"):
         start_compaction_monitor(app)
+
+    @app.before_request
+    def check_session_activity():
+        user = session.get("user")
+        if user:
+            last_activity = session.get("last_activity")
+            if last_activity is None:
+                session["last_activity"] = datetime.utcnow().isoformat()
+            else:
+                try:
+                    last_activity = datetime.fromisoformat(last_activity)
+                    if datetime.utcnow() - last_activity > timedelta(days=30):
+                        session.clear()
+                        return redirect("/")
+                    else:
+                        session["last_activity"] = datetime.utcnow().isoformat()
+                except (ValueError, TypeError):
+                    session["last_activity"] = datetime.utcnow().isoformat()
 
     # Compute VAPID application server key from public key file (unless already set by test_config)
     if "VAPID_APPLICATION_SERVER_KEY" not in app.config:
