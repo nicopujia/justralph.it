@@ -212,7 +212,7 @@ def get_prompt(issue_id: str, username: str) -> str:
 
 - You have FULL ROOT and INTERNET ACCESS on this machine. Take advantage of it. Remind your subagents about it.
 - While always matching the specs, (1) AVOID human help and (2) do the SIMPLEST thing that could possibly work.
-- ALWAYS follow TDD principles. Exception: system prompts, opencode config, and other non-code text files do not need automated tests — but you must manually verify the behavior works after changes (e.g. send a test message to verify a prompt change). Do not write automated tests to verify prompt content or config values.
+- ALWAYS follow TDD principles. Exception: documentation (README, AGENTS.md, comments, etc.), system prompts, opencode config, and other non-code text files do not need automated tests — but you must manually verify they are correct and complete after changes. Do not write automated tests to verify documentation content, prompt content, or config values.
 
 ### How to manage subagents
 
