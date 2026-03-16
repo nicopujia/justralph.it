@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import markdown
@@ -29,6 +30,7 @@ from .subprocess_env import subprocess_env
 bp = Blueprint("main", __name__)
 
 ralph_processes = {}  # slug -> subprocess.Popen
+ralph_output_buffers = {}  # slug -> {"lines": list, "done": threading.Event}
 STOP_FILE = Path.home() / "projects" / "just-ralph-it" / ".stop"
 
 # Read-only WebSocket message types allowed through the bdui proxy
@@ -206,6 +208,39 @@ def sse_events(slug):
     return Response(stream(), mimetype="text/event-stream")
 
 
+@bp.route("/projects/<slug>/chat/init", methods=["POST"])
+def chat_init(slug):
+    """Auto-send the project description as the first message to Ralphy.
+
+    Called by the frontend on page load when first_message_sent=0.
+    This ensures Ralphy gets the description immediately after project creation
+    without waiting for the user to type something.
+    """
+    if not session.get("user"):
+        return redirect("/")
+    db = get_db()
+    project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
+    if project is None:
+        abort(404)
+    session_id = project["opencode_session_id"]
+    if not session_id:
+        return {"error": "no session"}, 400
+    if project["first_message_sent"]:
+        return {"status": "already_sent"}, 200
+
+    description = project["description"] or ""
+    opencode_url = current_app.config["OPENCODE_URL"]
+    if description:
+        requests.post(
+            f"{opencode_url}/session/{session_id}/prompt_async",
+            json={"parts": [{"type": "text", "text": description}], "agent": "RALPHY"},
+            timeout=10,
+        )
+    db.execute("UPDATE projects SET first_message_sent = 1 WHERE slug = ?", (slug,))
+    db.commit()
+    return {"status": "sent"}, 200
+
+
 @bp.route("/projects/<slug>/chat/history")
 def chat_history(slug):
     if not session.get("user"):
@@ -265,18 +300,6 @@ def chat_send(slug):
 
     opencode_url = current_app.config["OPENCODE_URL"]
 
-    # If first message hasn't been sent yet, send description first
-    if not project["first_message_sent"]:
-        description = project["description"] or ""
-        if description:
-            requests.post(
-                f"{opencode_url}/session/{session_id}/prompt_async",
-                json={"parts": [{"type": "text", "text": description}], "agent": "RALPHY"},
-                timeout=10,
-            )
-        db.execute("UPDATE projects SET first_message_sent = 1 WHERE slug = ?", (slug,))
-        db.commit()
-
     # Send the user's message (text + files in one request)
     requests.post(
         f"{opencode_url}/session/{session_id}/prompt_async",
@@ -301,24 +324,30 @@ def chat_events(slug):
     opencode_url = current_app.config["OPENCODE_URL"]
 
     def stream():
-        with requests.get(f"{opencode_url}/event", stream=True, timeout=None) as resp:
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                decoded = line.decode("utf-8") if isinstance(line, bytes) else line
-                if decoded.startswith("data: "):
-                    try:
-                        payload = json.loads(decoded[6:])
-                        # Filter: only pass events for this session
-                        event_session = payload.get("properties", {}).get("sessionID") or payload.get("sessionId")
-                        if event_session == session_id:
-                            yield f"{decoded}\n\n"
-                    except (json.JSONDecodeError, KeyError):
-                        # Non-JSON data lines or malformed — pass through keepalives
-                        pass
-                elif decoded.startswith(":"):
-                    # SSE comment/keepalive
-                    yield f"{decoded}\n\n"
+        try:
+            with requests.get(f"{opencode_url}/event", stream=True, timeout=(5, 30)) as resp:
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    decoded = line.decode("utf-8") if isinstance(line, bytes) else line
+                    if decoded.startswith("data: "):
+                        try:
+                            payload = json.loads(decoded[6:])
+                            # Filter: only pass events for this session
+                            event_session = payload.get("properties", {}).get("sessionID") or payload.get("sessionId")
+                            if event_session == session_id:
+                                yield f"{decoded}\n\n"
+                        except (json.JSONDecodeError, KeyError):
+                            # Non-JSON data lines or malformed — pass through keepalives
+                            pass
+                    elif decoded.startswith(":"):
+                        # SSE comment/keepalive
+                        yield f"{decoded}\n\n"
+        except GeneratorExit:
+            return
+        except Exception:
+            # Upstream timed out or connection lost — send keepalive comment and let client reconnect
+            yield ": keepalive\n\n"
 
     return Response(stream(), mimetype="text/event-stream")
 
@@ -408,6 +437,7 @@ def ralph_start(slug):
         stderr=subprocess.STDOUT,
         env=env,
     )
+    ralph_output_buffers[slug] = {"lines": [], "done": threading.Event()}
     ralph_processes[slug] = process
 
     publish(slug, "ralph_started", {})
@@ -420,13 +450,18 @@ def ralph_start(slug):
         # Drain stdout and capture the last two non-empty lines to detect exit reason
         prev_line = ""
         last_line = ""
+        buf = ralph_output_buffers.get(slug)
         if process.stdout:
             for raw_line in process.stdout:
                 decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
                 stripped = decoded.strip()
+                if buf is not None:
+                    buf["lines"].append(decoded.rstrip("\n"))
                 if stripped:
                     prev_line = last_line
                     last_line = stripped
+        if buf is not None:
+            buf["done"].set()
         rc = process.wait()
         # Only clean up if wait() returned a real exit code (int)
         if not isinstance(rc, int):
@@ -467,6 +502,7 @@ def ralph_start(slug):
             push_message = "Ralph is blocked and needs your help."
         send_push_notification(slug, push_message, db_path, vapid_private_key_path, vapid_claims_email)
         ralph_processes.pop(slug, None)
+        ralph_output_buffers.pop(slug, None)
 
     t = threading.Thread(target=_watch_ralph, daemon=True)
     t.start()
@@ -530,11 +566,22 @@ def ralph_output(slug):
         abort(404)
 
     def stream():
-        proc = ralph_processes.get(slug)
-        if proc and proc.stdout:
-            for line in proc.stdout:
-                decoded = line.decode("utf-8", errors="replace").rstrip("\n")
-                yield f"data: {decoded}\n\n"
+        buf = ralph_output_buffers.get(slug)
+        if not buf:
+            yield "data: [DONE]\n\n"
+            return
+        idx = 0
+        while True:
+            while idx < len(buf["lines"]):
+                yield f"data: {buf['lines'][idx]}\n\n"
+                idx += 1
+            if buf["done"].is_set():
+                # Drain any remaining lines added between check and set
+                while idx < len(buf["lines"]):
+                    yield f"data: {buf['lines'][idx]}\n\n"
+                    idx += 1
+                break
+            time.sleep(0.2)
         yield "data: [DONE]\n\n"
 
     return Response(stream(), mimetype="text/event-stream")

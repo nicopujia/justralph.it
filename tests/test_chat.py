@@ -8,7 +8,8 @@ Routes:
 - GET  /projects/<slug>/chat/events  — proxy opencode GET /event SSE, filter by session
 
 First-message behavior:
-- When first_message_sent=0, the description is auto-sent and the flag is set to 1.
+- POST /projects/<slug>/chat/init auto-sends the description and sets first_message_sent=1.
+- POST /projects/<slug>/chat/send always sends exactly one request (never the description).
 
 Chat UI:
 - #chat-messages container, #chat-input field, #chat-send button
@@ -285,8 +286,8 @@ class TestChatSend:
             _cleanup(db_fd, db_path)
 
     @patch("app.routes.requests")
-    def test_first_message_sends_description(self, mock_requests):
-        """On first visit (first_message_sent=0), description is auto-sent."""
+    def test_first_message_sent_zero_still_sends_one_request(self, mock_requests):
+        """chat_send always sends exactly one request, even when first_message_sent=0."""
         app, db_path, db_fd = _make_app()
         try:
             _insert_project(
@@ -308,10 +309,132 @@ class TestChatSend:
 
             assert response.status_code == 204
 
-            # The description should have been sent (first call), then the user message
-            assert mock_requests.post.call_count == 2
+            # chat_send no longer sends the description; only the user message
+            assert mock_requests.post.call_count == 1
+        finally:
+            _cleanup(db_fd, db_path)
+
+
+# ===========================================================================
+# POST /projects/<slug>/chat/init
+# ===========================================================================
+
+
+class TestChatInit:
+    """POST /projects/<slug>/chat/init — auto-send project description."""
+
+    def test_unauthenticated_redirects(self):
+        """Unauthenticated POST redirects to /."""
+        app, db_path, db_fd = _make_app()
+        try:
+            client = app.test_client()
+            response = client.post("/projects/test-project/chat/init")
+            assert response.status_code == 302
+            assert response.headers["Location"] == "/"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_nonexistent_project_returns_404(self):
+        """Authenticated POST for nonexistent project returns 404."""
+        app, db_path, db_fd = _make_app()
+        try:
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/nonexistent/chat/init")
+            assert response.status_code == 404
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_returns_400_when_no_session_id(self):
+        """Returns 400 when opencode_session_id is None."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, opencode_session_id=None)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/test-project/chat/init")
+            assert response.status_code == 400
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_already_sent_returns_200(self):
+        """When first_message_sent=1, returns {"status": "already_sent"}."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, first_message_sent=1)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/test-project/chat/init")
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "already_sent"
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_sends_description_and_sets_flag(self, mock_requests):
+        """Sends description to opencode and sets first_message_sent=1."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(
+                db_path,
+                description="Build a todo app",
+                first_message_sent=0,
+            )
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_requests.post.return_value = mock_resp
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/test-project/chat/init")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "sent"
+
+            # Verify opencode was called with the description
+            mock_requests.post.assert_called_once()
+            call_url = mock_requests.post.call_args[0][0]
+            assert "/session/sess-abc-123/prompt_async" in call_url
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            assert len(body["parts"]) == 1
+            assert body["parts"][0]["type"] == "text"
+            assert body["parts"][0]["text"] == "Build a todo app"
+            assert body["agent"] == "RALPHY"
 
             # Verify first_message_sent was updated to 1
+            db = sqlite3.connect(db_path)
+            row = db.execute("SELECT first_message_sent FROM projects WHERE slug='test-project'").fetchone()
+            db.close()
+            assert row[0] == 1
+        finally:
+            _cleanup(db_fd, db_path)
+
+    @patch("app.routes.requests")
+    def test_empty_description_sets_flag_without_sending(self, mock_requests):
+        """When description is empty, sets flag without calling opencode."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(
+                db_path,
+                description="",
+                first_message_sent=0,
+            )
+
+            client = app.test_client()
+            _auth_session(client)
+            response = client.post("/projects/test-project/chat/init")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "sent"
+
+            # opencode should NOT have been called
+            mock_requests.post.assert_not_called()
+
+            # But first_message_sent should still be set to 1
             db = sqlite3.connect(db_path)
             row = db.execute("SELECT first_message_sent FROM projects WHERE slug='test-project'").fetchone()
             db.close()
@@ -673,7 +796,7 @@ class TestChatSendWithFiles:
 
     @patch("app.routes.requests")
     def test_send_message_with_file_first_message(self, mock_requests):
-        """When first_message_sent=0, description is auto-sent, then file message."""
+        """When first_message_sent=0, chat_send sends only the user message with file."""
         app, db_path, db_fd = _make_app()
         try:
             _insert_project(
@@ -700,20 +823,12 @@ class TestChatSendWithFiles:
 
             assert response.status_code == 204
 
-            # Two calls: first the description, then the user message with file
-            assert mock_requests.post.call_count == 2
+            # Only one call: the user message with file (no description)
+            assert mock_requests.post.call_count == 1
 
-            # First call: description (text-only)
-            first_call = mock_requests.post.call_args_list[0]
-            first_body = first_call[1]["json"] if "json" in first_call[1] else first_call.kwargs["json"]
-            assert len(first_body["parts"]) == 1
-            assert first_body["parts"][0]["type"] == "text"
-            assert first_body["parts"][0]["text"] == "Build a todo app"
-
-            # Second call: user message + file
-            second_call = mock_requests.post.call_args_list[1]
-            second_body = second_call[1]["json"] if "json" in second_call[1] else second_call.kwargs["json"]
-            parts = second_body["parts"]
+            call_kwargs = mock_requests.post.call_args
+            body = call_kwargs[1]["json"] if "json" in call_kwargs[1] else call_kwargs.kwargs["json"]
+            parts = body["parts"]
 
             text_parts = [p for p in parts if p["type"] == "text"]
             file_parts = [p for p in parts if p["type"] == "file"]
@@ -724,11 +839,5 @@ class TestChatSendWithFiles:
             assert file_parts[0]["mime"] == "image/png"
             expected_b64 = base64.b64encode(png_data).decode()
             assert file_parts[0]["url"] == f"data:image/png;base64,{expected_b64}"
-
-            # Verify first_message_sent was updated to 1
-            db = sqlite3.connect(db_path)
-            row = db.execute("SELECT first_message_sent FROM projects WHERE slug='test-project'").fetchone()
-            db.close()
-            assert row[0] == 1
         finally:
             _cleanup(db_fd, db_path)

@@ -291,25 +291,24 @@ class TestRalphOutputStream:
         finally:
             _cleanup(db_fd, db_path)
 
+    @patch("app.routes.ralph_output_buffers", new_callable=dict)
     @patch("app.routes.ralph_processes", new_callable=dict)
-    def test_streams_stdout_lines_as_sse_data(self, mock_processes):
+    def test_streams_stdout_lines_as_sse_data(self, mock_processes, mock_buffers):
         """Streams Ralph stdout lines as SSE data events."""
+        import threading
+
         app, db_path, db_fd = _make_app()
         try:
             _insert_project(db_path, ralph_running=1)
 
-            # Simulate a mock process with stdout lines
-            mock_process = MagicMock()
-            mock_process.stdout.__iter__ = MagicMock(
-                return_value=iter(
-                    [
-                        b"Processing issue #1\n",
-                        b"COMPLETED ASSIGNED ISSUE\n",
-                    ]
-                )
-            )
-            mock_process.poll.return_value = None  # still running
-            mock_processes["test-project"] = mock_process
+            # Simulate output via the shared buffer (no longer reads from proc.stdout directly)
+            done_event = threading.Event()
+            done_event.set()  # Mark as done so stream finishes
+            mock_buffers["test-project"] = {
+                "lines": ["Processing issue #1", "COMPLETED ASSIGNED ISSUE"],
+                "done": done_event,
+            }
+            mock_processes["test-project"] = MagicMock()
 
             client = app.test_client()
             _auth_session(client)

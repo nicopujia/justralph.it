@@ -255,9 +255,15 @@ function sendMessage() {
     updateFilePreview();
 }
 
+var chatEventSource = null;
 function connectChatSSE() {
     if (!SESSION_ID) return;
+    if (chatEventSource) {
+        chatEventSource.close();
+        chatEventSource = null;
+    }
     var evtSource = new EventSource('/projects/' + SLUG + '/chat/events');
+    chatEventSource = evtSource;
     evtSource.onmessage = function(event) {
         try {
             var data = JSON.parse(event.data);
@@ -275,11 +281,26 @@ function connectChatSSE() {
         } catch(e) {}
     };
     evtSource.onerror = function() {
+        evtSource.close();
+        chatEventSource = null;
         setTimeout(function() { connectChatSSE(); }, 3000);
     };
 }
 
-loadHistory();
+// Auto-send description as first message if not yet sent
+if (!FIRST_MSG_SENT && SESSION_ID) {
+    fetch('/projects/' + SLUG + '/chat/init', { method: 'POST' })
+        .then(function() {
+            FIRST_MSG_SENT = 1;
+            // Load history after init so Ralphy's response to the description may be included
+            loadHistory();
+        })
+        .catch(function() {
+            loadHistory();
+        });
+} else {
+    loadHistory();
+}
 connectChatSSE();
 setupDragAndDrop();
 
@@ -301,8 +322,14 @@ function switchTab(tab) {
 }
 
 /* Ralph launch: internal events SSE, start, output streaming */
+var internalEventSource = null;
 function connectInternalSSE() {
+    if (internalEventSource) {
+        internalEventSource.close();
+        internalEventSource = null;
+    }
     var evtSource = new EventSource('/internal/projects/' + SLUG + '/events');
+    internalEventSource = evtSource;
     evtSource.onmessage = function(event) {
         try {
             var data = JSON.parse(event.data);
@@ -353,6 +380,8 @@ function connectInternalSSE() {
         } catch(e) {}
     };
     evtSource.onerror = function() {
+        evtSource.close();
+        internalEventSource = null;
         setTimeout(function() { connectInternalSSE(); }, 3000);
     };
 }
