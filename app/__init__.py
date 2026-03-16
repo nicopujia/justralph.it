@@ -2,7 +2,7 @@ import os
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from flask import Flask, redirect, session
+from flask import Flask, redirect, request, session
 from flask_sock import Sock
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,6 +49,21 @@ def create_app(test_config=None):
     # Start background session compaction monitor (skip in tests)
     if not app.config.get("TESTING"):
         start_compaction_monitor(app)
+
+    @app.after_request
+    def add_hsts_header(response):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    @app.before_request
+    def redirect_to_https():
+        # Skip HTTPS redirect in testing or debug mode
+        if app.config.get("TESTING") or app.debug:
+            return None
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+        if forwarded_proto == "http" or (request.scheme == "http" and not forwarded_proto):
+            url = request.url.replace("http://", "https://", 1)
+            return redirect(url, code=301)
 
     @app.before_request
     def check_session_activity():

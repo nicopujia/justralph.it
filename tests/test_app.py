@@ -14,7 +14,7 @@ def test_app_creates():
 
 
 def test_index_unauthenticated_returns_200():
-    app = create_app()
+    app = create_app({"TESTING": True})
     client = app.test_client()
     response = client.get("/")
     assert response.status_code == 200
@@ -22,7 +22,7 @@ def test_index_unauthenticated_returns_200():
 
 def test_index_unauthenticated_shows_sign_in_button():
     """Unauthenticated user sees 'Sign in with GitHub' on the landing page."""
-    app = create_app()
+    app = create_app({"TESTING": True})
     client = app.test_client()
     response = client.get("/")
     assert b"Sign in with GitHub" in response.data
@@ -30,7 +30,7 @@ def test_index_unauthenticated_shows_sign_in_button():
 
 def test_index_authenticated_redirects_to_projects():
     """Authenticated user visiting '/' is redirected to /projects."""
-    app = create_app()
+    app = create_app({"TESTING": True})
     app.config["SECRET_KEY"] = "test-secret"
     client = app.test_client()
     with client.session_transaction() as sess:
@@ -42,7 +42,7 @@ def test_index_authenticated_redirects_to_projects():
 
 def test_index_unauthenticated_shows_app_description():
     """Landing page shows the app name and description."""
-    app = create_app()
+    app = create_app({"TESTING": True})
     client = app.test_client()
     response = client.get("/")
     assert b"justralph.it" in response.data
@@ -50,7 +50,7 @@ def test_index_unauthenticated_shows_app_description():
 
 
 def test_health_returns_ok():
-    app = create_app()
+    app = create_app({"TESTING": True})
     client = app.test_client()
     response = client.get("/health")
     assert response.status_code == 200
@@ -62,7 +62,7 @@ def test_health_returns_ok():
 
 def test_opencode_url_default():
     """App config has OPENCODE_URL set to the default value."""
-    app = create_app()
+    app = create_app({"TESTING": True})
     assert app.config["OPENCODE_URL"] == "http://127.0.0.1:4096"
 
 
@@ -77,7 +77,7 @@ def test_opencode_url_default_value():
     """The default for OPENCODE_URL is exactly http://127.0.0.1:4096."""
     env_backup = os.environ.pop("OPENCODE_URL", None)
     try:
-        app = create_app()
+        app = create_app({"TESTING": True})
         assert app.config["OPENCODE_URL"] == "http://127.0.0.1:4096"
     finally:
         if env_backup is not None:
@@ -269,7 +269,7 @@ def test_secret_key_missing_raises(monkeypatch):
     import pytest
 
     with pytest.raises(RuntimeError):
-        create_app()
+        create_app({"TESTING": False})
 
 
 def test_secret_key_dev_raises(monkeypatch):
@@ -278,7 +278,7 @@ def test_secret_key_dev_raises(monkeypatch):
     import pytest
 
     with pytest.raises(RuntimeError):
-        create_app()
+        create_app({"TESTING": False})
 
 
 def test_secret_key_from_env(monkeypatch):

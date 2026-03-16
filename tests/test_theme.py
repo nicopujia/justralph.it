@@ -60,7 +60,7 @@ class TestBaseTemplateLinksStylesheet:
     def test_base_html_has_stylesheet_link(self):
         """The rendered index page (which extends base.html) includes a
         <link> to /static/style.css."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         html = response.data.decode()
@@ -68,7 +68,7 @@ class TestBaseTemplateLinksStylesheet:
 
     def test_stylesheet_link_is_css_type(self):
         """The <link> tag uses rel="stylesheet"."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         html = response.data.decode()
@@ -87,13 +87,13 @@ class TestStyleCssFileExists:
 
     def test_style_css_file_exists(self):
         """app/static/style.css exists on disk."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         assert os.path.isfile(css_path), f"Expected {css_path} to exist"
 
     def test_style_css_contains_prefers_color_scheme(self):
         """app/static/style.css contains 'prefers-color-scheme'."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -110,7 +110,7 @@ class TestCssCustomProperties:
 
     def test_has_root_selector(self):
         """style.css contains a :root selector."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -118,7 +118,7 @@ class TestCssCustomProperties:
 
     def test_defines_bg_primary_variable(self):
         """style.css defines --bg-primary custom property."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -126,7 +126,7 @@ class TestCssCustomProperties:
 
     def test_defines_text_primary_variable(self):
         """style.css defines --text-primary custom property."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -143,7 +143,7 @@ class TestLightModeMediaQuery:
 
     def test_has_light_mode_media_query(self):
         """style.css has @media (prefers-color-scheme: light)."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -161,7 +161,7 @@ class TestAllPagesIncludeStylesheet:
 
     def test_index_page_includes_stylesheet(self):
         """GET / includes /static/style.css."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         html = response.data.decode()
@@ -230,7 +230,7 @@ class TestNoHardcodedDarkBackgrounds:
 
     def test_index_no_hardcoded_bg(self):
         """GET / has no hardcoded dark bg colors in inline styles."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         self._assert_no_hardcoded_bg_in_inline_styles(response.data.decode())
@@ -296,7 +296,7 @@ class TestNoHardcodedDarkTextColors:
 
     def test_index_no_hardcoded_text(self):
         """GET / has no hardcoded dark text colors in inline styles."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         self._assert_no_hardcoded_text_in_inline_styles(response.data.decode())
@@ -349,7 +349,7 @@ class TestBaseTemplateNoInlineHardcodedColors:
         """The rendered HTML from base.html should not have a <style> block
         containing hardcoded background or text colors like #1a1a1a or
         #e0e0e0."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         html = response.data.decode()

@@ -56,7 +56,7 @@ class TestContainerCssClass:
 
     def test_css_has_container_class(self):
         """style.css contains a .container selector."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -64,7 +64,7 @@ class TestContainerCssClass:
 
     def test_container_has_max_width(self):
         """The .container class defines max-width."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -72,7 +72,7 @@ class TestContainerCssClass:
 
     def test_container_has_margin_auto(self):
         """The .container class defines margin: 0 auto for centering."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         css_path = os.path.join(app.static_folder, "style.css")
         with open(css_path) as f:
             css = f.read()
@@ -89,7 +89,7 @@ class TestLandingPageContainer:
 
     def test_landing_page_has_container_div(self):
         """The landing page HTML contains <div class="container">."""
-        app = create_app()
+        app = create_app({"TESTING": True})
         client = app.test_client()
         response = client.get("/")
         html = response.data.decode()
