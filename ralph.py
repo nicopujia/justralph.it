@@ -226,6 +226,14 @@ def get_prompt(issue_id: str, username: str) -> str:
 - While always matching the specs, (1) AVOID human help and (2) do the SIMPLEST thing that could possibly work.
 - ALWAYS follow TDD principles. Exception: documentation (README, AGENTS.md, comments, etc.), system prompts, opencode config, and other non-code text files do not need automated tests — but you must manually verify they are correct and complete after changes. Do not write automated tests to verify documentation content, prompt content, or config values.
 
+### After UI or integration changes
+
+- Unit tests alone are NOT sufficient. You MUST also verify changes as a human would — in a real browser.
+- Use the project's E2E test framework to simulate real user flows: click buttons, fill forms, navigate pages, and check what appears on screen.
+- Verify the happy path works end-to-end before closing any UI or integration issue.
+- Check for obvious visual or functional regressions.
+- Do NOT close an issue until browser-level verification passes.
+
 ### How to manage subagents
 
 Tell them that:
