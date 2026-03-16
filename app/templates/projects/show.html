@@ -114,6 +114,7 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 var BDUI_PORT = {{ project["bdui_port"] | default(0, true) }};
 var SESSION_ID = '{{ project["opencode_session_id"] | default("", true) }}';
@@ -188,10 +189,12 @@ function renderMessage(role, text) {
     if (role === 'user') {
         div.style.background = 'var(--bg-user-msg)';
         div.style.textAlign = 'right';
+        div.textContent = text;
     } else {
         div.style.background = 'var(--bg-assistant-msg)';
+        div.className = 'markdown-message';
+        div.innerHTML = marked.parse(text);
     }
-    div.textContent = text;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
 }

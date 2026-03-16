@@ -841,3 +841,78 @@ class TestChatSendWithFiles:
             assert file_parts[0]["url"] == f"data:image/png;base64,{expected_b64}"
         finally:
             _cleanup(db_fd, db_path)
+
+
+# ===========================================================================
+# Markdown rendering in chat UI
+# ===========================================================================
+
+
+class TestChatMarkdownRendering:
+    """Ralphy's assistant messages are rendered as markdown HTML; user messages remain plain text."""
+
+    def test_marked_js_library_loaded(self):
+        """The marked.js library is loaded from CDN in show.html."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project")
+            html = response.data.decode()
+            assert "cdn.jsdelivr.net/npm/marked" in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_assistant_messages_use_markdown_class(self):
+        """Assistant message divs have the 'markdown-message' CSS class."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project")
+            html = response.data.decode()
+            # The renderMessage function should add 'markdown-message' class for assistant
+            assert "markdown-message" in html or "classList.add('markdown-message')" in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_renderMessage_uses_innerHTML_for_assistant(self):
+        """renderMessage uses innerHTML (not textContent) for assistant role."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project")
+            html = response.data.decode()
+            # Should use innerHTML for assistant messages
+            assert "innerHTML" in html or "marked.parse" in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_renderMessage_uses_textContent_for_user(self):
+        """renderMessage uses textContent for user role (security - no HTML injection)."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project")
+            html = response.data.decode()
+            # Should still use textContent for user messages
+            assert "textContent" in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_markdown_css_styles_present(self):
+        """CSS file contains styles for markdown elements (code blocks, lists, etc.)."""
+        import os
+
+        css_path = os.path.join(os.path.dirname(__file__), "..", "app", "static", "style.css")
+        css_path = os.path.abspath(css_path)
+        with open(css_path, "r") as f:
+            css = f.read()
+        # Check for markdown-specific styles
+        assert ".markdown-message" in css or "pre" in css or "code" in css

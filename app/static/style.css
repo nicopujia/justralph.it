@@ -67,3 +67,126 @@ a {
     max-width: 800px;
     margin: 0 auto;
 }
+
+/* Markdown message styling for Ralphy's chat responses */
+.markdown-message {
+    line-height: 1.5;
+}
+
+.markdown-message p {
+    margin: 0.5em 0;
+}
+
+.markdown-message p:first-child {
+    margin-top: 0;
+}
+
+.markdown-message p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-message h1,
+.markdown-message h2,
+.markdown-message h3,
+.markdown-message h4,
+.markdown-message h5,
+.markdown-message h6 {
+    margin: 0.75em 0 0.5em 0;
+    color: var(--text-primary);
+    font-weight: bold;
+}
+
+.markdown-message h1 { font-size: 1.4em; }
+.markdown-message h2 { font-size: 1.3em; }
+.markdown-message h3 { font-size: 1.2em; }
+.markdown-message h4 { font-size: 1.1em; }
+.markdown-message h5,
+.markdown-message h6 { font-size: 1em; }
+
+.markdown-message strong {
+    font-weight: bold;
+    color: var(--text-primary);
+}
+
+.markdown-message em {
+    font-style: italic;
+}
+
+.markdown-message code {
+    font-family: monospace;
+    background: var(--bg-secondary);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.markdown-message pre {
+    font-family: monospace;
+    background: var(--bg-terminal);
+    padding: 0.75rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+}
+
+.markdown-message pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.9em;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.markdown-message li {
+    margin: 0.25em 0;
+}
+
+.markdown-message a {
+    color: var(--color-link);
+    text-decoration: underline;
+}
+
+.markdown-message a:hover {
+    text-decoration: none;
+}
+
+.markdown-message blockquote {
+    border-left: 3px solid var(--color-accent);
+    background: var(--bg-secondary);
+    padding: 0.5em 0.75em;
+    margin: 0.5em 0;
+    border-radius: 0 4px 4px 0;
+}
+
+.markdown-message blockquote p {
+    margin: 0.25em 0;
+}
+
+.markdown-message table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+}
+
+.markdown-message th,
+.markdown-message td {
+    border: 1px solid var(--border-secondary);
+    padding: 0.5em;
+    text-align: left;
+}
+
+.markdown-message th {
+    background: var(--bg-secondary);
+    font-weight: bold;
+}
+
+.markdown-message hr {
+    border: none;
+    border-top: 1px solid var(--border-primary);
+    margin: 1em 0;
+}
