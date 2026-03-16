@@ -230,6 +230,8 @@ def get_prompt(issue_id: str, username: str) -> str:
 
 When building a project, create or update a concise README.md covering: (1) prerequisites, (2) environment variables in .env, (3) how to run locally, (4) how to run tests, (5) how to deploy. No fluff — only what's necessary for a fresh clone to work. Manually verify the README is accurate and complete.
 
+Besides, anything you do that is .gitignored or is outside the repo (e.g. systemd services), should be documented. That way, everything you do is reproducible.
+
 ### After UI or integration changes
 
 - Unit tests alone are NOT sufficient. You MUST also verify changes as a human would — in a real browser, in [production](https://justralph.it).
