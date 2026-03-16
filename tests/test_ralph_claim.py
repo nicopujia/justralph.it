@@ -1,14 +1,14 @@
-"""Tests for ralph.py claiming issues before running opencode (TDD).
+"""Tests for ralph.py setting issues to in_progress before running opencode (TDD).
 
-Bug: ralph.py never calls `bd update <id> --claim` before spawning the
-opencode agent, so issues stay in 'open' status instead of transitioning
-to 'in-progress'.
+The code in ralph.py calls `bd update <id> --status in_progress` before spawning the
+opencode agent, transitioning issues from 'open' to 'in-progress' status.
 
-Fix: Before get_next_ready_issue(), call get_in_progress_issue() to check
-for already in-progress work (resumes without claiming). For new issues,
-call:
-    subprocess.run(["bd", "update", issue["id"], "--claim"],
-                   capture_output=True, check=True)
+Flow:
+1. Check for already in-progress work with get_in_progress_issue() (resumes without updating).
+2. Get new issue with get_next_ready_issue().
+3. Call: subprocess.run(["bd", "update", issue["id"], "--status", "in_progress"],
+                       capture_output=True, check=True)
+4. Spawn opencode agent.
 """
 
 import json
@@ -37,9 +37,9 @@ def _make_bd_ready_result(issues):
 
 
 def _make_claim_result():
-    """Create a CompletedProcess mimicking a successful `bd update <id> --claim`."""
+    """Create a CompletedProcess mimicking a successful `bd update <id> --status in_progress`."""
     return subprocess.CompletedProcess(
-        args=["bd", "update", FAKE_ISSUE_ID, "--claim"],
+        args=["bd", "update", FAKE_ISSUE_ID, "--status", "in_progress"],
         returncode=0,
         stdout="",
         stderr="",
@@ -137,13 +137,13 @@ def _make_run_side_effect_for_popen_tests(bd_ready_results=None):
 
 
 class TestMainClaimsIssueBeforeRunningOpencode:
-    """Verify that `bd update <id> --claim` is called BEFORE spawning opencode."""
+    """Verify that `bd update <id> --status in_progress` is called BEFORE spawning opencode."""
 
     @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
     def test_main_claims_issue_before_running_opencode(self, mock_run, mock_popen):
-        """bd update --claim must be called after getting an issue and before opencode."""
+        """bd update --status in_progress must be called after getting an issue and before opencode."""
         mock_run.side_effect = _make_run_side_effect_for_popen_tests(
             bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
         )
@@ -177,13 +177,13 @@ class TestMainClaimsIssueBeforeRunningOpencode:
 
 
 class TestMainClaimsIssueWithCorrectId:
-    """Verify the correct issue ID is passed to `bd update <id> --claim`."""
+    """Verify the correct issue ID is passed to `bd update <id> --status in_progress`."""
 
     @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
     def test_main_claims_issue_with_correct_id(self, mock_run, mock_popen):
-        """The issue ID from get_next_ready_issue() must be passed to bd update --claim."""
+        """The issue ID from get_next_ready_issue() must be passed to bd update --status in_progress."""
         mock_run.side_effect = _make_run_side_effect_for_popen_tests(
             bd_ready_results=[[{"id": FAKE_ISSUE_ID, "title": FAKE_ISSUE_TITLE}]]
         )
@@ -191,20 +191,20 @@ class TestMainClaimsIssueWithCorrectId:
 
         main()
 
-        # Find the bd update --claim call
+        # Find the bd update --status in_progress call
         claim_calls = [
             c
             for c in mock_run.call_args_list
             if len(c.args) > 0 and len(c.args[0]) >= 2 and c.args[0][:2] == ["bd", "update"]
         ]
         assert len(claim_calls) >= 1, (
-            f"Expected 'bd update --claim' call, got none. All calls: {mock_run.call_args_list}"
+            f"Expected 'bd update --status in_progress' call, got none. All calls: {mock_run.call_args_list}"
         )
 
-        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "--claim"]
+        # Verify the exact arguments: ["bd", "update", FAKE_ISSUE_ID, "--status", "in_progress"]
         claim_args = claim_calls[0].args[0]
-        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--claim"], (
-            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--claim'], got {claim_args}"
+        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--status", "in_progress"], (
+            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--status', 'in_progress'], got {claim_args}"
         )
 
         # Verify check=True was passed
@@ -220,13 +220,13 @@ class TestMainClaimsIssueWithCorrectId:
 
 
 class TestMainAbortsIfClaimFails:
-    """Verify that if `bd update --claim` raises CalledProcessError, main handles it."""
+    """Verify that if `bd update --status in_progress` raises CalledProcessError, main handles it."""
 
     @patch("sys.argv", ["ralph.py"])
     @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
     def test_main_aborts_if_claim_fails(self, mock_run, mock_popen):
-        """If bd update --claim fails (check=True raises), opencode must NOT be called."""
+        """If bd update --status in_progress fails (check=True raises), opencode must NOT be called."""
         state = {"bd_ready_count": 0}
 
         def side_effect_claim_fails(args, **kwargs):
@@ -240,8 +240,8 @@ class TestMainAbortsIfClaimFails:
             elif args[:2] == ["bd", "update"]:
                 raise subprocess.CalledProcessError(
                     returncode=1,
-                    cmd=["bd", "update", FAKE_ISSUE_ID, "--claim"],
-                    stderr="Issue already claimed",
+                    cmd=["bd", "update", FAKE_ISSUE_ID, "--status", "in_progress"],
+                    stderr="Failed to update status",
                 )
             elif args[0] == "sudo" and "systemctl" in args:
                 return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")

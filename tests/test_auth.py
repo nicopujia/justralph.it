@@ -394,10 +394,13 @@ class TestLoadDotenvOverride:
         original = os.environ.get("GITHUB_CLIENT_ID")
         os.environ["GITHUB_CLIENT_ID"] = stale_id
         import app as app_module
+        from app import routes as routes_module
 
         try:
             # Re-import app module to re-run load_dotenv at module scope
             importlib.reload(app_module)
+            # Also reload routes module so it picks up the new sock instance
+            importlib.reload(routes_module)
 
             # After reload, os.environ should have the .env value, not the stale one
             assert os.environ["GITHUB_CLIENT_ID"] == real_client_id, (
@@ -410,5 +413,6 @@ class TestLoadDotenvOverride:
                 os.environ.pop("GITHUB_CLIENT_ID", None)
             else:
                 os.environ["GITHUB_CLIENT_ID"] = original
-            # Reload again to restore clean state
+            # Reload both modules again to restore clean state
             importlib.reload(app_module)
+            importlib.reload(routes_module)

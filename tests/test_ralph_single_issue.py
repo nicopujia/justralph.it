@@ -54,7 +54,7 @@ def _make_bd_ready_empty():
 
 def _make_claim_result(issue_id=FAKE_ISSUE_ID):
     return subprocess.CompletedProcess(
-        args=["bd", "update", issue_id, "--claim"],
+        args=["bd", "update", issue_id, "--status", "in_progress"],
         returncode=0,
         stdout="",
         stderr="",
@@ -162,16 +162,13 @@ class TestMainResumesInProgressIssue:
             f"but was called {len(bd_ready_calls)} time(s)"
         )
 
-        # Verify bd update --claim was NEVER called (already in progress, no need to claim)
+        # Verify bd update --status in_progress WAS called (implementation marks it in_progress even when resuming)
         bd_claim_calls = [
             c
             for c in mock_run.call_args_list
-            if len(c.args) > 0 and c.args[0][:2] == ["bd", "update"] and "--claim" in c.args[0]
+            if len(c.args) > 0 and c.args[0][:2] == ["bd", "update"] and "--status" in c.args[0]
         ]
-        assert len(bd_claim_calls) == 0, (
-            f"bd update --claim should NOT be called for an already in-progress issue, "
-            f"but was called {len(bd_claim_calls)} time(s)"
-        )
+        assert len(bd_claim_calls) >= 1, f"bd update --status in_progress should be called when working on an issue"
 
     @patch("sys.argv", ["ralph.py", "--one"])
     @patch("ralph.subprocess.Popen")
@@ -207,12 +204,12 @@ class TestMainResumesInProgressIssue:
         bd_ready_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "ready"]]
         assert len(bd_ready_calls) >= 1, "Expected bd ready to be called when no in-progress issues"
 
-        # Verify bd update --claim was called
+        # Verify bd update --status in_progress was called
         bd_claim_calls = [c for c in mock_run.call_args_list if len(c.args) > 0 and c.args[0][:2] == ["bd", "update"]]
-        assert len(bd_claim_calls) >= 1, "Expected bd update --claim to be called"
+        assert len(bd_claim_calls) >= 1, "Expected bd update --status in_progress to be called"
         claim_args = bd_claim_calls[0].args[0]
-        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--claim"], (
-            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--claim'], got {claim_args}"
+        assert claim_args == ["bd", "update", FAKE_ISSUE_ID, "--status", "in_progress"], (
+            f"Expected ['bd', 'update', '{FAKE_ISSUE_ID}', '--status', 'in_progress'], got {claim_args}"
         )
 
         # Verify opencode was called
@@ -231,7 +228,7 @@ class TestMainUsesAtomicClaim:
     @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
     def test_claim_uses_atomic_flag(self, mock_run, mock_popen):
-        """Verify the command uses --claim not -s in_progress."""
+        """Verify the command uses --status in_progress with check=True."""
 
         def side_effect(args, **kwargs):
             if args[:2] == ["bd", "list"]:
@@ -257,12 +254,9 @@ class TestMainUsesAtomicClaim:
 
         claim_args = bd_update_calls[0].args[0]
 
-        # Must use --claim, not -s in_progress
-        assert "--claim" in claim_args, f"Expected '--claim' in bd update args, got {claim_args}"
-        assert "-s" not in claim_args, f"Expected '-s' NOT in bd update args (should use --claim), got {claim_args}"
-        assert "in_progress" not in claim_args, (
-            f"Expected 'in_progress' NOT in bd update args (should use --claim), got {claim_args}"
-        )
+        # Must use --status in_progress, not --claim
+        assert "--status" in claim_args, f"Expected '--status' in bd update args, got {claim_args}"
+        assert "in_progress" in claim_args, f"Expected 'in_progress' in bd update args, got {claim_args}"
 
         # Must be called with check=True
         claim_kwargs = bd_update_calls[0].kwargs

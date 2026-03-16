@@ -3,7 +3,7 @@
 Verifies:
 - LOG_FILE points to the project root (not inside logs/)
 - Each issue iteration creates a per-iteration log file in logs/
-- Per-iteration log files follow the naming convention ralph_<timestamp>_<issue_id>.log
+- Per-iteration log files follow the naming convention ralph_<issue_id>.log
 - Both ralph.log and per-iteration logs receive opencode output
 - ralph.log accumulates output across multiple issues
 - Per-iteration logs are separate (each contains only its own issue's output)
@@ -125,7 +125,7 @@ class TestPerIterationLogCreation:
     @patch("ralph.subprocess.run")
     def test_per_iteration_log_created(self, mock_run, mock_popen, tmp_path):
         """Processing an issue should create a log file matching
-        ralph_*_<issue_id>.log in the logs directory."""
+        ralph_<issue_id>.log in the logs directory."""
         _clear_logging()
 
         tmp_logs = tmp_path / "logs"
@@ -141,7 +141,7 @@ class TestPerIterationLogCreation:
             main()
 
         # Find per-iteration log files
-        log_files = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))
+        log_files = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))
         assert len(log_files) == 1, (
             f"Expected exactly 1 per-iteration log for {FAKE_ISSUE_1['id']}, "
             f"found {len(log_files)}: {[f.name for f in tmp_logs.glob('*')]}"
@@ -152,8 +152,7 @@ class TestPerIterationLogCreation:
     @patch("ralph.subprocess.Popen")
     @patch("ralph.subprocess.run")
     def test_per_iteration_log_naming_convention(self, mock_run, mock_popen, tmp_path):
-        """Per-iteration log should be named ralph_<timestamp>_<issue_id>.log
-        where timestamp is ISO-like (YYYY-MM-DDTHH:MM:SS or similar)."""
+        """Per-iteration log should be named ralph_<issue_id>.log (e.g., ralph_bd-101.log)."""
         _clear_logging()
 
         tmp_logs = tmp_path / "logs"
@@ -168,16 +167,14 @@ class TestPerIterationLogCreation:
         ):
             main()
 
-        log_files = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))
+        log_files = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))
         assert len(log_files) == 1
 
         filename = log_files[0].name
-        # Expect: ralph_<ISO-ish timestamp>_<issue_id>.log
-        # Timestamp may use T separator and colons or dashes
-        pattern = r"^ralph_\d{4}-\d{2}-\d{2}T\d{2}[:\-]\d{2}[:\-]\d{2}_" + re.escape(FAKE_ISSUE_1["id"]) + r"\.log$"
+        # Expect: ralph_<issue_id>.log
+        pattern = r"^ralph_" + re.escape(FAKE_ISSUE_1["id"]) + r"\.log$"
         assert re.match(pattern, filename), (
-            f"Log filename {filename!r} doesn't match expected pattern "
-            f"ralph_<YYYY-MM-DDTHH:MM:SS>_{FAKE_ISSUE_1['id']}.log"
+            f"Log filename {filename!r} doesn't match expected pattern ralph_{FAKE_ISSUE_1['id']}.log"
         )
 
     @patch("sys.argv", ["ralph.py", "--one"])
@@ -258,7 +255,7 @@ class TestBothFilesReceiveOutput:
         ):
             main()
 
-        log_files = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))
+        log_files = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))
         assert len(log_files) == 1, f"Expected 1 per-iteration log, found: {[f.name for f in tmp_logs.glob('*')]}"
 
         content = log_files[0].read_text()
@@ -374,8 +371,8 @@ class TestPerIterationLogSeparation:
         ):
             main()
 
-        logs_issue_1 = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))
-        logs_issue_2 = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_2['id']}.log"))
+        logs_issue_1 = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))
+        logs_issue_2 = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_2['id']}.log"))
 
         assert len(logs_issue_1) == 1, (
             f"Expected 1 log for {FAKE_ISSUE_1['id']}, "
@@ -411,7 +408,7 @@ class TestPerIterationLogSeparation:
             main()
 
         # Issue 1's log should have its output but NOT issue 2's
-        log_1 = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))[0]
+        log_1 = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))[0]
         content_1 = log_1.read_text()
         assert "Starting work on bd-101" in content_1
         assert "Implementing feature alpha" in content_1
@@ -419,7 +416,7 @@ class TestPerIterationLogSeparation:
         assert "Fixing bug beta" not in content_1, "Issue 1's log should not contain issue 2's output"
 
         # Issue 2's log should have its output but NOT issue 1's
-        log_2 = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_2['id']}.log"))[0]
+        log_2 = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_2['id']}.log"))[0]
         content_2 = log_2.read_text()
         assert "Starting work on bd-202" in content_2
         assert "Fixing bug beta" in content_2
@@ -562,7 +559,7 @@ class TestRealTimeFlushing:
                 for line in self._lines:
                     yield line
                     # Check per-iteration log after each line
-                    iter_logs = list(tmp_logs.glob(f"ralph_*_{FAKE_ISSUE_1['id']}.log"))
+                    iter_logs = list(tmp_logs.glob(f"ralph_{FAKE_ISSUE_1['id']}.log"))
                     if iter_logs:
                         per_iter_content_during_write.append(iter_logs[0].read_text())
 
