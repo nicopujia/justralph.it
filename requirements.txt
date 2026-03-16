@@ -11,3 +11,4 @@ gunicorn
 pywebpush
 websocket-client
 psutil
+pytest-playwright
