@@ -107,13 +107,19 @@ def find_available_port():
 
 
 def start_bdui(project_path, port):
-    """Start a bdui sidecar process on the given port. Returns the Popen object."""
+    """Start a bdui sidecar process on the given port. Returns the Popen object.
+
+    Sets BDUI_RUNTIME_DIR to a per-project path so each project gets its own
+    PID file.  Without this, bdui uses a single global PID file and refuses to
+    start a second instance (prints "Server is already running" and exits).
+    """
+    runtime_dir = os.path.join(project_path, ".beads", "bdui-runtime")
     return subprocess.Popen(
         ["bdui", "start", "--port", str(port)],
         cwd=project_path,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env=subprocess_env(),
+        env=subprocess_env(BDUI_RUNTIME_DIR=runtime_dir),
     )
 
 

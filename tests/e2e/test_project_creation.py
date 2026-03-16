@@ -159,6 +159,7 @@ def _delete_opencode_session(session_id):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
 class TestE2EProjectCreation:
     """End-to-end test for the full project creation flow against real services."""
 
