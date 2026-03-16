@@ -60,14 +60,17 @@ def _insert_project(db_path, name="test-project", slug="test-project", status="d
 class TestSpecEndpoint:
     """GET /projects/<slug>/spec — returns rendered AGENTS.md content."""
 
-    def test_spec_endpoint_unauthenticated_redirects(self):
-        """Unauthenticated request to spec endpoint redirects to /."""
+    def test_spec_endpoint_unauthenticated_returns_session_expired_fragment(self):
+        """Unauthenticated request to spec endpoint returns HTML fragment (not redirect)."""
         app, db_path, db_fd = _make_app()
         try:
             client = app.test_client()
             response = client.get("/projects/some-slug/spec")
-            assert response.status_code == 302
-            assert response.headers["Location"] == "/"
+            assert response.status_code == 200
+            html = response.data.decode()
+            assert "Session expired" in html
+            assert "Sign in again" in html
+            assert 'href="/"' in html
         finally:
             _cleanup(db_fd, db_path)
 
@@ -135,6 +138,47 @@ class TestSpecEndpoint:
             assert "<strong>bold</strong>" in html
         finally:
             _cleanup(db_fd, db_path, [tmp_dir])
+
+    def test_spec_endpoint_unauthenticated_uses_css_variable(self):
+        """Unauthenticated fragment uses var(--text-secondary) not hardcoded color."""
+        app, db_path, db_fd = _make_app()
+        try:
+            client = app.test_client()
+            response = client.get("/projects/some-slug/spec")
+            html = response.data.decode()
+            assert "var(--text-secondary)" in html
+            assert "#888" not in html
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_spec_placeholder_uses_css_variable(self):
+        """Placeholder messages use var(--text-secondary) instead of hardcoded #888."""
+        tmp_dir = tempfile.mkdtemp()
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, vps_path=tmp_dir)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project/spec")
+            html = response.data.decode()
+            assert "var(--text-secondary)" in html
+            assert "#888" not in html
+        finally:
+            _cleanup(db_fd, db_path, [tmp_dir])
+
+    def test_spec_placeholder_no_vps_path_uses_css_variable(self):
+        """Placeholder when vps_path is None uses var(--text-secondary)."""
+        app, db_path, db_fd = _make_app()
+        try:
+            _insert_project(db_path, vps_path=None)
+            client = app.test_client()
+            _auth_session(client)
+            response = client.get("/projects/test-project/spec")
+            html = response.data.decode()
+            assert "var(--text-secondary)" in html
+            assert "#888" not in html
+        finally:
+            _cleanup(db_fd, db_path)
 
     def test_spec_content_updates_when_file_changes(self):
         """After AGENTS.md is updated, a subsequent fetch returns the new content."""

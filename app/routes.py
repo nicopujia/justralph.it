@@ -158,17 +158,17 @@ def delete_project(slug):
 @bp.route("/projects/<slug>/spec")
 def project_spec(slug):
     if not session.get("user"):
-        return redirect("/")
+        return '<p style="color: var(--text-secondary);">Session expired. <a href="/">Sign in again</a></p>', 200
     db = get_db()
     project = db.execute("SELECT * FROM projects WHERE slug = ?", (slug,)).fetchone()
     if project is None:
         abort(404)
     vps_path = project["vps_path"]
     if vps_path is None:
-        return '<p style="color: #888;">Continue chatting to let Ralphy create the spec</p>'
+        return '<p style="color: var(--text-secondary);">Continue chatting to let Ralphy create the spec</p>'
     agents_path = os.path.join(vps_path, "AGENTS.md")
     if not os.path.isfile(agents_path):
-        return '<p style="color: #888;">Continue chatting to let Ralphy create the spec</p>'
+        return '<p style="color: var(--text-secondary);">Continue chatting to let Ralphy create the spec</p>'
     with open(agents_path) as f:
         content = f.read()
     return markdown.markdown(content)

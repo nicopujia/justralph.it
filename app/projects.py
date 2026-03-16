@@ -166,6 +166,12 @@ def create_project(repo_name, description, token, username):
     # Init beads
     init_beads(vps_path)
 
+    # Remove beads-generated AGENTS.md so the Spec tab shows the placeholder
+    # until Ralphy writes the real one during the interview
+    agents_md_path = os.path.join(vps_path, "AGENTS.md")
+    if os.path.exists(agents_md_path):
+        os.remove(agents_md_path)
+
     # Copy generic Ralph loop to project
     shutil.copy2(os.path.join(PROJECT_ROOT, "ralph_template.py"), os.path.join(vps_path, "ralph.py"))
 
