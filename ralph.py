@@ -96,7 +96,7 @@ def main():
             "--title",
             issue["title"],
             "--model",
-            "anthropic/claude-opus-4-6",
+            "opencode/kimi-k2.5",
         ]
 
         issue_id = issue["id"]
