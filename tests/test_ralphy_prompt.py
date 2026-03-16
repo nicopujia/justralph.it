@@ -191,3 +191,49 @@ class TestIssueModificationConstraint:
         # This is the existing text at line 38
         assert "create new beads issues" in text, "Prompt must mention creating new beads issues"
         assert "open and not yet claimed" in text, "Prompt must mention only updating open and not yet claimed issues"
+
+
+# ===========================================================================
+# Test 6: relates-to dependency type for colliding issues
+# ===========================================================================
+
+
+class TestRelatesToDependencyType:
+    """Prompt must instruct Ralphy to use relates-to links for colliding issues."""
+
+    def test_prompt_mentions_bd_dep_add_relates_to(self):
+        """Prompt contains the `bd dep add --type relates-to` command."""
+        text = _read_prompt()
+        assert "bd dep add" in text and "--type relates-to" in text, (
+            "Prompt must mention `bd dep add --type relates-to` command"
+        )
+
+    def test_prompt_mentions_colliding_issues(self):
+        """Prompt explains relates-to is for issues that could collide."""
+        text = _read_prompt()
+        lower = text.lower()
+        # The prompt should mention collision scenarios (same files, same page,
+        # same API, etc.) in the context of relates-to
+        relates_idx = lower.find("relates-to")
+        assert relates_idx != -1, "Prompt must mention relates-to"
+        nearby = lower[max(0, relates_idx - 500) : relates_idx + 500]
+        assert "collid" in nearby, (
+            "Prompt must explain relates-to is for issues that could collide "
+            "(e.g. touch the same files, same page, same API)"
+        )
+
+    def test_relates_to_in_beads_section(self):
+        """The relates-to instruction lives in the beads section near other bd dep commands."""
+        text = _read_prompt()
+        # Find the Beads section (starts with "## Beads")
+        beads_match = re.search(
+            r"(## Beads.*?)(?=\n## [^#]|\n---|\Z)",
+            text,
+            re.DOTALL,
+        )
+        assert beads_match, "RALPHY.md must contain a Beads section"
+        beads_section = beads_match.group(1)
+        assert "bd dep add" in beads_section, "Beads section must contain bd dep add"
+        assert "--type relates-to" in beads_section, (
+            "relates-to instruction must be in the Beads section alongside other bd dep commands"
+        )

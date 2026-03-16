@@ -176,6 +176,10 @@ bd show [id]
 
 bd dep add [blocker-id] --blocks [blocked-id]
 
+# Link issues that could collide (e.g. touch the same files, same page,
+# same API) without blocking each other
+bd dep add [id-a] --type relates-to [id-b]
+
 bd defer [id] # For issues that shouldn't be implemented yet
 
 # Verify the graph
