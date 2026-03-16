@@ -2,12 +2,14 @@
 
 import os
 import re
+import shutil
 import socket
 import subprocess
 
 import requests
 from flask import current_app
 
+from . import PROJECT_ROOT
 from .models import get_db
 from .subprocess_env import subprocess_env
 
@@ -135,6 +137,7 @@ def create_project(repo_name, description, token, username):
     2. Create GitHub repo
     3. Clone to ~/projects/<repo_name>/
     4. Init beads
+    4.5. Copy ralph_template.py → ralph.py
     5. Start bdui sidecar
     6. Create opencode session
     7. Store in DB
@@ -162,6 +165,9 @@ def create_project(repo_name, description, token, username):
 
     # Init beads
     init_beads(vps_path)
+
+    # Copy generic Ralph loop to project
+    shutil.copy2(os.path.join(PROJECT_ROOT, "ralph_template.py"), os.path.join(vps_path, "ralph.py"))
 
     # Start bdui sidecar
     port = find_available_port()

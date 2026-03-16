@@ -473,6 +473,8 @@ class TestPostProjectsNewSuccess:
         mock_socket_instance.__enter__ = MagicMock(return_value=mock_socket_instance)
         mock_socket_instance.__exit__ = MagicMock(return_value=False)
 
+        mock_copy2 = MagicMock()
+
         return {
             "github_get_404": mock_github_get_404,
             "github_repo_created": mock_github_repo_created,
@@ -481,6 +483,7 @@ class TestPostProjectsNewSuccess:
             "popen": mock_popen,
             "popen_instance": mock_popen_instance,
             "socket_instance": mock_socket_instance,
+            "copy2": mock_copy2,
         }
 
     def _patch_and_post(self, client, mocks, repo_name="my-new-project", description="A cool project"):
@@ -505,6 +508,7 @@ class TestPostProjectsNewSuccess:
             patch("app.projects.subprocess.Popen", mocks["popen"]),
             patch("app.projects.os.path.isdir", return_value=False),
             patch("app.projects.socket.socket", return_value=mocks["socket_instance"]),
+            patch("app.projects.shutil.copy2", mocks["copy2"]),
         ):
             return client.post(
                 "/projects/new",
@@ -590,6 +594,7 @@ class TestPostProjectsNewSuccess:
                 patch("app.projects.subprocess.Popen", mocks["popen"]),
                 patch("app.projects.os.path.isdir", return_value=False),
                 patch("app.projects.socket.socket", return_value=mocks["socket_instance"]),
+                patch("app.projects.shutil.copy2", mocks["copy2"]),
             ):
                 client.post(
                     "/projects/new",
@@ -678,6 +683,7 @@ class TestPostProjectsNewSuccess:
                 patch("app.projects.subprocess.Popen", mocks["popen"]),
                 patch("app.projects.os.path.isdir", return_value=False),
                 patch("app.projects.socket.socket", return_value=mocks["socket_instance"]),
+                patch("app.projects.shutil.copy2", mocks["copy2"]),
             ):
                 client.post(
                     "/projects/new",
@@ -757,6 +763,22 @@ class TestPostProjectsNewSuccess:
             slug = rows[0]["slug"]
             # Slug should be lowercase or at least based on the repo name
             assert "cool" in slug.lower() or "my" in slug.lower()
+        finally:
+            _cleanup(db_fd, db_path)
+
+    def test_copies_ralph_template_to_project_dir(self):
+        """create_project copies ralph_template.py to the project directory as ralph.py."""
+        app, db_path, db_fd = _make_app()
+        try:
+            client = app.test_client()
+            _auth_session(client)
+            mocks = self._setup_mocks()
+            self._patch_and_post(client, mocks)
+
+            mocks["copy2"].assert_called_once()
+            args = mocks["copy2"].call_args[0]
+            assert args[0].endswith("ralph_template.py")
+            assert args[1].endswith("my-new-project/ralph.py")
         finally:
             _cleanup(db_fd, db_path)
 
