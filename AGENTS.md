@@ -16,7 +16,7 @@ Web app (runs on a single VPS that also executes Ralph loops).
 
 ## Constraints
 
-- Coding agent: headless opencode (already installed at `~/.npm-global/bin/opencode`), using Kimi K2 Thinking via OpenCode Zen
+- Coding agent: headless opencode (already installed at `~/.npm-global/bin/opencode`), using `anthropic/claude-opus-4-6` for this project's ralph.py. ralph_template.py (for new user projects) uses Kimi K2 Thinking via OpenCode Zen
 - Ralph loop: based on existing `ralph.py` in this repo
 - Issue tracking: beads (`bd`) — already initialized
 - Auth: GitHub OAuth (not GitHub App); scopes: repo (create + push), read:user
