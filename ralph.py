@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,10 @@ def check_resources(threshold: float = 90.0) -> tuple[bool, str]:
 
 def main():
     setup_logging()
+
+    # Record initial modification time for self-reload
+    initial_mtime = os.path.getmtime(__file__)
+
     parser = argparse.ArgumentParser(description="Ralph Wiggum technique automation")
     parser.add_argument(
         "--one",
@@ -71,6 +76,12 @@ def main():
             STOP_FILE.unlink()
             logger.info(Results.STOPPED)
             break
+
+        # Check if ralph.py has been modified and reload if so
+        current_mtime = os.path.getmtime(__file__)
+        if current_mtime != initial_mtime:
+            logger.info("ralph.py modified, reloading with updated code...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
         resources_exceeded, resource_msg = check_resources()
         if resources_exceeded:
