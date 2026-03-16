@@ -202,6 +202,10 @@ Each issue must be:
 - **Atomic** — one thing, completable in isolation once dependencies are done
 - **Testable** — concrete, observable success criterion (not "works correctly" — what exactly happens?)
 
+### Collision avoidance
+
+When creating issues that could collide — e.g. they touch the same files, the same page, the same API, or the same database table — link them with `bd dep add [id-a] --type relates-to [id-b]`. This tells concurrent Ralph agents to watch out for conflicts without blocking each other. Check for potential collisions every time you create a new issue.
+
 ### Priorities
 
 - `0` - Critical (security, data loss, broken builds)
