@@ -446,13 +446,20 @@ function confirmForceStop() {
     fetch('/projects/' + SLUG + '/ralph/force-stop', { method: 'POST' });
 }
 
+var ralphOutputSource = null;
 function connectRalphOutput() {
+    if (ralphOutputSource) {
+        ralphOutputSource.close();
+        ralphOutputSource = null;
+    }
     var terminal = document.getElementById('terminal-content');
     terminal.innerHTML = '';
     var evtSource = new EventSource('/projects/' + SLUG + '/ralph/output');
+    ralphOutputSource = evtSource;
     evtSource.onmessage = function(event) {
         if (event.data === '[DONE]') {
             evtSource.close();
+            ralphOutputSource = null;
             return;
         }
         var line = document.createElement('div');
@@ -462,8 +469,18 @@ function connectRalphOutput() {
     };
     evtSource.onerror = function() {
         evtSource.close();
+        ralphOutputSource = null;
     };
 }
+
+/* Close all SSE/WS connections on page unload to free server threads immediately */
+function closeAllConnections() {
+    if (chatEventSource) { chatEventSource.close(); chatEventSource = null; }
+    if (internalEventSource) { internalEventSource.close(); internalEventSource = null; }
+    if (ralphOutputSource) { ralphOutputSource.close(); ralphOutputSource = null; }
+}
+window.addEventListener('pagehide', closeAllConnections);
+window.addEventListener('beforeunload', closeAllConnections);
 
 connectInternalSSE();
 
@@ -475,6 +492,7 @@ if (RALPH_RUNNING) {
 }
 
 /* Issues tab: connect to bdui WebSocket and render issues */
+var bduiWs = null;
 (function() {
     if (!BDUI_PORT) return;
 
@@ -484,6 +502,7 @@ if (RALPH_RUNNING) {
     var subId = 'issues-sub-' + Date.now();
     var ws;
     var reconnectDelay = 1000;
+    var closing = false;
 
     function statusLabel(status) {
         if (status === 'open') return 'OPEN';
@@ -525,9 +544,11 @@ if (RALPH_RUNNING) {
     }
 
     function connect() {
+        if (closing) return;
         var wsProto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
         var wsUrl = wsProto + '//' + window.location.host + '/projects/' + SLUG + '/bdui/ws';
         ws = new WebSocket(wsUrl);
+        bduiWs = ws;
 
         ws.onopen = function() {
             reconnectDelay = 1000;
@@ -560,6 +581,7 @@ if (RALPH_RUNNING) {
         };
 
         ws.onclose = function() {
+            if (closing) return;
             setTimeout(function() {
                 reconnectDelay = Math.min(reconnectDelay * 2, 30000);
                 connect();
@@ -570,6 +592,15 @@ if (RALPH_RUNNING) {
             ws.close();
         };
     }
+
+    window.addEventListener('pagehide', function() {
+        closing = true;
+        if (ws) { ws.close(); bduiWs = null; }
+    });
+    window.addEventListener('beforeunload', function() {
+        closing = true;
+        if (ws) { ws.close(); bduiWs = null; }
+    });
 
     connect();
 })();

@@ -198,14 +198,19 @@ def sse_events(slug):
         try:
             while True:
                 try:
-                    event = q.get(timeout=30)
+                    event = q.get(timeout=15)
                     yield f"data: {json.dumps(event)}\n\n"
                 except Exception:
                     yield ": keepalive\n\n"
         except GeneratorExit:
+            pass
+        finally:
             unsubscribe(slug, q)
 
-    return Response(stream(), mimetype="text/event-stream")
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @bp.route("/projects/<slug>/chat/init", methods=["POST"])
@@ -349,7 +354,10 @@ def chat_events(slug):
             # Upstream timed out or connection lost — send keepalive comment and let client reconnect
             yield ": keepalive\n\n"
 
-    return Response(stream(), mimetype="text/event-stream")
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @bp.route("/projects/<slug>/push/subscribe", methods=["POST"])
@@ -571,20 +579,26 @@ def ralph_output(slug):
             yield "data: [DONE]\n\n"
             return
         idx = 0
-        while True:
-            while idx < len(buf["lines"]):
-                yield f"data: {buf['lines'][idx]}\n\n"
-                idx += 1
-            if buf["done"].is_set():
-                # Drain any remaining lines added between check and set
+        try:
+            while True:
                 while idx < len(buf["lines"]):
                     yield f"data: {buf['lines'][idx]}\n\n"
                     idx += 1
-                break
-            time.sleep(0.2)
+                if buf["done"].is_set():
+                    # Drain any remaining lines added between check and set
+                    while idx < len(buf["lines"]):
+                        yield f"data: {buf['lines'][idx]}\n\n"
+                        idx += 1
+                    break
+                time.sleep(0.2)
+        except GeneratorExit:
+            return
         yield "data: [DONE]\n\n"
 
-    return Response(stream(), mimetype="text/event-stream")
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @sock.route("/projects/<slug>/bdui/ws")
