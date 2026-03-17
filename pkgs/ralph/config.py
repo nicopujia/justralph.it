@@ -17,7 +17,6 @@ MODEL = "opencode/kimi-k2.5"
 VM_RES_THRESHOLD = 95.0  # %
 POLL_INTERVAL = 30.0  # seconds
 SUBPROCESS_TIMEOUT = 600.0  # 10 minutes
-BD_TIMEOUT = 30.0  # seconds
 MAX_ITERS = -1  # infinite
 MAX_RETRIES = -1  # infinite
 
@@ -36,7 +35,6 @@ class Config:
     base_dir: Path = BASE_DIR
     poll_interval: float = POLL_INTERVAL
     subprocess_timeout: float = SUBPROCESS_TIMEOUT
-    bd_timeout: float = BD_TIMEOUT
     max_retries: int = MAX_RETRIES
 
 
@@ -113,12 +111,6 @@ def get_config() -> Config:
         type=float,
         default=SUBPROCESS_TIMEOUT,
         help=f"Timeout for OpenCode subprocess in seconds (default: {SUBPROCESS_TIMEOUT})",
-    )
-    parser.add_argument(
-        "--bd-timeout",
-        type=float,
-        default=BD_TIMEOUT,
-        help=f"Timeout for bd CLI commands in seconds (default: {BD_TIMEOUT})",
     )
     parser.add_argument(
         "--max-retries",

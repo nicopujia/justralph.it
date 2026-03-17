@@ -32,7 +32,7 @@ class State:
         """Remove the state file (idempotent)."""
         self._file.unlink(missing_ok=True)
 
-    def check_crash_recovery(self, bd_timeout: float | None = None) -> int:
+    def check_crash_recovery(self) -> int:
         """Recover from a mid-iteration crash if a state file exists.
 
         - Runs ``git reset --hard`` to discard partial changes.
@@ -84,7 +84,7 @@ class State:
         # set the issue back to open
         if issue_id:
             try:
-                bd.update_issue(issue_id, status="open", timeout=bd_timeout)
+                bd.update_issue(issue_id, status="open")
                 logger.info("Set issue %s back to open", issue_id)
             except RuntimeError:
                 logger.error("Failed to reopen issue %s", issue_id)

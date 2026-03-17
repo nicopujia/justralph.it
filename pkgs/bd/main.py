@@ -96,13 +96,13 @@ def _parse_issue(data: dict) -> Issue:
     )
 
 
-def get_next_ready_issue(timeout: float | None = None) -> Issue | None:
+def get_next_ready_issue() -> Issue | None:
     """Get the next ready issue (open, no active blockers) from Beads.
 
     Calls `bd ready --json --limit 1` and parses the first result.
     Returns None if no ready issues exist or if bd is not configured.
     """
-    result = _run_bd("ready", "--json", "--limit", "1", timeout=timeout)
+    result = _run_bd("ready", "--json", "--limit", "1")
     if result is None:
         return None
 
@@ -136,7 +136,6 @@ def wait_for_next_ready_issue(
     poll_interval: float,
     stop_file: Path,
     restart_file: Path,
-    timeout: float | None = None,
 ) -> Issue:
     """Block until a ready issue appears, then return it.
 
@@ -156,7 +155,7 @@ def wait_for_next_ready_issue(
             restart_file.unlink()
             raise RestartRequested(reason)
 
-        issue = get_next_ready_issue(timeout=timeout)
+        issue = get_next_ready_issue()
         if issue is not None:
             logger.info("Found ready issue: %s", issue.id)
             return issue
@@ -167,7 +166,6 @@ def update_issue(
     issue_id: str,
     status: str | None = None,
     assignee: str | None = None,
-    timeout: float | None = None,
 ) -> None:
     """Update an issue's fields.
 
@@ -179,16 +177,15 @@ def update_issue(
         args.extend(["--status", status])
     if assignee:
         args.extend(["--assignee", assignee])
-    result = _run_bd(*args, timeout=timeout)
+    result = _run_bd(*args)
     if result is None:
         raise RuntimeError(f"Failed to update issue {issue_id}")
     logger.info("Updated issue %s (status=%s, assignee=%s)", issue_id, status, assignee)
 
 
-def _run_bd(
-    *args: str, timeout: float | None = None
-) -> subprocess.CompletedProcess[str] | None:
+def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
     """Run a bd CLI command and return the result, or None on failure."""
+    timeout = 30
     cmd = ["bd", *args]
     logger.debug("Running: %s", " ".join(cmd))
     try:

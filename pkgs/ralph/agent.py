@@ -37,13 +37,12 @@ class Agent:
         self._args = args
         self._kwargs = kwargs
 
-    def claim_issue(self, timeout: float | None = None) -> None:
+    def claim_issue(self) -> None:
         """Set issue status to in_progress and assignee to ralph."""
         bd.update_issue(
             self.issue.id,
             status="in_progress",
             assignee="ralph",
-            timeout=timeout,
         )
 
     def run(self, timeout: float | None = None) -> Generator[str, None, None]:

@@ -46,7 +46,7 @@ def _run_loop(
     cfg: Config, hooks: Hooks, loop_state: State, log_fmt: logging.Formatter
 ) -> bool:
     """Run the main loop. Return True if a restart was requested."""
-    i = loop_state.check_crash_recovery(bd_timeout=cfg.bd_timeout)
+    i = loop_state.check_crash_recovery()
 
     logger.info("Calling pre-loop hook")
     hooks.pre_loop(cfg)
@@ -92,7 +92,7 @@ def _run_loop(
             logger.info("Machine resources usage is OK")
 
         logger.info("Getting next ready issue")
-        issue = bd.get_next_ready_issue(timeout=cfg.bd_timeout)
+        issue = bd.get_next_ready_issue()
 
         if not issue:
             logger.info("No ready issues currently. Waiting for new ones")
@@ -101,7 +101,6 @@ def _run_loop(
                     cfg.poll_interval,
                     stop_file=cfg.stop_file,
                     restart_file=cfg.restart_file,
-                    timeout=cfg.bd_timeout,
                 )
             except bd.StopRequested as e:
                 logger.warning("Stopping loop while waiting for issues: %s", e)
@@ -130,7 +129,7 @@ def _run_loop(
             **extra_kwargs,
         )
 
-        ralph.claim_issue(timeout=cfg.bd_timeout)
+        ralph.claim_issue()
 
         logger.info("Preparing git state for issue %s", issue.id)
         ensure_on_main()
