@@ -130,7 +130,7 @@ def _run_loop(
             **extra_kwargs,
         )
 
-        ralph.start_issue(timeout=cfg.bd_timeout)
+        ralph.claim_issue(timeout=cfg.bd_timeout)
 
         logger.info("Preparing git state for issue %s", issue.id)
         ensure_on_main()

@@ -38,7 +38,7 @@ class Agent:
         self._args = args
         self._kwargs = kwargs
 
-    def start_issue(self, timeout: float | None = None) -> None:
+    def claim_issue(self, timeout: float | None = None) -> None:
         """Set issue status to in_progress and assignee to ralph."""
         bd.update_issue(
             self.issue.id,
