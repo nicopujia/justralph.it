@@ -154,7 +154,13 @@ def _run_loop(
 
             if ralph.status == Agent.Status.DONE:
                 logger.info("Marking issue %s as done", issue.id)
-                bd.close_issue(issue.id)
+                bd.done_issue(issue.id)
+            elif ralph.status == Agent.Status.BLOCKED:
+                logger.info(
+                    "Issue %s has blockers; setting to blocked and clearing assignee",
+                    issue.id,
+                )
+                bd.update_issue(issue.id, status="blocked", assignee="")
 
             consecutive_failures = 0
         except Exception as exc:
