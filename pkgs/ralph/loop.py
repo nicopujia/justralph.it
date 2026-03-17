@@ -7,7 +7,7 @@ import psutil
 
 from .agent import Agent
 from .config import Config, get_config
-from .git_utils import cleanup_branch, ensure_on_main
+from .git import cleanup_branch, ensure_on_main
 from .hooks import Hooks
 from .init import init_ralph_dir, load_hooks
 from .state import State

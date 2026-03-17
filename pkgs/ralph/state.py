@@ -7,7 +7,7 @@ from pathlib import Path
 
 import bd
 
-from .git_utils import cleanup_branch, ensure_on_main
+from .git import cleanup_branch, ensure_on_main
 
 logger = logging.getLogger(__name__)
 
