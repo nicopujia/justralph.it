@@ -164,6 +164,15 @@ def _run_loop(
                 logger.info("Discarding partial work on issue %s", issue.id)
                 ensure_on_main()
                 cleanup_branch(issue.id)
+            elif ralph.status == Agent.Status.HELP:
+                logger.info(
+                    "Issue %s needs human help; reopening and clearing assignee",
+                    issue.id,
+                )
+                bd.update_issue(issue.id, status="open", assignee="")
+                logger.info("Discarding partial work on issue %s", issue.id)
+                ensure_on_main()
+                cleanup_branch(issue.id)
 
             consecutive_failures = 0
         except Exception as exc:
