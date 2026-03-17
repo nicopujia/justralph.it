@@ -85,22 +85,26 @@
             </TDD>
         </Step>
         <Step id="5" title="Deployment">
-            Merge main into your branch; run the unit and integration test suites once again; everything should be green; otherwise, use subagents to diagnose and fix until it works.
-            Merge your branch into main.
             <Deploy condition="the project is deployable and has a deploy process">
+                Add/update E2E tests to verify user-facing changes. Commit them on your branch.
+                Merge main into your branch; run the full test suite (unit, integration, and the new E2E tests if they can run locally); everything should be green; otherwise, use subagents to diagnose and fix until it works.
+                Merge your branch into main.
                 <Staging condition="the project uses external services with sandbox/test modes (payments, SMS, email, etc.)">
                     Set up a staging environment if one doesn't exist yet: mirror production but use sandbox/test credentials.
                     Deploy to staging.
-                    Add/update and run E2E tests against staging to verify user-facing changes.
+                    Run E2E tests against staging.
                     If E2E passes, deploy to production.
                 </Staging>
                 <NoStaging condition="otherwise">
                     Deploy to production.
-                    Add/update and run E2E tests against production to verify user-facing changes.
+                    Run E2E tests against production.
                 </NoStaging>
-                If E2E fails, use subagents to diagnose and fix until it works.
-                Commit any E2E tests you wrote.
+                If E2E fails, use subagents to diagnose and fix. If you cannot fix it after reasonable attempts, revert the merge on main, file an issue assigned to "Human" explaining what failed and why human help is needed (reference branch ralph/[issue-id] which contains the code), and {self.HELP}.
             </Deploy>
+            <NoDeployYet condition="otherwise">
+                Merge main into your branch; run the full test suite; everything should be green; otherwise, use subagents to diagnose and fix until it works.
+                Merge your branch into main.
+            </NoDeployYet>
             Any file you create or modify outside the repo (e.g. systemd units, nginx configs, cron jobs, env files) must have a reproducible copy or template checked into the repo, and be documented so a future self can recreate the setup from scratch.
         </Step>
         <Step id="6" title="Maintenance">
