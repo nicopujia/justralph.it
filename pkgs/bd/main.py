@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Issue:
-    """A Beads issue, matching the core fields from `bd show --json`."""
+    """A Beads issue, matching the fields from `bd show --json`."""
 
     id: str
     title: str
@@ -24,10 +24,20 @@ class Issue:
     priority: int = 2
     issue_type: str = "task"
     description: str = ""
+    acceptance: str = ""
+    design: str = ""
+    notes: str = ""
     assignee: str = ""
     labels: list[str] = field(default_factory=list)
+    estimate: int = 0
+    external_ref: str = ""
+    parent: str = ""
+    spec_id: str = ""
+    due: datetime | None = None
+    defer: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    metadata: dict = field(default_factory=dict)
 
 
 def _parse_issue(data: dict) -> Issue:
@@ -48,10 +58,20 @@ def _parse_issue(data: dict) -> Issue:
         priority=data.get("priority", 2),
         issue_type=data.get("issue_type", "task"),
         description=data.get("description", ""),
+        acceptance=data.get("acceptance", ""),
+        design=data.get("design", ""),
+        notes=data.get("notes", ""),
         assignee=data.get("assignee", ""),
         labels=data.get("labels") or [],
+        estimate=data.get("estimate", 0),
+        external_ref=data.get("external_ref", ""),
+        parent=data.get("parent", ""),
+        spec_id=data.get("spec_id", ""),
+        due=_parse_dt(data.get("due")),
+        defer=_parse_dt(data.get("defer")),
         created_at=_parse_dt(data.get("created_at")),
         updated_at=_parse_dt(data.get("updated_at")),
+        metadata=data.get("metadata") or {},
     )
 
 
