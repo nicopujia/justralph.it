@@ -1,0 +1,12 @@
+[project]
+name = "bd"
+version = "0.1.0"
+description = "Python wrapper around the Beads (bd) CLI."
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.setuptools]
+packages = ["bd"]
+
+[tool.setuptools.package-dir]
+bd = "."

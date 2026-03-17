@@ -1,0 +1,25 @@
+[project]
+name = "ralph"
+version = "0.1.0"
+description = "Autonomous coding agent loop."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "bd",
+    "psutil>=7.2.2",
+]
+
+[project.scripts]
+ralph = "ralph.loop:main"
+
+[tool.setuptools]
+packages = ["ralph"]
+
+[tool.setuptools.package-dir]
+ralph = "."
+
+[tool.setuptools.package-data]
+ralph = ["PROMPT.md", "opencode.jsonc"]
+
+[tool.uv.sources]
+bd = { workspace = true }
