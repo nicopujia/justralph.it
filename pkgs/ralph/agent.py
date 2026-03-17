@@ -96,4 +96,4 @@ class Agent:
 
     def __getattr__(self, name: str, /) -> Any:
         self.status = self.Status[name]
-        return f"output `<status>{self.status.value}</status>` in a new line and stop"
+        return f"output `<Status>{self.status.value}</Status>` in a new line and stop"
