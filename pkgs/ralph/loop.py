@@ -151,6 +151,11 @@ def _run_loop(
             for stdout in ralph.run(timeout=cfg.subprocess_timeout):
                 logger.info("[Ralph] %s", stdout.rstrip())
             logger.info("Ralph concluded working: %s", ralph.status)
+
+            if ralph.status == Agent.Status.DONE:
+                logger.info("Marking issue %s as done", issue.id)
+                bd.close_issue(issue.id)
+
             consecutive_failures = 0
         except Exception as exc:
             iter_error = exc

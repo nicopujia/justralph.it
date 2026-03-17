@@ -183,6 +183,18 @@ def update_issue(
     logger.info("Updated issue %s (status=%s, assignee=%s)", issue_id, status, assignee)
 
 
+def close_issue(issue_id: str) -> None:
+    """Mark an issue as closed/done.
+
+    Raises:
+        RuntimeError: If bd close fails.
+    """
+    result = _run_bd("close", issue_id)
+    if result is None:
+        raise RuntimeError(f"Failed to mark issue {issue_id} as done")
+    logger.info("Marked issue %s as done", issue_id)
+
+
 def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
     """Run a bd CLI command and return the result, or None on failure."""
     timeout = 30
