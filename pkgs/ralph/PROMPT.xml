@@ -199,7 +199,7 @@
                 Mostly lowercase.
                 Abbreviate when obvious (e.g. `deps`, `cfg`, `init`, `impl`, `refactor`, `rm`, `mv`, etc.).
                 Keep subjects short.
-                Always include `Closes: [issue-id]` at the footer.
+                Include `Closes: [issue-id]` at the footer only in the final commit of the Maintenance step.
                 If you include a body, keep it concise.
                 <Examples>
                     <Example>
