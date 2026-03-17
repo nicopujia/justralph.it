@@ -21,8 +21,10 @@
             Understand your assigned issue thoroughly.
             Research the codebase to gather all relevant context (architecture, dependencies, existing tests, related code, documentation).
             Identify what needs to change based on the acceptance criteria.
-            If find out that you absolutely need human help (e.g. real identity verification, external access you cannot obtain), think harder whether you can do it yourself instead.
-            If you actually cannot solve it yourself, file an issue assigned to "Human" including what, how, and why needs to be done, and why human help is necessary; then, {self.HELP}.
+            If the issue requires deployment, check if you can obtain necessary credentials (staging/production environments, external service credentials, etc.).
+            If you need and lack credentials requiring payment verification or real identity verification, file a blocking issue assigned to "Human" explaining what's needed and why; then, {self.HELP}.
+            For other types of blockers (e.g. external access you're unsure about), think harder whether you can solve it yourself with your root access and internet connectivity before asking for help.
+            If you actually cannot solve the issue by yourself, file a blocking issue assigned to "Human" including what, how, and why needs to be done, and why human help is necessary; then, {self.HELP}.
             If you find new issues that **block** {self.issue.id}, file the issue as a blocker of {self.issue.id}; then, {self.BLOCKED}.
             If you find new issues that should be attended but aren't blocking, file them and go on.
         </Step>
@@ -84,29 +86,36 @@
             </TDD>
         </Step>
         <Step id="5" title="Deployment">
+            <NoDeployYet condition="the project isn't deployable or doesn't have a deploy process yet">
+                Merge main into your branch.
+                Run the full test suite.
+                Everything should be green.
+                Otherwise, use subagents to diagnose and fix.
+                If you cannot fix it after 3 attempts, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
+                If everything is green, merge your branch into main.
+            </NoDeployYet>
             <Deploy condition="the project is deployable and has a deploy process">
-                Add/update E2E tests to verify user-facing changes. Commit them on your branch.
-                Merge main into your branch; run the full test suite (unit, integration, and the new E2E tests if they can run locally); everything should be green; otherwise, use subagents to diagnose and fix until it works.
+                Add/update E2E tests to verify user-facing changes.
+                Commit them on your branch.
+                Merge main into your branch.
+                Run unit and integration tests.
+                Everything should be green.
+                Otherwise, use subagents to diagnose and fix.
+                If you cannot fix it after 3 attempts, revert changes, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
                 Merge your branch into main.
-                <Staging condition="the project uses external services with sandbox/test modes (payments, SMS, email, etc.)">
-                    Set up a staging environment if one doesn't exist yet: mirror production but use sandbox/test credentials.
+                <Staging condition="the project uses services with real-world consequences (payments, SMS, email, etc.)">
+                    Set up staging environment if one doesn't exist yet: mirror production but use sandbox/test credentials.
                     Deploy to staging.
                     Run E2E tests against staging.
                     If E2E passes, deploy to production.
                 </Staging>
-                <NoStaging condition="otherwise">
+                <NoStaging condition="the project doesn't use services with real-world effects AND there is no staging setup">
                     Deploy to production.
                     Run E2E tests against production.
                 </NoStaging>
-                If E2E fails, use subagents to diagnose and fix. If you cannot fix it after 3 attempts, revert the merge on main, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
+                If E2E fails, use subagents to diagnose and fix.
+                If you cannot fix it after 3 attempts, revert the merge on main, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
             </Deploy>
-            <NoDeployYet condition="otherwise">
-                Merge main into your branch.
-                Run the full test suite.
-                Everything should be green.
-                Otherwise, use subagents to diagnose and fix. If you cannot fix it after 3 attempts, revert the merge of main into your branch, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
-                Merge your branch into main.
-            </NoDeployYet>
             Any file you create or modify outside the repo (e.g. systemd units, nginx configs, cron jobs, env files) must have a reproducible copy or template checked into the repo, and be documented so a future self can recreate the setup from scratch.
         </Step>
         <Step id="6" title="Maintenance">
