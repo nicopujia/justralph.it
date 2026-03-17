@@ -66,11 +66,11 @@ def _parse_issue(data: dict) -> Issue:
 
     def _parse_dt(value: str | None) -> datetime | None:
         if not value:
-            return None
+            return
         try:
             return datetime.fromisoformat(value)
         except (ValueError, TypeError):
-            return None
+            return
 
     return Issue(
         id=data["id"],
@@ -104,22 +104,22 @@ def get_next_ready_issue() -> Issue | None:
     """
     result = _run_bd("ready", "--json", "--limit", "1")
     if result is None:
-        return None
+        return
 
     stdout = result.stdout.strip()
     if not stdout:
-        return None
+        return
 
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
         logger.error("Failed to parse bd ready output as JSON")
-        return None
+        return
 
     # bd ready --json returns a list of issues
     issues = data if isinstance(data, list) else [data]
     if not issues:
-        return None
+        return
 
     return _parse_issue(issues[0])
 
@@ -194,10 +194,10 @@ def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
         )
     except FileNotFoundError:
         logger.error("bd CLI not found; is beads installed?")
-        return None
+        return
     except subprocess.TimeoutExpired:
         logger.error("bd %s timed out after %ss", args[0] if args else "?", timeout)
-        return None
+        return
     except subprocess.CalledProcessError as e:
         logger.error("bd %s failed: %s", args[0] if args else "?", e.stderr.strip())
-        return None
+        return
