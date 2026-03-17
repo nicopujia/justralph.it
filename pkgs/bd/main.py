@@ -34,6 +34,32 @@ class Issue:
     updated_at: datetime | None = None
     metadata: dict = field(default_factory=dict)
 
+    def as_xml(self) -> str:
+        """Return the issue as an XML string with Capitalized tags.
+
+        Fields that are not set (empty string, empty list, empty dict,
+        zero for estimate, or None) are skipped.
+        """
+        lines: list[str] = ["<Issue>"]
+        for f in self.__dataclass_fields__:
+            value = getattr(self, f)
+            # Skip unset / default-empty values
+            if value is None or value == "" or value == [] or value == {} or value == 0:
+                continue
+            tag = f.replace("_", " ").title().replace(" ", "")
+            if isinstance(value, list):
+                inner = "".join(f"<Item>{v}</Item>" for v in value)
+                lines.append(f"  <{tag}>{inner}</{tag}>")
+            elif isinstance(value, dict):
+                inner = "".join(f"<{k}>{v}</{k}>" for k, v in value.items())
+                lines.append(f"  <{tag}>{inner}</{tag}>")
+            elif isinstance(value, datetime):
+                lines.append(f"  <{tag}>{value.isoformat()}</{tag}>")
+            else:
+                lines.append(f"  <{tag}>{value}</{tag}>")
+        lines.append("</Issue>")
+        return "\n".join(lines)
+
 
 def _parse_issue(data: dict) -> Issue:
     """Parse a JSON dict from bd CLI output into an Issue."""
