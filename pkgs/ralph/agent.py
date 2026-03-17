@@ -48,6 +48,7 @@ class Agent:
 
     def run(self, timeout: float | None = None) -> Generator[str, None, None]:
         """Yield OpenCode's stdout line by line and update status."""
+        self.status = self.Status.WORKING
         prompt = self._prompt_file.read_text().format(self=self)
         args = ["opencode", "run", prompt, "--model", self._model, *self._args]
         logger.debug("Agent args: %s", args)
@@ -80,23 +81,27 @@ class Agent:
                 break
 
         if not status_xml:
-            logger.error("No output from OpenCode; cannot determine status")
             self.status = self.Status.IDLE
-            return
+            raise BadRalphStatus("No output from OpenCode")
 
         try:
             status_msg = ElementTree.fromstring(status_xml).text
         except ElementTree.ParseError:
-            logger.error("Failed to parse status XML from last line: %r", status_xml)
             self.status = self.Status.IDLE
-            return
+            raise BadRalphStatus(
+                f"Failed to parse status XML from last line: {status_xml!r}",
+            )
 
         try:
             self.status = self.Status(status_msg)
         except ValueError:
-            logger.error("Unknown status value: %r", status_msg)
             self.status = self.Status.IDLE
+            raise BadRalphStatus(f"Unknown status value: {status_msg!r}")
 
     def __getattr__(self, name: str, /) -> Any:
         self.status = self.Status[name]
         return f"output `<Status>{self.status.value}</Status>` in a new line and stop"
+
+
+class BadRalphStatus(ValueError):
+    """Ralph didn't output or output a wrong status"""
