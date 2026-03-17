@@ -48,10 +48,6 @@ def init_ralph_dir(cfg: Config) -> None:
         hooks_file.write_text(DEFAULT_HOOKS)
         logger.info("Created %s", hooks_file)
 
-    if not cfg.notes_file.exists():
-        cfg.notes_file.write_text("")
-        logger.info("Created %s", cfg.notes_file)
-
     gitignore_file = cfg.base_dir / ".gitignore"
     if not gitignore_file.exists():
         gitignore_file.write_text("logs/\nstate.json\n*.ralph\n")

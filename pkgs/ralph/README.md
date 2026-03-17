@@ -28,7 +28,7 @@ cd your-project/
 ralph
 ```
 
-On first run, Ralph creates a `.ralph/` directory in the current working directory with default hooks and notes files. The `.ralph/` dir should be committed -- it contains project-specific config. Add the runtime artifacts to your `.gitignore`:
+On first run, Ralph creates a `.ralph/` directory in the current working directory with default hooks. The `.ralph/` dir should be committed -- it contains project-specific config. Add the runtime artifacts to your `.gitignore`:
 
 ```gitignore
 .ralph/logs/
@@ -42,7 +42,6 @@ All options have sensible defaults. Override with CLI flags:
 |------|---------|-------------|
 | `--model` | `opencode/kimi-k2.5` | Model passed to OpenCode |
 | `--prompt-file` | (shipped w/ package) | Prompt template (immutable) |
-| `--notes-file` | `.ralph/NOTES.md` | Notes injected into the prompt (editable) |
 | `--max-iters` | `-1` (infinite) | Max iterations before stopping |
 | `--max-retries` | `-1` (infinite) | Max consecutive failures before stopping |
 | `--poll-interval` | `30` | Seconds between polls for new issues |
@@ -109,7 +108,6 @@ Ralph creates a `.ralph/` directory in whatever project you run it from:
 your-project/
   .ralph/
     hooks.py       # CustomHooks subclass -- override methods here
-    NOTES.md       # Notes injected into the prompt (editable by Ralph)
     logs/          # Log files
     state.json     # Crash-recovery state
     stop.ralph     # Create to stop the loop
@@ -144,7 +142,7 @@ All methods are abstract and must be implemented (the default scaffold provides 
 
 ## Prompt template
 
-`PROMPT.md` is shipped with the package and is **immutable**. It receives the `Agent` instance as `{self}`. Notes from `.ralph/NOTES.md` are available as `{self.notes}`.
+`PROMPT.md` is shipped with the package and is **immutable**. It receives the `Agent` instance as `{self}`.
 
 Available template variables:
 
@@ -153,13 +151,10 @@ Available template variables:
 - `{self.DONE}` -- instruction string for the DONE status
 - `{self.HELP}` -- instruction string for the HELP status
 - `{self.BLOCKED}` -- instruction string for the BLOCKED status
-- `{self.notes}` -- contents of `.ralph/NOTES.md`
 
 The Agent's `__getattr__` resolves any `Status` enum member name into an instruction string that tells OpenCode to output the corresponding `<status>` XML tag.
 
-### Notes
-
-`.ralph/NOTES.md` is the editable counterpart to `PROMPT.md`. Ralph can modify this file to leave notes for future iterations. Its content is loaded into `self.notes` at agent creation and available in the prompt as `{self.notes}`.
+Notes between iterations are handled by `AGENTS.md` files, which OpenCode injects automatically.
 
 ## Package structure
 

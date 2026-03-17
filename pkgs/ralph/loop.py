@@ -122,7 +122,6 @@ def _run_loop(
             issue=issue,
             model=cfg.model,
             prompt_file=cfg.prompt_file,
-            notes_file=cfg.notes_file,
             *extra_args,
             **extra_kwargs,
         )

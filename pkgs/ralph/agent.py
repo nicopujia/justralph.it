@@ -25,13 +25,11 @@ class Agent:
         issue: bd.Issue,
         model: str,
         prompt_file: Path,
-        notes_file: Path,
         *args,
         **kwargs,
     ) -> None:
         self.status = self.Status.IDLE
         self.issue = issue
-        self.notes = notes_file.read_text() if notes_file.exists() else ""
         self._model = model
         self._prompt_file = prompt_file
         self._args = args

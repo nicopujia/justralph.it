@@ -9,7 +9,6 @@ BASE_DIR = Path.cwd() / ".ralph"
 LOGS_DIR = BASE_DIR / "logs"
 STATE_FILE = BASE_DIR / "state.json"
 MAIN_LOG_FILE = LOGS_DIR / "main.log"
-NOTES_FILE = BASE_DIR / "NOTES.md"
 STOP_FILE = BASE_DIR / "stop.ralph"
 RESTART_FILE = BASE_DIR / "restart.ralph"
 
@@ -27,7 +26,6 @@ MAX_RETRIES = -1  # infinite
 class Config:
     model: str = MODEL
     prompt_file: Path = PROMPT_FILE
-    notes_file: Path = NOTES_FILE
     stop_file: Path = STOP_FILE
     restart_file: Path = RESTART_FILE
     state_file: Path = STATE_FILE
@@ -55,12 +53,6 @@ def get_config() -> Config:
         type=Path,
         default=PROMPT_FILE,
         help=f"Path to prompt file (default: {PROMPT_FILE})",
-    )
-    parser.add_argument(
-        "--notes-file",
-        type=Path,
-        default=NOTES_FILE,
-        help=f"Path to notes file injected into prompt (default: {NOTES_FILE})",
     )
     parser.add_argument(
         "--stop-file",
