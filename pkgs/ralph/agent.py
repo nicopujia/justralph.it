@@ -19,7 +19,6 @@ class Agent:
         DONE = "COMPLETED ASSIGNED ISSUE"
         HELP = "HUMAN HELP ABSOLUTELY NEEDED"
         BLOCKED = "FOUND NEW BLOCKER ISSUE"
-        AMBIGUOUS = "ASSIGNED ISSUE IS AMBIGUOUS"
 
     def __init__(
         self,

@@ -21,7 +21,6 @@
             Understand your assigned issue thoroughly.
             Research the codebase to gather all relevant context (architecture, dependencies, existing tests, related code, documentation).
             Identify what needs to change based on the acceptance criteria.
-            If the issue is ambiguous/underspecified at a product (not implementation) level, do not guess; instead, {self.AMBIGUOUS}.
             If find out that you absolutely need human help (e.g. real identity verification, external access you cannot obtain), think harder whether you can do it yourself instead.
             If you actually cannot solve it yourself, file an issue assigned to "Human" including what, how, and why needs to be done, and why human help is necessary; then, {self.HELP}.
             If you find new issues that **block** {self.issue.id}, file the issue as blocking; then, {self.BLOCKED}.
