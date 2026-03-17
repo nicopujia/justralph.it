@@ -19,17 +19,20 @@ class Agent:
         DONE = "COMPLETED ASSIGNED ISSUE"
         HELP = "HUMAN HELP ABSOLUTELY NEEDED"
         BLOCKED = "FOUND NEW BLOCKER ISSUE"
+        AMBIGUOUS = "ASSIGNED ISSUE IS AMBIGUOUS"
 
     def __init__(
         self,
         issue: bd.Issue,
         model: str,
         prompt_file: Path,
+        i: int = 0,
         *args,
         **kwargs,
     ) -> None:
         self.status = self.Status.IDLE
         self.issue = issue
+        self.i = i
         self._model = model
         self._prompt_file = prompt_file
         self._args = args
@@ -48,6 +51,7 @@ class Agent:
         """Yield OpenCode's stdout line by line and update status."""
         prompt = self._prompt_file.read_text().format(self=self)
         args = ["opencode", "run", prompt, "--model", self._model, *self._args]
+        logger.debug("Agent args: %s", args)
 
         with subprocess.Popen(
             args,

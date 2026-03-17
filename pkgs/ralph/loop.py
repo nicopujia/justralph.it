@@ -122,6 +122,7 @@ def _run_loop(
             issue=issue,
             model=cfg.model,
             prompt_file=cfg.prompt_file,
+            i=i,
             *extra_args,
             **extra_kwargs,
         )
