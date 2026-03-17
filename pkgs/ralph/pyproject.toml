@@ -19,7 +19,7 @@ packages = ["ralph"]
 ralph = "."
 
 [tool.setuptools.package-data]
-ralph = ["PROMPT.md", "opencode.jsonc"]
+ralph = ["PROMPT.xml", "opencode.jsonc"]
 
 [tool.uv.sources]
 bd = { workspace = true }

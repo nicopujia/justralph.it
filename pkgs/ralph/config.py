@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PKG_DIR = Path(__file__).parent
-PROMPT_FILE = PKG_DIR / "PROMPT.md"
+PROMPT_FILE = PKG_DIR / "PROMPT.xml"
 
 BASE_DIR = Path.cwd() / ".ralph"
 LOGS_DIR = BASE_DIR / "logs"
