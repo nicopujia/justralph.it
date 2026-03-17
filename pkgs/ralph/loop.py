@@ -10,7 +10,7 @@ from .config import Config, get_config
 from .git import reset_git_state
 from .hooks import Hooks
 from .init import init_ralph_dir, load_hooks
-from .state import State
+from .state import State, cleanup_failed_iteration
 
 logger = logging.getLogger(__name__)
 
@@ -156,21 +156,22 @@ def _run_loop(
                     logger.info("Marking issue %s as done", issue.id)
                     bd.done_issue(issue.id)
                 case Agent.Status.BLOCKED:
-                    logger.info(
-                        "Issue %s has blockers; setting to blocked and clearing assignee",
-                        issue.id,
-                    )
-                    bd.update_issue(issue.id, status="blocked", assignee="")
-                    logger.info("Discarding partial work on issue %s", issue.id)
-                    reset_git_state(issue.id)
+                    logger.info("Issue %s has blockers", issue.id)
+                    cleanup_failed_iteration(issue.id, status="blocked")
                 case Agent.Status.HELP:
                     logger.info(
-                        "Issue %s needs human help; reopening and clearing assignee",
+                        "Issue %s needs human help (blocked by human-help issue)",
                         issue.id,
                     )
-                    bd.update_issue(issue.id, status="open", assignee="")
-                    logger.info("Discarding partial work on issue %s", issue.id)
-                    reset_git_state(issue.id)
+                    cleanup_failed_iteration(issue.id, status="blocked")
+                case _:
+                    logger.warning(
+                        "Unexpected status %s for issue %s; treating as failure",
+                        ralph.status,
+                        issue.id,
+                    )
+                    cleanup_failed_iteration(issue.id)
+                    raise ValueError(f"Unexpected Ralph status: {ralph.status}")
 
             consecutive_failures = 0
         except Exception as exc:
@@ -180,6 +181,7 @@ def _run_loop(
                 "Failed unexpectedly (consecutive failures: %s)",
                 consecutive_failures,
             )
+            cleanup_failed_iteration(issue.id)
             if cfg.max_retries >= 0 and consecutive_failures > cfg.max_retries:
                 cfg.stop_file.write_text(
                     f"exceeded max retries ({cfg.max_retries}) "

@@ -7,9 +7,29 @@ from pathlib import Path
 
 import bd
 
-from .git import cleanup_branch, ensure_on_main
+from .git import reset_git_state
 
 logger = logging.getLogger(__name__)
+
+
+def cleanup_failed_iteration(issue_id: str, status: str = "open") -> None:
+    """Clean up after a failed iteration: reset git state and update issue.
+
+    This is used when Ralph fails to complete an issue for any reason
+    (exception, timeout, bad status, needs help, blocked, etc).
+    It ensures the issue is properly updated and git is in a clean state.
+
+    Args:
+        issue_id: The issue ID (e.g., 'bd-123')
+        status: Status to set on the issue (default: 'open')
+    """
+    logger.info("Cleaning up failed iteration for issue %s", issue_id)
+    reset_git_state(issue_id)
+    try:
+        bd.update_issue(issue_id, status=status, assignee="")
+        logger.info("Set issue %s to %s and cleared assignee", issue_id, status)
+    except RuntimeError:
+        logger.error("Failed to update issue %s", issue_id)
 
 
 class State:
@@ -73,21 +93,9 @@ class State:
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.error("git reset --hard failed: %s", e)
 
-        # ensure we're on main and delete the branch if it exists
+        # reset git state and reopen the issue
         if issue_id:
-            try:
-                ensure_on_main()
-            except subprocess.CalledProcessError:
-                logger.warning("Could not checkout main; branch cleanup may fail")
-            cleanup_branch(issue_id)
-
-        # set the issue back to open and clear assignee
-        if issue_id:
-            try:
-                bd.update_issue(issue_id, status="open", assignee="")
-                logger.info("Set issue %s back to open and cleared assignee", issue_id)
-            except RuntimeError:
-                logger.error("Failed to reopen issue %s", issue_id)
+            cleanup_failed_iteration(issue_id)
 
         self.clear()
         return iteration
