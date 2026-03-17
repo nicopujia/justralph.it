@@ -112,7 +112,7 @@
             Commit.
         </Step>
         <Step id="7" title="Finish">
-            Finally, {self.DONE}.
+            Finally, run `bd done {self.issue.id}`, {self.DONE}.
         </Step>
     </Workflow>
     <SystemReminders>
