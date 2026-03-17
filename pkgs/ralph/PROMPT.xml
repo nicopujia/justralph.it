@@ -164,9 +164,9 @@
                 Tell them about the power they have and the principles to follow.
             </Instruction>
             <Instruction>
-                Tell them to recursively split each of their discrete tasks with subagents.
+                Tell them to split discrete tasks with subagents, who should do the same recursively until tasks are small enough to handle directly.
                 <Example>
-                    If you have to research 5 directories, use a subagent for each of them recursively.
+                    If you have to research 5 directories, use a subagent for each of them. Each subagent may spawn further subagents if needed.
                 </Example>
             </Instruction>
             <Instruction>
