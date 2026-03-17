@@ -18,3 +18,14 @@ members = [
 [tool.uv.sources]
 ralph = { workspace = true }
 bd = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.6",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"
