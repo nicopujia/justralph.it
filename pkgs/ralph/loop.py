@@ -7,7 +7,7 @@ import psutil
 
 from .agent import Agent
 from .config import Config, get_config
-from .git import cleanup_branch, ensure_on_main
+from .git import reset_git_state
 from .hooks import Hooks
 from .init import init_ralph_dir, load_hooks
 from .state import State
@@ -132,8 +132,7 @@ def _run_loop(
         ralph.claim_issue()
 
         logger.info("Preparing git state for issue %s", issue.id)
-        ensure_on_main()
-        cleanup_branch(issue.id)
+        reset_git_state(issue.id)
 
         iter_log_file = cfg.logs_dir / f"iteration_{i}.log"
         iter_handler = logging.FileHandler(filename=iter_log_file)
@@ -152,27 +151,26 @@ def _run_loop(
                 logger.info("[Ralph] %s", stdout.rstrip())
             logger.info("Ralph concluded working: %s", ralph.status)
 
-            if ralph.status == Agent.Status.DONE:
-                logger.info("Marking issue %s as done", issue.id)
-                bd.done_issue(issue.id)
-            elif ralph.status == Agent.Status.BLOCKED:
-                logger.info(
-                    "Issue %s has blockers; setting to blocked and clearing assignee",
-                    issue.id,
-                )
-                bd.update_issue(issue.id, status="blocked", assignee="")
-                logger.info("Discarding partial work on issue %s", issue.id)
-                ensure_on_main()
-                cleanup_branch(issue.id)
-            elif ralph.status == Agent.Status.HELP:
-                logger.info(
-                    "Issue %s needs human help; reopening and clearing assignee",
-                    issue.id,
-                )
-                bd.update_issue(issue.id, status="open", assignee="")
-                logger.info("Discarding partial work on issue %s", issue.id)
-                ensure_on_main()
-                cleanup_branch(issue.id)
+            match ralph.status:
+                case Agent.Status.DONE:
+                    logger.info("Marking issue %s as done", issue.id)
+                    bd.done_issue(issue.id)
+                case Agent.Status.BLOCKED:
+                    logger.info(
+                        "Issue %s has blockers; setting to blocked and clearing assignee",
+                        issue.id,
+                    )
+                    bd.update_issue(issue.id, status="blocked", assignee="")
+                    logger.info("Discarding partial work on issue %s", issue.id)
+                    reset_git_state(issue.id)
+                case Agent.Status.HELP:
+                    logger.info(
+                        "Issue %s needs human help; reopening and clearing assignee",
+                        issue.id,
+                    )
+                    bd.update_issue(issue.id, status="open", assignee="")
+                    logger.info("Discarding partial work on issue %s", issue.id)
+                    reset_git_state(issue.id)
 
             consecutive_failures = 0
         except Exception as exc:

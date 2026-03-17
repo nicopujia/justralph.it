@@ -62,3 +62,13 @@ def ensure_on_main() -> None:
     except subprocess.CalledProcessError as e:
         logger.error("Failed to checkout main: %s", e.stderr)
         raise
+
+
+def reset_git_state(issue_id: str) -> None:
+    """Reset git state: ensure on main and delete issue branch.
+
+    Args:
+        issue_id: The issue ID (e.g., 'bd-123')
+    """
+    ensure_on_main()
+    cleanup_branch(issue_id)
