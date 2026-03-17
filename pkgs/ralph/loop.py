@@ -161,6 +161,9 @@ def _run_loop(
                     issue.id,
                 )
                 bd.update_issue(issue.id, status="blocked", assignee="")
+                logger.info("Discarding partial work on issue %s", issue.id)
+                ensure_on_main()
+                cleanup_branch(issue.id)
 
             consecutive_failures = 0
         except Exception as exc:
