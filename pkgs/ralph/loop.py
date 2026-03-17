@@ -117,7 +117,9 @@ def _run_loop(
         extra_args, extra_kwargs = hooks.extra_args_kwargs(cfg, issue)
 
         logger.info(
-            "Creating instance with args %s and kwargs %s", extra_args, extra_kwargs
+            "Creating instance with extra args %s and kwargs %s",
+            extra_args,
+            extra_kwargs,
         )
         ralph = Agent(
             issue=issue,
