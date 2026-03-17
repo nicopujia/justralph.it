@@ -35,7 +35,7 @@
             Do not write code yet.
         </Step>
         <Step id="4" title="(Test-driven) Development">
-            Create a fresh branch `ralph/[issue-id]`. If it already exists, delete it first.
+            Create and checkout branch `ralph/[issue-id]`.
             For non-logic tasks (docs, copy, etc), although they should not have automated tests, solve them with subagents and then have another subagent manually verify correctness.
             For logic tasks, follow outside-in TDD (two nested loops):
             <TDD>
