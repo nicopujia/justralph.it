@@ -36,7 +36,7 @@ class State:
         """Recover from a mid-iteration crash if a state file exists.
 
         - Runs ``git reset --hard`` to discard partial changes.
-        - Sets the interrupted issue back to open status.
+        - Sets the interrupted issue back to open status and clears assignee.
         - Returns the saved iteration index so the loop can resume from it.
 
         Returns 0 if no crash was detected.
@@ -81,11 +81,11 @@ class State:
                 logger.warning("Could not checkout main; branch cleanup may fail")
             cleanup_branch(issue_id)
 
-        # set the issue back to open
+        # set the issue back to open and clear assignee
         if issue_id:
             try:
-                bd.update_issue(issue_id, status="open")
-                logger.info("Set issue %s back to open", issue_id)
+                bd.update_issue(issue_id, status="open", assignee="")
+                logger.info("Set issue %s back to open and cleared assignee", issue_id)
             except RuntimeError:
                 logger.error("Failed to reopen issue %s", issue_id)
 
