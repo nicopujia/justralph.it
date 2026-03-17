@@ -49,30 +49,33 @@ class Agent:
     def run(self, timeout: float | None = None) -> Generator[str, None, None]:
         """Yield OpenCode's stdout line by line and update status."""
         self.status = self.Status.WORKING
-        prompt = self._prompt_file.read_text().format(self=self)
-        args = ["opencode", "run", prompt, "--model", self._model, *self._args]
-        logger.debug("Agent args: %s", args)
+        try:
+            prompt = self._prompt_file.read_text().format(self=self)
+            args = ["opencode", "run", prompt, "--model", self._model, *self._args]
+            logger.debug("Agent args: %s", args)
 
-        with subprocess.Popen(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            **self._kwargs,
-        ) as process:
-            if not process.stdout:
-                raise Exception("No stdout from OpenCode, aborting")
+            with subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                **self._kwargs,
+            ) as process:
+                if not process.stdout:
+                    raise Exception("No stdout from OpenCode, aborting")
 
-            lines: list[str] = []
-            start_time = time.monotonic()
-            for line in process.stdout:
-                if timeout and (time.monotonic() - start_time) > timeout:
-                    process.kill()
-                    raise subprocess.TimeoutExpired(args, timeout)
-                lines.append(line)
-                yield line
+                lines: list[str] = []
+                start_time = time.monotonic()
+                for line in process.stdout:
+                    if timeout and (time.monotonic() - start_time) > timeout:
+                        process.kill()
+                        raise subprocess.TimeoutExpired(args, timeout)
+                    lines.append(line)
+                    yield line
 
-            process.wait()
+                process.wait()
+        finally:
+            self.status = self.Status.IDLE
 
         status_xml = ""
         for line in reversed(lines):
@@ -81,13 +84,11 @@ class Agent:
                 break
 
         if not status_xml:
-            self.status = self.Status.IDLE
             raise BadRalphStatus("No output from OpenCode")
 
         try:
             status_msg = ElementTree.fromstring(status_xml).text
         except ElementTree.ParseError:
-            self.status = self.Status.IDLE
             raise BadRalphStatus(
                 f"Failed to parse status XML from last line: {status_xml!r}",
             )
@@ -95,7 +96,6 @@ class Agent:
         try:
             self.status = self.Status(status_msg)
         except ValueError:
-            self.status = self.Status.IDLE
             raise BadRalphStatus(f"Unknown status value: {status_msg!r}")
 
     def __getattr__(self, name: str, /) -> Any:
