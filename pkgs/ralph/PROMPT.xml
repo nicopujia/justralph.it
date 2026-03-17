@@ -23,7 +23,7 @@
             Identify what needs to change based on the acceptance criteria.
             If find out that you absolutely need human help (e.g. real identity verification, external access you cannot obtain), think harder whether you can do it yourself instead.
             If you actually cannot solve it yourself, file an issue assigned to "Human" including what, how, and why needs to be done, and why human help is necessary; then, {self.HELP}.
-            If you find new issues that **block** {self.issue.id}, file the issue as blocking; then, {self.BLOCKED}.
+            If you find new issues that **block** {self.issue.id}, file the issue as a blocker of {self.issue.id}; then, {self.BLOCKED}.
             If you find new issues that should be attended but aren't blocking, file them and go on.
         </Step>
         <Step id="3" title="Design">
