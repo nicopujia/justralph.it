@@ -1,6 +1,5 @@
 import logging
 import shutil
-import subprocess
 import time
 
 import bd
@@ -8,37 +7,12 @@ import psutil
 
 from .agent import Agent
 from .config import Config, get_config
+from .git_utils import cleanup_branch, ensure_on_main
 from .hooks import Hooks
 from .init import init_ralph_dir, load_hooks
 from .state import State
 
 logger = logging.getLogger(__name__)
-
-
-def _cleanup_branch(issue_id: str) -> None:
-    """Delete the ralph/[issue-id] branch if it exists."""
-    branch_name = f"ralph/{issue_id}"
-    try:
-        # Check if branch exists
-        result = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            logger.info("Branch %s exists; deleting it", branch_name)
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            logger.info("Deleted branch %s", branch_name)
-        else:
-            logger.debug("Branch %s does not exist; nothing to clean up", branch_name)
-    except subprocess.CalledProcessError as e:
-        logger.warning("Failed to delete branch %s: %s", branch_name, e.stderr)
 
 
 def main():
@@ -156,8 +130,9 @@ def _run_loop(
 
         ralph.start_issue(timeout=cfg.bd_timeout)
 
-        logger.info("Cleaning up branch for issue %s", issue.id)
-        _cleanup_branch(issue.id)
+        logger.info("Preparing git state for issue %s", issue.id)
+        ensure_on_main()
+        cleanup_branch(issue.id)
 
         iter_log_file = cfg.logs_dir / f"iteration_{i}.log"
         iter_handler = logging.FileHandler(filename=iter_log_file)

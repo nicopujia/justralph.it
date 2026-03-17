@@ -7,6 +7,8 @@ from pathlib import Path
 
 import bd
 
+from .git_utils import cleanup_branch, ensure_on_main
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,29 +73,13 @@ class State:
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.error("git reset --hard failed: %s", e)
 
-        # delete the branch if it exists
+        # ensure we're on main and delete the branch if it exists
         if issue_id:
-            branch_name = f"ralph/{issue_id}"
             try:
-                result = subprocess.run(
-                    ["git", "rev-parse", "--verify", branch_name],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    logger.info(
-                        "Deleting branch %s from crashed iteration", branch_name
-                    )
-                    subprocess.run(
-                        ["git", "branch", "-D", branch_name],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    logger.info("Deleted branch %s", branch_name)
-            except subprocess.CalledProcessError as e:
-                logger.warning("Failed to delete branch %s: %s", branch_name, e.stderr)
+                ensure_on_main()
+            except subprocess.CalledProcessError:
+                logger.warning("Could not checkout main; branch cleanup may fail")
+            cleanup_branch(issue_id)
 
         # set the issue back to open
         if issue_id:
