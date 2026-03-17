@@ -98,10 +98,13 @@
                     Deploy to production.
                     Run E2E tests against production.
                 </NoStaging>
-                If E2E fails, use subagents to diagnose and fix. If you cannot fix it after reasonable attempts, revert the merge on main, file an issue assigned to "Human" explaining what failed and why human help is needed (reference branch ralph/[issue-id] which contains the code), and {self.HELP}.
+                If E2E fails, use subagents to diagnose and fix. If you cannot fix it after 3 attempts, revert the merge on main, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
             </Deploy>
             <NoDeployYet condition="otherwise">
-                Merge main into your branch; run the full test suite; everything should be green; otherwise, use subagents to diagnose and fix until it works.
+                Merge main into your branch.
+                Run the full test suite.
+                Everything should be green.
+                Otherwise, use subagents to diagnose and fix. If you cannot fix it after 3 attempts, revert the merge of main into your branch, file a blocker issue explaining what failed and what investigation revealed, and {self.BLOCKED}.
                 Merge your branch into main.
             </NoDeployYet>
             Any file you create or modify outside the repo (e.g. systemd units, nginx configs, cron jobs, env files) must have a reproducible copy or template checked into the repo, and be documented so a future self can recreate the setup from scratch.
