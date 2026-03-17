@@ -1,8 +1,3 @@
-"""Beads (`bd`) utilities.
-
-Thin Python wrapper around the `bd` CLI from https://github.com/steveyegge/beads.
-"""
-
 import json
 import logging
 import subprocess
