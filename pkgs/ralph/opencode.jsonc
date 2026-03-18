@@ -12,7 +12,6 @@
       "variant": "max",
       "prompt": "{file:./PROMPT.xml}",
       "mode": "primary",
-      "model": "opencode/kimi-k2.5",
     },
   },
 }
