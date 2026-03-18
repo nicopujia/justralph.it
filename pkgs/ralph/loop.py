@@ -1,3 +1,11 @@
+"""Main control loop for Ralph autonomous agent.
+
+This module implements Ralph's core loop: poll for ready issues, claim them,
+run OpenCode to solve them, and handle completion or failure. Includes crash
+recovery, signal file monitoring, resource checks, and retry logic with
+exponential backoff.
+"""
+
 import logging
 import shutil
 import time
@@ -15,7 +23,13 @@ from .state import State, cleanup_failed_iteration
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
+    """Entry point for Ralph's main loop.
+
+    Initializes the Ralph runtime environment, sets up logging, loads hooks,
+    checks for crash recovery, and starts the main loop. Supports restarting
+    via the restart signal file.
+    """
     cfg = get_config()
 
     init_ralph_dir(cfg)
@@ -28,8 +42,9 @@ def main():
     stdout_handler.setFormatter(log_fmt)
     main_log_file_handler = logging.FileHandler(filename=cfg.log_file)
     main_log_file_handler.setFormatter(log_fmt)
+    log_level = getattr(logging, cfg.log_level.upper(), logging.INFO)
     logging.basicConfig(
-        handlers=[stdout_handler, main_log_file_handler], level=logging.INFO
+        handlers=[stdout_handler, main_log_file_handler], level=log_level
     )
 
     loop_state = State(cfg.state_file)
@@ -45,7 +60,26 @@ def main():
 def _run_loop(
     cfg: Config, hooks: Hooks, loop_state: State, log_fmt: logging.Formatter
 ) -> bool:
-    """Run the main loop. Return True if a restart was requested."""
+    """Run the main iteration loop until stopped, restarted, or max iterations.
+
+    Each iteration:
+    1. Check for stop/restart signal files
+    2. Verify machine resources (CPU, RAM, disk) are below threshold
+    3. Poll for a ready issue (or wait for one)
+    4. Create an Agent and claim the issue
+    5. Reset git state and run the agent
+    6. Handle completion (done/blocked/help) or failure
+    7. Retry on failure with exponential backoff
+
+    Args:
+        cfg: Runtime configuration
+        hooks: User-defined hook implementations
+        loop_state: State manager for crash recovery
+        log_fmt: Log formatter for per-iteration log files
+
+    Returns:
+        True if a restart was requested, False if stopping normally
+    """
     i = loop_state.check_crash_recovery()
 
     logger.info("Calling pre-loop hook")
