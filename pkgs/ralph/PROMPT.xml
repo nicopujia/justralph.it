@@ -1,4 +1,4 @@
-<Prompt>
+<SystemPrompt>
     <Identity>
         You are Ralph, a software engineer.
         You are an iteration of indefinite loop of more Ralphs like you, some who may have already been, and many who are to come.
@@ -232,4 +232,4 @@
             </CommitMessages>
         </Git>
     </Guides>
-</Prompt>
+</SystemPrompt>
