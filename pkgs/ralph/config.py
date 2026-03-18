@@ -51,10 +51,49 @@ def get_config() -> Config:
     All configuration values have defaults and can be overridden via CLI flags.
     See `python -m ralph.loop --help` for available options.
 
+    NOTE: Arguments are ordered alphabetically by flag name for maintainability.
+
     Returns:
         Config instance populated from CLI arguments or defaults
     """
     parser = argparse.ArgumentParser(description="Ralph")
+    parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=BASE_DIR,
+        help=f"Base directory for Ralph runtime files (default: {BASE_DIR})",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=MAIN_LOG_FILE,
+        help=f"Path to log file (default: {MAIN_LOG_FILE})",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default=os.environ.get("LOG_LEVEL", LOG_LEVEL),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help=f"Log level (default: {LOG_LEVEL}, env: LOG_LEVEL)",
+    )
+    parser.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=LOGS_DIR,
+        help=f"Path to logs directory (default: {LOGS_DIR})",
+    )
+    parser.add_argument(
+        "--max-iters",
+        type=int,
+        default=MAX_ITERS,
+        help=f"Maximum iterations (-1 for no limit, default: {MAX_ITERS})",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=MAX_RETRIES,
+        help=f"Max retries on failure (-1 for no limit, default: {MAX_RETRIES})",
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -62,10 +101,10 @@ def get_config() -> Config:
         help=f"Model to use (default: {MODEL}). Read more: https://opencode.ai/docs/models",
     )
     parser.add_argument(
-        "--stop-file",
-        type=Path,
-        default=STOP_FILE,
-        help=f"Path to stop file (default: {STOP_FILE})",
+        "--poll-interval",
+        type=float,
+        default=POLL_INTERVAL,
+        help=f"Poll interval in seconds for checking new issues (default: {POLL_INTERVAL})",
     )
     parser.add_argument(
         "--restart-file",
@@ -80,40 +119,10 @@ def get_config() -> Config:
         help=f"Path to state file for crash recovery (default: {STATE_FILE})",
     )
     parser.add_argument(
-        "--log-file",
+        "--stop-file",
         type=Path,
-        default=MAIN_LOG_FILE,
-        help=f"Path to log file (default: {MAIN_LOG_FILE})",
-    )
-    parser.add_argument(
-        "--logs-dir",
-        type=Path,
-        default=LOGS_DIR,
-        help=f"Path to logs directory (default: {LOGS_DIR})",
-    )
-    parser.add_argument(
-        "--vm-res-threshold",
-        type=float,
-        default=VM_RES_THRESHOLD,
-        help=f"VM resource threshold in percent (default: {VM_RES_THRESHOLD})",
-    )
-    parser.add_argument(
-        "--max-iters",
-        type=int,
-        default=MAX_ITERS,
-        help=f"Maximum iterations (-1 for no limit, default: {MAX_ITERS})",
-    )
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=BASE_DIR,
-        help=f"Base directory for Ralph runtime files (default: {BASE_DIR})",
-    )
-    parser.add_argument(
-        "--poll-interval",
-        type=float,
-        default=POLL_INTERVAL,
-        help=f"Poll interval in seconds for checking new issues (default: {POLL_INTERVAL})",
+        default=STOP_FILE,
+        help=f"Path to stop file (default: {STOP_FILE})",
     )
     parser.add_argument(
         "--subprocess-timeout",
@@ -122,17 +131,10 @@ def get_config() -> Config:
         help=f"Timeout for OpenCode subprocess in seconds (default: {SUBPROCESS_TIMEOUT})",
     )
     parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=MAX_RETRIES,
-        help=f"Max retries on failure (-1 for no limit, default: {MAX_RETRIES})",
-    )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default=os.environ.get("LOG_LEVEL", LOG_LEVEL),
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help=f"Log level (default: {LOG_LEVEL}, env: LOG_LEVEL)",
+        "--vm-res-threshold",
+        type=float,
+        default=VM_RES_THRESHOLD,
+        help=f"VM resource threshold in percent (default: {VM_RES_THRESHOLD})",
     )
     namespace = parser.parse_args()
     return Config(**vars(namespace))
