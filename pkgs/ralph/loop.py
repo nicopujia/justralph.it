@@ -121,9 +121,9 @@ def _run_loop(
             extra_kwargs,
         )
         ralph = Agent(
-            issue=issue,
-            model=cfg.model,
-            i=i,
+            issue,
+            cfg.model,
+            i,
             *extra_args,
             **extra_kwargs,
         )
@@ -153,7 +153,7 @@ def _run_loop(
             match ralph.status:
                 case Agent.Status.DONE:
                     logger.info("Marking issue %s as done", issue.id)
-                    bd.done_issue(issue.id)
+                    bd.close_issue(issue.id)
                 case Agent.Status.BLOCKED:
                     logger.info("Issue %s has blockers", issue.id)
                     cleanup_failed_iteration(issue.id, status="blocked")
