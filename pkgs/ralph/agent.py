@@ -91,6 +91,8 @@ class Agent:
                 self._model,
                 "--agent",
                 "ralph",
+                "--title",
+                self.issue.title,
                 *self._args,
             ]
             logger.debug("Agent args: %s", args)
