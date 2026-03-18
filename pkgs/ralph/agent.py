@@ -3,8 +3,6 @@ import subprocess
 import time
 from collections.abc import Generator
 from enum import Enum
-from pathlib import Path
-from typing import Any
 from xml.etree import ElementTree
 
 import bd
@@ -24,7 +22,6 @@ class Agent:
         self,
         issue: bd.Issue,
         model: str,
-        prompt_file: Path,
         i: int = 0,
         *args,
         **kwargs,
@@ -33,7 +30,6 @@ class Agent:
         self.issue = issue
         self.i = i
         self._model = model
-        self._prompt_file = prompt_file
         self._args = args
         self._kwargs = kwargs
 
@@ -49,8 +45,16 @@ class Agent:
         """Yield OpenCode's stdout line by line and update status."""
         self.status = self.Status.WORKING
         try:
-            prompt = self._prompt_file.read_text().format(self=self)
-            args = ["opencode", "run", prompt, "--model", self._model, *self._args]
+            args = [
+                "opencode",
+                "run",
+                self.issue.as_xml(),
+                "--model",
+                self._model,
+                "--agent",
+                "ralph",
+                *self._args,
+            ]
             logger.debug("Agent args: %s", args)
 
             with subprocess.Popen(

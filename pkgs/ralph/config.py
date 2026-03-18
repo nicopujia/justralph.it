@@ -2,9 +2,6 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-PKG_DIR = Path(__file__).parent
-PROMPT_FILE = PKG_DIR / "PROMPT.xml"
-
 BASE_DIR = Path.cwd() / ".ralph"
 LOGS_DIR = BASE_DIR / "logs"
 STATE_FILE = BASE_DIR / "state.json"
@@ -24,7 +21,6 @@ MAX_RETRIES = -1  # infinite
 @dataclass
 class Config:
     model: str = MODEL
-    prompt_file: Path = PROMPT_FILE
     stop_file: Path = STOP_FILE
     restart_file: Path = RESTART_FILE
     state_file: Path = STATE_FILE
@@ -45,12 +41,6 @@ def get_config() -> Config:
         type=str,
         default=MODEL,
         help=f"Model to use (default: {MODEL}). Read more: https://opencode.ai/docs/models",
-    )
-    parser.add_argument(
-        "--prompt-file",
-        type=Path,
-        default=PROMPT_FILE,
-        help=f"Path to prompt file (default: {PROMPT_FILE})",
     )
     parser.add_argument(
         "--stop-file",

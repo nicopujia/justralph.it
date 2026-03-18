@@ -5,4 +5,14 @@
       "*": "allow",
     },
   },
+  "agent": {
+    "ralph": {
+      "description": "Solves one issue",
+      "temperature": 0.25,
+      "variant": "max",
+      "prompt": "{file:./PROMPT.xml}",
+      "mode": "primary",
+      "model": "opencode/kimi-k2.5",
+    },
+  },
 }
