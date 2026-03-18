@@ -101,10 +101,6 @@ class Agent:
         except ValueError:
             raise BadRalphStatus(f"Unknown status value: {status_msg!r}")
 
-    def __getattr__(self, name: str, /) -> Any:
-        self.status = self.Status[name]
-        return f"output `<Status>{self.status.value}</Status>` in a new line and stop"
-
 
 class BadRalphStatus(ValueError):
     """Ralph didn't output or output a wrong status"""

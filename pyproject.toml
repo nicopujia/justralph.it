@@ -9,6 +9,9 @@ dependencies = [
     "ralph",
 ]
 
+[tool.ty.environment]
+python = ".venv"
+
 [tool.uv.workspace]
 members = [
     "pkgs/bd",
@@ -22,6 +25,7 @@ bd = { workspace = true }
 [dependency-groups]
 dev = [
     "ruff>=0.15.6",
+    "ty>=0.0.23",
 ]
 
 [tool.ruff]
