@@ -1,4 +1,4 @@
-"""Scaffold a .ralph/ directory in the current project."""
+"""Ralph environment initialization and hooks loading."""
 
 import importlib.util
 import logging
@@ -39,7 +39,17 @@ class CustomHooks(Hooks):
 
 
 def init_ralph_dir(cfg: Config) -> None:
-    """Create .ralph/ and scaffold default files if they don't exist."""
+    """Create .ralph/ directory and scaffold default files if missing.
+
+    Creates:
+        - .ralph/ base directory
+        - .ralph/logs/ directory
+        - .ralph/hooks.py with default CustomHooks template
+        - .ralph/.gitignore to ignore logs and state files
+
+    Args:
+        cfg: Runtime configuration with directory paths
+    """
     cfg.base_dir.mkdir(parents=True, exist_ok=True)
     cfg.logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -55,7 +65,19 @@ def init_ralph_dir(cfg: Config) -> None:
 
 
 def load_hooks(cfg: Config) -> Hooks:
-    """Dynamically import CustomHooks from .ralph/hooks.py."""
+    """Dynamically import and instantiate CustomHooks from .ralph/hooks.py.
+
+    Args:
+        cfg: Runtime configuration with base_dir path
+
+    Returns:
+        Instance of CustomHooks class
+
+    Raises:
+        FileNotFoundError: If .ralph/hooks.py does not exist
+        AttributeError: If CustomHooks class is not defined
+        TypeError: If CustomHooks does not subclass ralph.hooks.Hooks
+    """
     hooks_file = cfg.base_dir / "hooks.py"
     if not hooks_file.exists():
         raise FileNotFoundError(

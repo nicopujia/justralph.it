@@ -1,6 +1,8 @@
 # Ralph
 
-Autonomous coding agent loop. Picks up issues, delegates work to [OpenCode](https://opencode.ai), and repeats until told to stop.
+Autonomous agent that processes Beads issues using OpenCode.
+
+Ralph claims ready issues from a Beads tracker, delegates work to [OpenCode](https://opencode.ai), handles completion or failure, and repeats until stopped. Includes crash recovery, resource monitoring, signal file controls, and customizable lifecycle hooks.
 
 ## Install
 
@@ -12,29 +14,11 @@ uv tool install ralph
 
 ```sh
 cd your-project/
+ralph --help
 ralph
 ```
 
-On first run, creates a `.ralph/` dir with default hooks and a `.gitignore` for runtime artifacts.
-
-## CLI flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | `opencode/kimi-k2.5` | Model passed to OpenCode |
-| `--prompt-file` | (shipped w/ package) | Prompt template (immutable) |
-| `--max-iters` | `-1` (infinite) | Max iterations before stopping |
-| `--max-retries` | `-1` (infinite) | Max consecutive failures before stopping |
-| `--poll-interval` | `30` | Seconds between polls for new issues |
-| `--subprocess-timeout` | `600` | Seconds before killing an OpenCode run |
-| `--bd-timeout` | `30` | Seconds before timing out a `bd` command |
-| `--vm-res-threshold` | `95` | Stop if disk, RAM, or CPU usage exceeds this % |
-| `--stop-file` | `.ralph/stop.ralph` | Stop signal file |
-| `--restart-file` | `.ralph/restart.ralph` | Restart signal file |
-| `--state-file` | `.ralph/state.json` | Crash-recovery state file |
-| `--log-file` | `.ralph/logs/main.log` | Main log file |
-| `--logs-dir` | `.ralph/logs/` | Per-iteration log directory |
-| `--base-dir` | `.ralph/` | Base directory for all runtime files |
+On first run, creates a `.ralph/` dir with default hooks and a `.gitignore` for runtime artifacts. 
 
 ## How it works
 
@@ -42,64 +26,88 @@ Each iteration:
 
 1. Check for stop/restart signal files
 2. Check disk, RAM, and CPU usage against threshold
-3. Fetch the next ready issue (`bd ready`)
-4. Set issue to `in_progress`, assignee to `ralph`
-5. Spawn OpenCode with the prompt and stream output
-6. Parse the final `<Status>` XML tag for the outcome
-7. Run lifecycle hooks
+3. Poll for the next ready issue (`bd ready`)
+4. Claim issue: set status to `in_progress`, assignee to `ralph`
+5. Reset git state: checkout main, delete previous `ralph/[issue-id]` branch
+6. Run OpenCode subprocess with `--agent ralph` and stream output
+7. Parse final status from last XML tag: `DONE`, `HELP`, `BLOCKED`
+8. Handle completion or failure, run lifecycle hooks
 
-On failure, retries with exponential backoff (capped at 5 min). After `--max-retries` consecutive failures, writes a stop file.
+On failure: exponential backoff (capped at 5 min). After `--max-retries` consecutive failures, writes stop file and exits.
 
 ## Signal files
 
-Create in `.ralph/` to control the loop:
+Create these in `.ralph/` to control the loop:
 
-- **`stop.ralph`** -- graceful stop. Content is logged as the reason.
-- **`restart.ralph`** -- stop, call `post_loop`, restart from `pre_loop`.
+- **`stop.ralph`** -- Graceful stop. Content logged as reason.
+- **`restart.ralph`** -- Stop, call `post_loop` hook, restart from `pre_loop`.
 
-Also checked while polling, so Ralph responds even when idle.
+Checked both during iterations and while polling for issues, so Ralph responds even when idle.
 
 ## Crash recovery
 
-State is written to `.ralph/state.json` before each iteration and cleared after. On restart after a crash:
+State written to `.ralph/state.json` before each iteration, cleared after success. On restart after a crash:
 
-1. `git reset --hard`
-2. Issue set back to `open`
-3. Iteration counter restored
-4. State file cleaned up
+1. Run `git reset --hard` to discard partial changes
+2. Set interrupted issue back to `open`, clear assignee
+3. Restore iteration counter to resume from crash point
+4. Clean up state file
 
 ## Logging
 
-Format: `[timestamp] [LEVEL] [module] message`
+Format: `[YYYY-MM-DD HH:MM:SS] [LEVEL] [module] message`
 
-- `.ralph/logs/main.log` -- all iterations
-- `.ralph/logs/iteration_N.log` -- per iteration
+- `.ralph/logs/main.log` -- All iterations, persistent
+- `.ralph/logs/iteration_N.log` -- Per-iteration logs
 
-Both also print to stdout.
+Both streams also output to stdout.
 
 ## Hooks
 
-Edit `.ralph/hooks.py`:
+Customize Ralph's lifecycle by editing `.ralph/hooks.py`:
 
 ```python
 from ralph.hooks import Hooks
 
 class CustomHooks(Hooks):
-    def pre_loop(self, cfg): ...
-    def pre_iter(self, cfg, issue, iteration): ...
-    def post_iter(self, cfg, issue, iteration, status, error): ...
-    def post_loop(self, cfg, iterations_completed): ...
-    def extra_args_kwargs(self, cfg, issue): return (), {}
+    def pre_loop(self, cfg):
+        """Run once before the main loop starts."""
+        pass
+
+    def pre_iter(self, cfg, issue, iteration):
+        """Run before each iteration."""
+        pass
+
+    def post_iter(self, cfg, issue, iteration, status, error):
+        """Run after each iteration (status = Agent.Status, error = Exception | None)."""
+        pass
+
+    def post_loop(self, cfg, iterations_completed):
+        """Run once after the main loop finishes."""
+        pass
+
+    def extra_args_kwargs(self, cfg, issue):
+        """Return (args, kwargs) to pass to Agent constructor."""
+        return (), {}
 ```
 
-All methods are abstract. The default scaffold provides no-op implementations.
+All methods are abstract. The scaffolded template provides no-op implementations.
 
-## Prompt template
+## Agent behavior
 
-`PROMPT.xml` is shipped with the package and is **immutable**. It's a Python format string receiving the `Agent` instance as `{self}`.
+Ralph runs OpenCode with `--agent ralph`, which uses the included `PROMPT.xml` as instructions. The prompt defines Ralph's workflow:
 
-Template variables: `{self.issue.id}`, `{self.issue.title}`, `{self.DONE}`, `{self.HELP}`, `{self.BLOCKED}`.
+1. **Planning** - Understand project vision and scope
+2. **Analysis** - Research codebase, check blockers, file issues if needed
+3. **Design** - Identify solutions, list test scenarios (TDD)
+4. **Development** - Outside-in TDD (integration + unit tests)
+5. **Deployment** - Run full test suite, merge to main, deploy if applicable
+6. **Maintenance** - Update docs, commit with `Closes: [issue-id]`
+7. **Finish** - Output final status
 
-`__getattr__` resolves any `Status` enum name into an instruction string for the `<Status>` XML tag.
+Ralph outputs one of three status values:
+- `<Status>COMPLETED ASSIGNED ISSUE</Status>` - Issue solved successfully
+- `<Status>HUMAN HELP ABSOLUTELY NEEDED</Status>` - Blocked by credential/access issue
+- `<Status>FOUND NEW BLOCKER ISSUE</Status>` - Discovered blocking dependency
 
-Inter-iteration notes are handled by `AGENTS.md` (injected by OpenCode).
+The status is parsed from the last non-empty line of OpenCode's output.

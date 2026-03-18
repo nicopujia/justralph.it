@@ -1,12 +1,11 @@
 """Configuration management for Ralph's runtime settings."""
 
 import argparse
-import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# Runtime directory and file paths
+# Directories and file paths
 BASE_DIR = Path.cwd() / ".ralph"
 LOGS_DIR = BASE_DIR / "logs"
 STATE_FILE = BASE_DIR / "state.json"
@@ -14,16 +13,16 @@ MAIN_LOG_FILE = LOGS_DIR / "main.log"
 STOP_FILE = BASE_DIR / "stop.ralph"
 RESTART_FILE = BASE_DIR / "restart.ralph"
 
-# Default OpenCode model
+# Strings
 MODEL = "opencode/kimi-k2.5"
+LOG_LEVEL = "INFO"  # Default log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
-# Runtime behavior defaults
-VM_RES_THRESHOLD = 95.0  # Virtual memory resident set size threshold (%)
+# Numbers
+VM_RES_THRESHOLD = 95.0  # Virtual machine resources usage threshold (%)
 POLL_INTERVAL = 30.0  # Seconds to wait between checking for new issues
 SUBPROCESS_TIMEOUT = 600.0  # OpenCode subprocess timeout in seconds (10 minutes)
 MAX_ITERS = -1  # Maximum loop iterations (-1 = infinite)
 MAX_RETRIES = -1  # Maximum retries on failure (-1 = infinite)
-LOG_LEVEL = "INFO"  # Default log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 
 @dataclass
@@ -51,12 +50,11 @@ def get_config() -> Config:
     All configuration values have defaults and can be overridden via CLI flags.
     See `python -m ralph.loop --help` for available options.
 
-    NOTE: Arguments are ordered alphabetically by flag name for maintainability.
-
     Returns:
         Config instance populated from CLI arguments or defaults
     """
     parser = argparse.ArgumentParser(description="Ralph")
+    # Arguments are ordered alphabetically by flag name for maintainability
     parser.add_argument(
         "--base-dir",
         type=Path,

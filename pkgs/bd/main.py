@@ -1,3 +1,9 @@
+"""Python wrapper for the Beads (`bd`) CLI.
+
+Provides dataclasses and functions for interacting with Beads issues,
+including querying ready issues, updating status, and polling for new work.
+"""
+
 import json
 import logging
 import subprocess
@@ -62,7 +68,14 @@ class Issue:
 
 
 def _parse_issue(data: dict) -> Issue:
-    """Parse a JSON dict from bd CLI output into an Issue."""
+    """Parse a JSON dict from bd CLI output into an Issue.
+
+    Args:
+        data: Raw JSON dict from `bd show --json` or `bd ready --json`
+
+    Returns:
+        Parsed Issue instance with all fields populated
+    """
 
     def _parse_dt(value: str | None) -> datetime | None:
         if not value:
@@ -100,7 +113,9 @@ def get_next_ready_issue() -> Issue | None:
     """Get the next ready issue (open, no active blockers) from Beads.
 
     Calls `bd ready --json --limit 1` and parses the first result.
-    Returns None if no ready issues exist or if bd is not configured.
+
+    Returns:
+        The first ready issue, or None if no ready issues exist
     """
     result = _run_bd("ready", "--json", "--limit", "1")
     if result is None:
@@ -139,9 +154,19 @@ def wait_for_next_ready_issue(
 ) -> Issue:
     """Block until a ready issue appears, then return it.
 
-    Polls `bd ready` every *poll_interval* seconds.
-    Raises StopRequested if the stop file appears while waiting.
-    Raises RestartRequested if the restart file appears while waiting.
+    Polls `bd ready` every poll_interval seconds and checks for signal files.
+
+    Args:
+        poll_interval: Seconds to wait between polls
+        stop_file: Path to stop signal file
+        restart_file: Path to restart signal file
+
+    Returns:
+        The first ready issue found
+
+    Raises:
+        StopRequested: If stop file appears while waiting
+        RestartRequested: If restart file appears while waiting
     """
     logger.info("Waiting for a ready issue (polling every %ss)...", poll_interval)
     while True:
@@ -167,10 +192,15 @@ def update_issue(
     status: str | None = None,
     assignee: str | None = None,
 ) -> None:
-    """Update an issue's fields.
+    """Update an issue's status and/or assignee fields.
+
+    Args:
+        issue_id: The issue ID (e.g., 'bd-123')
+        status: New status value (e.g., 'open', 'in_progress', 'blocked')
+        assignee: New assignee value
 
     Raises:
-        RuntimeError: If bd update fails.
+        RuntimeError: If bd update command fails
     """
     args = ["update", issue_id]
     if status:
@@ -186,8 +216,11 @@ def update_issue(
 def close_issue(issue_id: str) -> None:
     """Mark an issue as closed/done.
 
+    Args:
+        issue_id: The issue ID (e.g., 'bd-123')
+
     Raises:
-        RuntimeError: If bd close fails.
+        RuntimeError: If bd close command fails
     """
     result = _run_bd("close", issue_id)
     if result is None:
@@ -196,7 +229,14 @@ def close_issue(issue_id: str) -> None:
 
 
 def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
-    """Run a bd CLI command and return the result, or None on failure."""
+    """Run a bd CLI command and return the result.
+
+    Args:
+        *args: Arguments to pass to the bd command
+
+    Returns:
+        CompletedProcess if successful, None if command fails or times out
+    """
     timeout = 30
     cmd = ["bd", *args]
     logger.debug("Running: %s", " ".join(cmd))

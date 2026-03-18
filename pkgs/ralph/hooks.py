@@ -1,8 +1,8 @@
 """Base class for Ralph lifecycle hooks.
 
-Subclass ``Hooks`` in ``var/hooks.py`` and override only the methods you
-need.  The loop instantiates the subclass once and calls its methods at
-the appropriate points.
+Subclass Hooks in .ralph/hooks.py and override only the methods you need.
+The loop instantiates the subclass once and calls its methods at the
+appropriate points in the execution lifecycle.
 """
 
 from abc import ABC, abstractmethod
@@ -15,15 +15,29 @@ from .config import Config
 
 
 class Hooks(ABC):
-    """Hook interface -- subclass and override to customise behaviour."""
+    """Hook interface for customizing Ralph's lifecycle behavior.
+
+    Subclass this in .ralph/hooks.py and override methods to extend or
+    modify Ralph's behavior at key points in the execution lifecycle.
+    """
 
     @abstractmethod
     def pre_loop(self, cfg: Config) -> None:
-        """Called once before the loop starts."""
+        """Run once before the main loop starts.
+
+        Args:
+            cfg: Runtime configuration
+        """
 
     @abstractmethod
     def pre_iter(self, cfg: Config, issue: Issue, iteration: int) -> None:
-        """Called before each iteration."""
+        """Run before each iteration.
+
+        Args:
+            cfg: Runtime configuration
+            issue: The issue about to be processed
+            iteration: Current iteration index
+        """
 
     @abstractmethod
     def post_iter(
@@ -34,18 +48,35 @@ class Hooks(ABC):
         status: Agent.Status,
         error: Exception | None,
     ) -> None:
-        """Called after each iteration.
+        """Run after each iteration completes or fails.
 
-        *status* is the ``Agent.Status`` the run ended with.
-        *error* is the exception if one occurred, otherwise ``None``.
+        Args:
+            cfg: Runtime configuration
+            issue: The issue that was processed
+            iteration: Current iteration index
+            status: Final Agent.Status from the run
+            error: Exception if one occurred, otherwise None
         """
 
     @abstractmethod
     def post_loop(self, cfg: Config, iterations_completed: int) -> None:
-        """Called once after the loop finishes."""
+        """Run once after the main loop finishes.
+
+        Args:
+            cfg: Runtime configuration
+            iterations_completed: Total number of iterations executed
+        """
 
     @abstractmethod
     def extra_args_kwargs(
         self, cfg: Config, issue: Issue
     ) -> tuple[tuple, dict[str, Any]]:
-        """Return extra positional/keyword args forwarded to the Agent."""
+        """Return extra arguments to pass to the Agent constructor.
+
+        Args:
+            cfg: Runtime configuration
+            issue: The issue about to be processed
+
+        Returns:
+            Tuple of (positional_args, keyword_args) forwarded to Agent
+        """
