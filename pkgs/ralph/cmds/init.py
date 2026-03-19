@@ -30,12 +30,6 @@ class InitConfig(Config):
         default=False,
         metadata={"help": "Delete and re-create the project directory"},
     )
-    agents_md: Path = field(
-        default=Path(""),
-        metadata={
-            "help": "Path to AGENTS.md template (default: built-in empty template)",
-        },
-    )
 
 
 class Init(Command):
@@ -120,13 +114,6 @@ class Init(Command):
         self._symlink_to_worktree(root, "prod", ".ralph/.gitignore", "logs/\nstate.json\n*.ralph\n")
 
     # -- helpers -----------------------------------------------------------
-
-    def _agents_md_content(self) -> str:
-        """Return AGENTS.md content from user-supplied path or built-in template."""
-        src = self.cfg.agents_md
-        if src and src != Path(""):
-            return src.read_text()
-        return self._read_template("AGENTS.md")
 
     @staticmethod
     def _read_template(name: str) -> str:
