@@ -25,6 +25,7 @@ def main() -> None:
     for name, cmd in commands.items():
         cmd_parser = sub.add_parser(name, help=cmd.help)
         _add_fields(cmd_parser, cmd.config)
+        cmd.configure_parser(cmd_parser)
 
     args = parser.parse_args()
 

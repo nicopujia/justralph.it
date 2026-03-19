@@ -1,5 +1,6 @@
 """Run the main agent loop."""
 
+import argparse
 import logging
 import shutil
 import sys
@@ -74,6 +75,15 @@ class Loop(Command):
     help = "Run the main agent loop"
     config = LoopConfig
     cfg: LoopConfig
+
+    def configure_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--once",
+            dest="max_iters",
+            action="store_const",
+            const=1,
+            help="Run a single iteration (alias for --max-iters 1)",
+        )
 
     def run(self) -> None:
         """Load hooks and enter the restart-aware iteration loop.
