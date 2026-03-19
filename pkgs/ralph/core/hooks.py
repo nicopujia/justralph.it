@@ -89,7 +89,7 @@ class Hooks(ABC):
 
 
 def load_hooks(cfg: Config) -> Hooks:
-    """Dynamically import and instantiate CustomHooks from prod/.ralph/hooks.py.
+    """Dynamically import and instantiate CustomHooks from .ralph/hooks.py.
 
     Args:
         cfg: Runtime configuration with base_dir path
@@ -98,11 +98,11 @@ def load_hooks(cfg: Config) -> Hooks:
         Instance of CustomHooks class
 
     Raises:
-        FileNotFoundError: If prod/.ralph/hooks.py does not exist
+        FileNotFoundError: If .ralph/hooks.py does not exist
         AttributeError: If CustomHooks class is not defined
         TypeError: If CustomHooks does not subclass Hooks
     """
-    hooks_file = cfg.base_dir / "prod" / ".ralph" / "hooks.py"
+    hooks_file = cfg.base_dir / ".ralph" / "hooks.py"
     if not hooks_file.exists():
         raise FileNotFoundError(f"{hooks_file} not found. Run `ralph init` first.")
 

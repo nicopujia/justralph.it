@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Default project root (current working directory)
 PROJECT_ROOT = Path.cwd()
-RALPH_DIR = PROJECT_ROOT / "prod" / ".ralph"
+RALPH_DIR = PROJECT_ROOT / ".ralph"
 LOGS_DIR = RALPH_DIR / "logs"
 
 

@@ -1,4 +1,1 @@
-__pycache__/
-*.egg-info/
-build/
-logs/
+.DS_Store
