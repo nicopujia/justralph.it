@@ -78,12 +78,6 @@ def add_worktree(repo: Path, name: str, branch: str, new_branch: bool = False) -
     return wt_path
 
 
-def reset_branch(repo: Path, branch: str, to: str) -> None:
-    """Reset *branch* to point at *to* (creates branch if it doesn't exist)."""
-    _run("branch", "-f", branch, to, cwd=repo)
-    logger.info("Reset %s branch to %s", branch, to)
-
-
 def has_worktree(repo: Path, name: str) -> bool:
     """Return True if a worktree named *name* already exists."""
     result = _run("worktree", "list", "--porcelain", cwd=repo, check=False)
