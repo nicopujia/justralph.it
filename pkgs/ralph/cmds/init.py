@@ -52,6 +52,7 @@ class Init(Command):
                 .ralph/          # ralph config (hooks, logs, state)
                 AGENTS.md        # project instructions for agents
                 opencode.jsonc   # OpenCode configuration
+                PROMPT.xml       # agent system prompt
                 prod/            # worktree on main
                 dev/             # worktree on dev
 
@@ -74,6 +75,7 @@ class Init(Command):
         self._scaffold_ralph_dir(root)
         self._write_template(root / "AGENTS.md", self._agents_md_content())
         self._write_template(root / "opencode.jsonc", self._read_template("opencode.jsonc"))
+        self._write_template(root / "PROMPT.xml", self._read_template("PROMPT.xml"))
 
         logger.info("Initialized %s", root)
 

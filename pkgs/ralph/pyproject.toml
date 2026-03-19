@@ -23,8 +23,7 @@ ralph = "."
 "ralph.templates" = "templates"
 
 [tool.setuptools.package-data]
-ralph = ["PROMPT.xml"]
-"ralph.templates" = ["AGENTS.md", "hooks.py", "opencode.jsonc"]
+"ralph.templates" = ["AGENTS.md", "hooks.py", "opencode.jsonc", "PROMPT.xml"]
 
 [tool.uv.sources]
 bd = { workspace = true }
