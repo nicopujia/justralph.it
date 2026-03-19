@@ -10,6 +10,7 @@ from pathlib import Path
 
 import bd
 import psutil
+from bd import Issue
 
 from ..config import BASE_DIR, LOGS_DIR, Config
 from ..core.agent import Agent
@@ -19,6 +20,14 @@ from ..utils.git import reset_git_state
 from . import Command
 
 logger = logging.getLogger(__name__)
+
+
+class _Stop(Exception):
+    """Signal to break out of the iteration loop."""
+
+
+class _Restart(Exception):
+    """Signal to restart the iteration loop."""
 
 
 @dataclass
@@ -86,26 +95,21 @@ class Loop(Command):
         )
 
     def run(self) -> None:
-        """Load hooks and enter the restart-aware iteration loop.
-
-        Exits with code 1 if .ralph/ has not been initialized.
-        """
-        cfg = self.cfg
-
-        if not cfg.base_dir.is_dir():
+        """Verify initialization, set up state, and loop until stopped."""
+        if not self.cfg.base_dir.is_dir():
             print(
-                f"Error: {cfg.base_dir} does not exist. Run 'ralph init' first.",
+                f"Error: {self.cfg.base_dir} does not exist. Run 'ralph init' first.",
                 file=sys.stderr,
             )
             raise SystemExit(1)
 
-        # Add a file handler on top of the root logging configured by main.py
-        file_handler = logging.FileHandler(filename=cfg.log_file)
+        file_handler = logging.FileHandler(filename=self.cfg.log_file)
         file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(file_handler)
 
-        self._loop_state = State(cfg.state_file)
-        self._hooks = load_hooks(cfg)
+        self._state = State(self.cfg.state_file)
+        self._hooks = load_hooks(self.cfg)
+        self._consecutive_failures = 0
 
         while True:
             restart = self._iterate()
@@ -113,187 +117,191 @@ class Loop(Command):
                 break
             logger.info("Restarting loop")
 
+    # -- main loop ---------------------------------------------------------
+
     def _iterate(self) -> bool:
         """Run iterations until stopped, restarted, or max iterations reached.
 
-        Each iteration:
-        1. Check for stop/restart signal files
-        2. Verify machine resources (CPU, RAM, disk) are below threshold
-        3. Poll for a ready issue (or wait for one)
-        4. Create an Agent and claim the issue
-        5. Reset git state and run the agent
-        6. Handle completion (done/blocked/help) or failure
-        7. Retry on failure with exponential backoff
-
-        Returns True if a restart was requested, False if stopping normally.
+        Returns True if a restart was requested, False otherwise.
         """
-        cfg = self.cfg
-        hooks = self._hooks
-        loop_state = self._loop_state
-        log_fmt = logging.getLogger().handlers[0].formatter
+        i = self._state.check_crash_recovery()
 
-        i = loop_state.check_crash_recovery()
+        self._hooks.pre_loop(self.cfg)
 
-        logger.info("Calling pre-loop hook")
-        hooks.pre_loop(cfg)
-
-        if cfg.max_iters:
-            logger.info("Starting the loop")
-        else:
+        if not self.cfg.max_iters:
             logger.warning("Skipping entire loop: max_iters is 0")
-        consecutive_failures = 0
-        restart = False
 
-        while True and cfg.max_iters:
-            if cfg.stop_file.exists():
-                reason = cfg.stop_file.read_text() or "found empty stop file"
-                cfg.stop_file.unlink()
-                logging.warning("Stopping loop: %s", reason)
-                break
-
-            if cfg.restart_file.exists():
-                reason = cfg.restart_file.read_text() or "found empty restart file"
-                cfg.restart_file.unlink()
-                logger.info("Restart requested: %s", reason)
-                restart = True
-                break
-
-            logger.info("Checking machine resources")
-            cpu = round(psutil.cpu_percent(), 2)
-            ram = round(psutil.virtual_memory().percent, 2)
-            total_disk, used_disk, _ = shutil.disk_usage("/")
-            disk = round(used_disk / total_disk * 100, 2)
-            logger.info("CPU: %s%% | RAM: %s%% | Disk: %s%%", cpu, ram, disk)
-            if (
-                disk > cfg.vm_res_threshold
-                or ram > cfg.vm_res_threshold
-                or cpu > cfg.vm_res_threshold
-            ):
-                logger.warning(
-                    "Stopping loop: machine resources usage over %s%% threshold",
-                    cfg.vm_res_threshold,
-                )
-                break
-            else:
-                logger.info("Machine resources usage is OK")
-
-            logger.info("Getting next ready issue")
-            issue = bd.get_next_ready_issue()
-
-            if not issue:
-                logger.info("No ready issues currently. Waiting for new ones")
-                try:
-                    issue = bd.wait_for_next_ready_issue(
-                        cfg.poll_interval,
-                        stop_file=cfg.stop_file,
-                        restart_file=cfg.restart_file,
-                    )
-                except bd.StopRequested as e:
-                    logger.warning("Stopping loop while waiting for issues: %s", e)
-                    break
-                except bd.RestartRequested as e:
-                    logger.info("Restart requested while waiting for issues: %s", e)
-                    restart = True
-                    break
-
-            logger.info("Retrieved issue: %r", issue)
-
-            logger.info("Getting extra args & kwargs")
-            extra_args, extra_kwargs = hooks.extra_args_kwargs(cfg, issue)
-
-            logger.info(
-                "Creating instance with extra args %s and kwargs %s",
-                extra_args,
-                extra_kwargs,
-            )
-            ralph = Agent(
-                issue,
-                cfg.model,
-                i,
-                *extra_args,
-                **extra_kwargs,
-            )
-
-            ralph.claim_issue()
-
-            logger.info("Preparing git state for issue %s", issue.id)
-            reset_git_state(issue.id)
-
-            iter_log_file = cfg.logs_dir / f"iteration_{i}.log"
-            iter_handler = logging.FileHandler(filename=iter_log_file)
-            iter_handler.setFormatter(log_fmt)
-            logging.getLogger().addHandler(iter_handler)
-
-            logger.info("Calling pre-iteration hook")
-            hooks.pre_iter(cfg, issue, i)
-
-            loop_state.save(issue.id, i)
-
-            iter_error: Exception | None = None
+        while self.cfg.max_iters:
             try:
-                logger.info("Starting Ralph")
-                for stdout in ralph.run(timeout=cfg.subprocess_timeout):
-                    logger.info("[Ralph] %s", stdout.rstrip())
-                logger.info("Ralph concluded working: %s", ralph.status)
-
-                match ralph.status:
-                    case Agent.Status.DONE:
-                        logger.info("Marking issue %s as done", issue.id)
-                        bd.close_issue(issue.id)
-                    case Agent.Status.BLOCKED:
-                        logger.info("Issue %s has blockers", issue.id)
-                        loop_state.cleanup_failed_iteration(status="blocked")
-                    case Agent.Status.HELP:
-                        logger.info(
-                            "Issue %s needs human help (blocked by human-help issue)",
-                            issue.id,
-                        )
-                        loop_state.cleanup_failed_iteration(status="blocked")
-                    case _:
-                        logger.warning(
-                            "Unexpected status %s for issue %s; treating as failure",
-                            ralph.status,
-                            issue.id,
-                        )
-                        loop_state.cleanup_failed_iteration()
-                        raise ValueError(f"Unexpected Ralph status: {ralph.status}")
-
-                consecutive_failures = 0
+                self._check_signals()
+                self._check_resources()
+                issue = self._next_issue()
+                agent = self._create_agent(issue, i)
+                self._process_issue(agent, issue, i)
+                self._consecutive_failures = 0
+            except _Stop:
+                break
+            except _Restart:
+                self._hooks.post_loop(self.cfg, i)
+                return True
             except Exception as exc:
-                iter_error = exc
-                consecutive_failures += 1
-                logger.exception(
-                    "Failed unexpectedly (consecutive failures: %s)",
-                    consecutive_failures,
-                )
-                loop_state.cleanup_failed_iteration()
-                if cfg.max_retries >= 0 and consecutive_failures > cfg.max_retries:
-                    cfg.stop_file.write_text(
-                        f"exceeded max retries ({cfg.max_retries}) "
-                        f"after {consecutive_failures} consecutive failures"
-                    )
-                    logger.error("Max retries exceeded; will stop on next iteration")
-                else:
-                    backoff = min(2**consecutive_failures, 300)
-                    logger.info("Backing off for %ss before retrying", backoff)
-                    time.sleep(backoff)
+                self._handle_failure(exc)
             finally:
-                logger.info("Calling post-iteration hook")
-                hooks.post_iter(cfg, issue, i, ralph.status, iter_error)
-
                 i += 1
-                loop_state.clear()
-                iter_handler.close()
-                logging.getLogger().removeHandler(iter_handler)
-
-                if cfg.max_iters >= 0 and i >= cfg.max_iters:
+                self._state.clear()
+                if self.cfg.max_iters >= 0 and i >= self.cfg.max_iters:
                     logger.warning(
                         "Stopping loop: reached max iterations (%s)",
-                        cfg.max_iters,
+                        self.cfg.max_iters,
                     )
                     break
 
-        logger.info("Finished loop. Calling post-loop hook")
-        hooks.post_loop(cfg, i)
+        self._hooks.post_loop(self.cfg, i)
+        return False
 
-        return restart
+    # -- signal and resource checks ----------------------------------------
+
+    def _check_signals(self) -> None:
+        """Read stop/restart signal files and raise accordingly."""
+        if self.cfg.stop_file.exists():
+            reason = self.cfg.stop_file.read_text() or "found empty stop file"
+            self.cfg.stop_file.unlink()
+            logger.warning("Stopping loop: %s", reason)
+            raise _Stop
+
+        if self.cfg.restart_file.exists():
+            reason = self.cfg.restart_file.read_text() or "found empty restart file"
+            self.cfg.restart_file.unlink()
+            logger.info("Restart requested: %s", reason)
+            raise _Restart
+
+    def _check_resources(self) -> None:
+        """Stop if CPU, RAM, or disk usage exceeds the threshold."""
+        cpu = round(psutil.cpu_percent(), 2)
+        ram = round(psutil.virtual_memory().percent, 2)
+        total_disk, used_disk, _ = shutil.disk_usage("/")
+        disk = round(used_disk / total_disk * 100, 2)
+        logger.info("CPU: %s%% | RAM: %s%% | Disk: %s%%", cpu, ram, disk)
+
+        threshold = self.cfg.vm_res_threshold
+        if cpu > threshold or ram > threshold or disk > threshold:
+            logger.warning(
+                "Stopping loop: resource usage over %s%% threshold", threshold
+            )
+            raise _Stop
+
+    # -- issue acquisition -------------------------------------------------
+
+    def _next_issue(self) -> Issue:
+        """Return the next ready issue, blocking if none are available."""
+        issue = bd.get_next_ready_issue()
+        if issue:
+            logger.info("Retrieved issue: %r", issue)
+            return issue
+
+        logger.info("No ready issues. Waiting...")
+        try:
+            return bd.wait_for_next_ready_issue(
+                self.cfg.poll_interval,
+                stop_file=self.cfg.stop_file,
+                restart_file=self.cfg.restart_file,
+            )
+        except bd.StopRequested as e:
+            logger.warning("Stopping while waiting for issues: %s", e)
+            raise _Stop from e
+        except bd.RestartRequested as e:
+            logger.info("Restart requested while waiting for issues: %s", e)
+            raise _Restart from e
+
+    # -- agent lifecycle ---------------------------------------------------
+
+    def _create_agent(self, issue: Issue, iteration: int) -> Agent:
+        """Build an Agent, claim the issue, and prepare git state."""
+        extra_args, extra_kwargs = self._hooks.extra_args_kwargs(self.cfg, issue)
+        agent = Agent(issue, self.cfg.model, iteration, *extra_args, **extra_kwargs)
+        agent.claim_issue()
+        reset_git_state(issue.id)
+        return agent
+
+    def _process_issue(self, agent: Agent, issue: Issue, iteration: int) -> None:
+        """Run the agent and handle its outcome."""
+        iter_handler = self._add_iteration_log(iteration)
+        self._hooks.pre_iter(self.cfg, issue, iteration)
+        self._state.save(issue.id, iteration)
+
+        iter_error: Exception | None = None
+        try:
+            self._run_agent(agent)
+            self._handle_status(agent, issue)
+        except Exception as exc:
+            iter_error = exc
+            raise
+        finally:
+            self._hooks.post_iter(self.cfg, issue, iteration, agent.status, iter_error)
+            self._remove_iteration_log(iter_handler)
+
+    def _run_agent(self, agent: Agent) -> None:
+        """Stream agent output to the logger."""
+        logger.info("Starting agent")
+        for line in agent.run(timeout=self.cfg.subprocess_timeout):
+            logger.info("[agent] %s", line.rstrip())
+        logger.info("Agent finished: %s", agent.status)
+
+    def _handle_status(self, agent: Agent, issue: Issue) -> None:
+        """Act on the agent's final status."""
+        match agent.status:
+            case Agent.Status.DONE:
+                logger.info("Marking issue %s as done", issue.id)
+                bd.close_issue(issue.id)
+            case Agent.Status.BLOCKED | Agent.Status.HELP:
+                logger.info("Issue %s is blocked", issue.id)
+                self._state.cleanup_failed_iteration(status="blocked")
+            case _:
+                logger.warning(
+                    "Unexpected status %s for issue %s",
+                    agent.status,
+                    issue.id,
+                )
+                self._state.cleanup_failed_iteration()
+                raise ValueError(f"Unexpected agent status: {agent.status}")
+
+    # -- failure handling --------------------------------------------------
+
+    def _handle_failure(self, exc: Exception) -> None:
+        """Log the failure, clean up, and apply backoff or stop."""
+        self._consecutive_failures += 1
+        logger.exception(
+            "Failed unexpectedly (consecutive failures: %s)",
+            self._consecutive_failures,
+        )
+        self._state.cleanup_failed_iteration()
+
+        if (
+            self.cfg.max_retries >= 0
+            and self._consecutive_failures > self.cfg.max_retries
+        ):
+            self.cfg.stop_file.write_text(
+                f"exceeded max retries ({self.cfg.max_retries}) "
+                f"after {self._consecutive_failures} consecutive failures"
+            )
+            logger.error("Max retries exceeded; will stop on next iteration")
+        else:
+            backoff = min(2**self._consecutive_failures, 300)
+            logger.info("Backing off for %ss before retrying", backoff)
+            time.sleep(backoff)
+
+    # -- logging helpers ---------------------------------------------------
+
+    def _add_iteration_log(self, iteration: int) -> logging.FileHandler:
+        """Attach a per-iteration log file and return the handler."""
+        path = self.cfg.logs_dir / f"iteration_{iteration}.log"
+        handler = logging.FileHandler(filename=path)
+        handler.setFormatter(logging.getLogger().handlers[0].formatter)
+        logging.getLogger().addHandler(handler)
+        return handler
+
+    @staticmethod
+    def _remove_iteration_log(handler: logging.FileHandler) -> None:
+        """Close and detach a per-iteration log handler."""
+        handler.close()
+        logging.getLogger().removeHandler(handler)
