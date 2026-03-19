@@ -1,4 +1,1 @@
-logs/
-state.json
-*.ralph
-
+../prod/.ralph/.gitignore
