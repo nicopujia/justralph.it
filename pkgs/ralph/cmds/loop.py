@@ -12,7 +12,7 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import LOGS_DIR, RALPH_DIR, Config
+from ..config import LOGS_DIR, RALPH_DIR, RALPH_DIR_NAME, Config
 from ..core.agent import Agent
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
@@ -21,6 +21,8 @@ from ..utils.git import reset_git_state
 from . import Command
 
 logger = logging.getLogger(__name__)
+
+MAX_BACKOFF_SECONDS = 300
 
 
 @dataclass
@@ -89,7 +91,7 @@ class Loop(Command):
 
     def run(self) -> None:
         """Verify initialization, set up state, and loop until stopped."""
-        ralph_dir = self.cfg.base_dir / ".ralph"
+        ralph_dir = self.cfg.base_dir / RALPH_DIR_NAME
         if not ralph_dir.is_dir():
             print(
                 f"Error: {ralph_dir} does not exist. Run 'ralph init' first.",
@@ -244,7 +246,7 @@ class Loop(Command):
                 bd.close_issue(issue.id)
             case Agent.Status.BLOCKED | Agent.Status.HELP:
                 logger.info("Issue %s is blocked", issue.id)
-                self._state.cleanup_failed_iteration(status="blocked")
+                self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
             case _:
                 logger.warning(
                     "Unexpected status %s for issue %s",
@@ -275,7 +277,7 @@ class Loop(Command):
             )
             logger.error("Max retries exceeded; will stop on next iteration")
         else:
-            backoff = min(2**self._consecutive_failures, 300)
+            backoff = min(2**self._consecutive_failures, MAX_BACKOFF_SECONDS)
             logger.info("Backing off for %ss before retrying", backoff)
             time.sleep(backoff)
 

@@ -15,9 +15,24 @@ import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+# Ralph identity
+AGENT_NAME = "ralph"
+
+# Branch and worktree names
+MAIN_BRANCH = "main"
+PROD_WORKTREE = "prod"
+DEV_WORKTREE = "dev"
+
+# Directory and file names
+RALPH_DIR_NAME = ".ralph"
+HOOKS_FILENAME = "hooks.py"
+HOOKS_CLASS_NAME = "CustomHooks"
+HOOKS_MODULE_NAME = "_ralph_hooks"
+BRANCH_PREFIX = "ralph/"
+
 # Default project root (current working directory)
 PROJECT_ROOT = Path.cwd()
-RALPH_DIR = PROJECT_ROOT / ".ralph"
+RALPH_DIR = PROJECT_ROOT / RALPH_DIR_NAME
 LOGS_DIR = RALPH_DIR / "logs"
 
 

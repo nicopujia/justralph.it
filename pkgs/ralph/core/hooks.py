@@ -14,7 +14,13 @@ from typing import Any
 
 from bd import Issue
 
-from ..config import Config
+from ..config import (
+    HOOKS_CLASS_NAME,
+    HOOKS_FILENAME,
+    HOOKS_MODULE_NAME,
+    RALPH_DIR_NAME,
+    Config,
+)
 from .agent import Agent
 
 logger = logging.getLogger(__name__)
@@ -102,19 +108,19 @@ def load_hooks(cfg: Config) -> Hooks:
         AttributeError: If CustomHooks class is not defined
         TypeError: If CustomHooks does not subclass Hooks
     """
-    hooks_file = cfg.base_dir / ".ralph" / "hooks.py"
+    hooks_file = cfg.base_dir / RALPH_DIR_NAME / HOOKS_FILENAME
     if not hooks_file.exists():
         raise FileNotFoundError(f"{hooks_file} not found. Run `ralph init` first.")
 
-    spec = importlib.util.spec_from_file_location("_ralph_hooks", hooks_file)
+    spec = importlib.util.spec_from_file_location(HOOKS_MODULE_NAME, hooks_file)
     assert spec and spec.loader
     module: ModuleType = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
 
-    hooks_cls = getattr(module, "CustomHooks", None)
+    hooks_cls = getattr(module, HOOKS_CLASS_NAME, None)
     if hooks_cls is None:
-        raise AttributeError(f"{hooks_file} must define a CustomHooks class")
+        raise AttributeError(f"{hooks_file} must define a {HOOKS_CLASS_NAME} class")
     if not issubclass(hooks_cls, Hooks):
         raise TypeError(
             f"CustomHooks in {hooks_file} must subclass ralph.core.hooks.Hooks"

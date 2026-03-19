@@ -4,7 +4,13 @@ import logging
 import subprocess
 from pathlib import Path
 
+from ..config import BRANCH_PREFIX, MAIN_BRANCH, RALPH_DIR_NAME
+
 logger = logging.getLogger(__name__)
+
+BARE_HEAD_REF = "refs/heads/_bare"
+GIT_BARE_CONFIG_KEY = "core.bare"
+INITIAL_COMMIT_MSG = "initial commit"
 
 
 def _run(
@@ -23,7 +29,7 @@ def is_repo(path: Path) -> bool:
 
 def is_bare(path: Path) -> bool:
     """Return True if the repo at *path* is bare."""
-    result = _run("config", "--get", "core.bare", cwd=path, check=False)
+    result = _run("config", "--get", GIT_BARE_CONFIG_KEY, cwd=path, check=False)
     return result.stdout.strip().lower() == "true"
 
 
@@ -36,10 +42,10 @@ def init_bare(path: Path) -> None:
     """
     path.mkdir(parents=True, exist_ok=True)
     _run("init", cwd=path)
-    _run("commit", "--allow-empty", "-m", "initial commit", cwd=path)
-    _run("branch", "-M", "main", cwd=path)
-    _run("config", "core.bare", "true", cwd=path)
-    _run("symbolic-ref", "HEAD", "refs/heads/_bare", cwd=path)
+    _run("commit", "--allow-empty", "-m", INITIAL_COMMIT_MSG, cwd=path)
+    _run("branch", "-M", MAIN_BRANCH, cwd=path)
+    _run("config", GIT_BARE_CONFIG_KEY, "true", cwd=path)
+    _run("symbolic-ref", "HEAD", BARE_HEAD_REF, cwd=path)
     logger.info("Initialized bare repo at %s", path)
 
 
@@ -49,8 +55,8 @@ def convert_to_bare(path: Path) -> None:
     Tracked files in the root working tree are removed so that worktrees
     become the only working copies.
     """
-    _run("config", "core.bare", "true", cwd=path)
-    _run("symbolic-ref", "HEAD", "refs/heads/_bare", cwd=path)
+    _run("config", GIT_BARE_CONFIG_KEY, "true", cwd=path)
+    _run("symbolic-ref", "HEAD", BARE_HEAD_REF, cwd=path)
 
     # Remove tracked files left over from the old working tree
     result = _run("ls-files", cwd=path, check=False)
@@ -59,7 +65,7 @@ def convert_to_bare(path: Path) -> None:
         if f.is_file():
             f.unlink()
     # Remove now-empty directories (excluding .git, .ralph, worktrees)
-    _prune_empty_dirs(path, keep={".git", ".ralph"})
+    _prune_empty_dirs(path, keep={".git", RALPH_DIR_NAME})
     logger.info("Converted %s to bare repo", path)
 
 
@@ -77,7 +83,7 @@ def add_worktree(repo: Path, name: str, branch: str, new_branch: bool = False) -
     """
     wt_path = repo / name
     if new_branch:
-        _run("worktree", "add", "-b", branch, str(wt_path), "main", cwd=repo)
+        _run("worktree", "add", "-b", branch, str(wt_path), MAIN_BRANCH, cwd=repo)
     else:
         _run("worktree", "add", str(wt_path), branch, cwd=repo)
     logger.info("Added worktree %s on branch %s", wt_path, branch)
@@ -128,7 +134,7 @@ def cleanup_branch(issue_id: str) -> None:
     Args:
         issue_id: The issue ID (e.g., 'bd-123')
     """
-    branch_name = f"ralph/{issue_id}"
+    branch_name = f"{BRANCH_PREFIX}{issue_id}"
     try:
         # Check if branch exists
         result = subprocess.run(
@@ -164,10 +170,10 @@ def ensure_on_main() -> None:
         )
         current_branch = result.stdout.strip()
 
-        if current_branch != "main":
+        if current_branch != MAIN_BRANCH:
             logger.info("Currently on branch %s; checking out main", current_branch)
             subprocess.run(
-                ["git", "checkout", "main"],
+                ["git", "checkout", MAIN_BRANCH],
                 capture_output=True,
                 text=True,
                 check=True,

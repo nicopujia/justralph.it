@@ -11,6 +11,9 @@ from ..utils.git import reset_git_state
 
 logger = logging.getLogger(__name__)
 
+_KEY_ISSUE_ID = "issue_id"
+_KEY_ITERATION = "iteration"
+
 
 class State:
     """Manages loop state on disk for crash recovery.
@@ -28,7 +31,7 @@ class State:
         """Persist the current issue and iteration index."""
         self.issue_id = issue_id
         self._file.write_text(
-            json.dumps({"issue_id": issue_id, "iteration": iteration})
+            json.dumps({_KEY_ISSUE_ID: issue_id, _KEY_ITERATION: iteration})
         )
 
     def clear(self) -> None:
@@ -51,8 +54,8 @@ class State:
         iteration = 0
         try:
             data = json.loads(self._file.read_text())
-            self.issue_id = data.get("issue_id")
-            iteration = data.get("iteration", 0)
+            self.issue_id = data.get(_KEY_ISSUE_ID)
+            iteration = data.get(_KEY_ITERATION, 0)
         except (json.JSONDecodeError, OSError):
             logger.warning("Found corrupt state file; removing it")
             self.clear()
@@ -81,7 +84,7 @@ class State:
         self.clear()
         return iteration
 
-    def cleanup_failed_iteration(self, status: str = "open") -> None:
+    def cleanup_failed_iteration(self, status: str = bd.IssueStatus.OPEN) -> None:
         """Reset git state and update the issue after a failed iteration.
 
         Uses ``self.issue_id``. No-op if issue_id is not set.

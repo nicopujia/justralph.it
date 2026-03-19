@@ -7,7 +7,14 @@ from pathlib import Path
 
 import ralph as ralph_module
 
-from ..config import Config
+from ..config import (
+    DEV_WORKTREE,
+    HOOKS_FILENAME,
+    MAIN_BRANCH,
+    PROD_WORKTREE,
+    RALPH_DIR_NAME,
+    Config,
+)
 from ..utils.git import (
     add_worktree,
     convert_to_bare,
@@ -23,6 +30,8 @@ logger = logging.getLogger(__name__)
 # Resolve paths relative to Ralph's installed package root
 PACKAGE_ROOT = Path(ralph_module.__file__).parent
 TEMPLATES = PACKAGE_ROOT / "templates"
+
+RALPH_GITIGNORE_CONTENT = "logs/\nstate.json\n*.ralph\n"
 
 
 @dataclass
@@ -87,35 +96,35 @@ class Init(Command):
     def _init_fresh(self, root: Path) -> None:
         """Create a bare repo with prod and dev worktrees."""
         init_bare(root)
-        add_worktree(root, "prod", branch="main")
-        add_worktree(root, "dev", branch="dev", new_branch=True)
+        add_worktree(root, PROD_WORKTREE, branch=MAIN_BRANCH)
+        add_worktree(root, DEV_WORKTREE, branch=DEV_WORKTREE, new_branch=True)
 
     def _init_existing(self, root: Path) -> None:
         """Convert an existing repo to bare and add missing worktrees."""
         if not is_bare(root):
             convert_to_bare(root)
-        if not has_worktree(root, "prod"):
-            add_worktree(root, "prod", branch="main")
-        if not has_worktree(root, "dev"):
-            add_worktree(root, "dev", branch="dev", new_branch=True)
+        if not has_worktree(root, PROD_WORKTREE):
+            add_worktree(root, PROD_WORKTREE, branch=MAIN_BRANCH)
+        if not has_worktree(root, DEV_WORKTREE):
+            add_worktree(root, DEV_WORKTREE, branch=DEV_WORKTREE, new_branch=True)
 
     # -- ralph config files ------------------------------------------------
 
     def _scaffold_ralph_dir(self, root: Path) -> None:
         """Create prod/.ralph/ with hooks, .gitignore, logs dir, and runtime files."""
-        ralph_dir = root / "prod" / ".ralph"
+        ralph_dir = root / PROD_WORKTREE / RALPH_DIR_NAME
         ralph_dir.mkdir(parents=True, exist_ok=True)
         (ralph_dir / "logs").mkdir(parents=True, exist_ok=True)
         
         # Write template files to prod/.ralph/
-        hooks_path = ralph_dir / "hooks.py"
+        hooks_path = ralph_dir / HOOKS_FILENAME
         if not hooks_path.exists():
-            hooks_path.write_text(self._read_template("hooks.py"))
+            hooks_path.write_text(self._read_template(HOOKS_FILENAME))
             logger.info("Created %s", hooks_path)
         
         gitignore_path = ralph_dir / ".gitignore"
         if not gitignore_path.exists():
-            gitignore_path.write_text("logs/\nstate.json\n*.ralph\n")
+            gitignore_path.write_text(RALPH_GITIGNORE_CONTENT)
             logger.info("Created %s", gitignore_path)
 
     # -- helpers -----------------------------------------------------------

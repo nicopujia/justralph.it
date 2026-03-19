@@ -9,9 +9,12 @@ from xml.etree import ElementTree
 
 import bd
 
+from ..config import AGENT_NAME
 from .exceptions import BadAgentStatus
 
 logger = logging.getLogger(__name__)
+
+OPENCODE_CMD = "opencode"
 
 
 class Agent:
@@ -63,8 +66,8 @@ class Agent:
         """Set issue status to in_progress and assignee to ralph."""
         bd.update_issue(
             self.issue.id,
-            status="in_progress",
-            assignee="ralph",
+            status=bd.IssueStatus.IN_PROGRESS,
+            assignee=AGENT_NAME,
         )
 
     def run(self, timeout: float | None = None) -> Generator[str, None, None]:
@@ -86,13 +89,13 @@ class Agent:
         self.status = self.Status.WORKING
         try:
             args = [
-                "opencode",
+                OPENCODE_CMD,
                 "run",
                 self.issue.as_xml(),
                 "--model",
                 self._model,
                 "--agent",
-                "ralph",
+                AGENT_NAME,
                 "--title",
                 self.issue.title,
                 *self._args,

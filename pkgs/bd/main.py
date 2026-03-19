@@ -9,6 +9,18 @@ from typing import Self
 
 logger = logging.getLogger(__name__)
 
+BD_CMD = "bd"
+BD_TIMEOUT = 30
+DEFAULT_ISSUE_TYPE = "task"
+
+
+class IssueStatus:
+    """Issue status values used by Beads."""
+
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+
 
 @dataclass
 class Issue:
@@ -16,9 +28,9 @@ class Issue:
 
     id: str
     title: str
-    status: str = "open"
+    status: str = IssueStatus.OPEN
     priority: int = 2
-    issue_type: str = "task"
+    issue_type: str = DEFAULT_ISSUE_TYPE
     description: str = ""
     acceptance: str = ""
     design: str = ""
@@ -74,9 +86,9 @@ class Issue:
         return cls(
             id=data["id"],
             title=data.get("title", ""),
-            status=data.get("status", "open"),
+            status=data.get("status", IssueStatus.OPEN),
             priority=data.get("priority", 2),
-            issue_type=data.get("issue_type", "task"),
+            issue_type=data.get("issue_type", DEFAULT_ISSUE_TYPE),
             description=data.get("description", ""),
             acceptance=data.get("acceptance", ""),
             design=data.get("design", ""),
@@ -155,18 +167,17 @@ def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
     Returns:
         CompletedProcess if successful, None if command fails or times out
     """
-    timeout = 30
-    cmd = ["bd", *args]
+    cmd = [BD_CMD, *args]
     logger.debug("Running: %s", " ".join(cmd))
     try:
         return subprocess.run(
-            cmd, capture_output=True, text=True, check=True, timeout=timeout
+            cmd, capture_output=True, text=True, check=True, timeout=BD_TIMEOUT
         )
     except FileNotFoundError:
         logger.error("bd CLI not found; is beads installed?")
         return
     except subprocess.TimeoutExpired:
-        logger.error("bd %s timed out after %ss", args[0] if args else "?", timeout)
+        logger.error("bd %s timed out after %ss", args[0] if args else "?", BD_TIMEOUT)
         return
     except subprocess.CalledProcessError as e:
         logger.error("bd %s failed: %s", args[0] if args else "?", e.stderr.strip())

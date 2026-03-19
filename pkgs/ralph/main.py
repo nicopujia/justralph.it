@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import cmds
 from .cmds import Command
-from .config import Config, get_fields
+from .config import AGENT_NAME, Config, get_fields
 
 LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
@@ -18,7 +18,7 @@ def main() -> None:
     """Parse CLI args and dispatch to the matching command."""
     commands = _discover_commands()
 
-    parser = argparse.ArgumentParser(prog="ralph", description="Ralph CLI")
+    parser = argparse.ArgumentParser(prog=AGENT_NAME, description="Ralph CLI")
     _add_fields(parser, Config)
 
     sub = parser.add_subparsers(dest="command")
