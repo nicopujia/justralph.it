@@ -244,6 +244,8 @@ class Loop(Command):
             case AgentStatus.DONE:
                 logger.info("Marking issue %s as done", issue.id)
                 bd.close_issue(issue.id)
+            case AgentStatus.HELP:
+                logger.warning("Ralph needs help!")
             case AgentStatus.BLOCKED | AgentStatus.HELP:
                 logger.info("Issue %s is blocked", issue.id)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
