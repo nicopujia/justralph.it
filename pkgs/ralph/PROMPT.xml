@@ -142,8 +142,10 @@
             Prioritize tests quality over worthless quantity.
         </Reminder>
         <Reminder title="Documentation">
+            When you write code, you should document the non-obvious.
+            Anytime you update code, you must make sure to update existing docs correspondingly.
             Any documentation you write must go in an AGENTS.md file in the corresponding directory, or as docstrings in the specific code.
-            Use them to leave notes for your future selves.
+            Keep in mind that you will eventually forget everything, so anything that isn't in the file system will be lost.
             Be as concise as possible while maintaining the substance.
         </Reminder>
         <Reminder title="Principles">
