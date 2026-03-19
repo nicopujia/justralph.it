@@ -119,7 +119,7 @@
         </Step>
         <Step id="6" title="Maintenance">
             Update or create documentation, including anything you learned or discovered during the process that could be useful for a future iteration to save work.
-            While being careful, you might also want to write hooks for the loop by modifying ./.ralph/hooks.py
+            While being careful, you might also want to write hooks for the loop by modifying ./prod/.ralph/hooks.py
             Commit.
         </Step>
         <Step id="7" title="Finish">
