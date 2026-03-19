@@ -64,11 +64,14 @@ def _add_fields(
 ) -> None:
     """Add ``--flags`` to *parser* derived from *cfg_cls* fields."""
     for f, flag, default in get_fields(cfg_cls):
-        kw: dict = {
-            "type": f.type if f.type is not Path else Path,
-            "default": default,
-            "help": f"{f.metadata['help']} (default: {default})",
-        }
+        kw: dict = {"help": f.metadata["help"]}
+        if f.type is bool:
+            kw["action"] = "store_true"
+            kw["default"] = default
+        else:
+            kw["type"] = f.type if f.type is not Path else Path
+            kw["default"] = default
+            kw["help"] += f" (default: {default})"
         if "choices" in f.metadata:
             kw["choices"] = f.metadata["choices"]
         parser.add_argument(flag, **kw)
