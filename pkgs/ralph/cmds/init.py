@@ -3,7 +3,6 @@
 import logging
 import shutil
 from dataclasses import dataclass, field
-from importlib import resources
 from pathlib import Path
 
 from ..config import Config
@@ -19,7 +18,8 @@ from . import Command
 
 logger = logging.getLogger(__name__)
 
-TEMPLATES = resources.files("ralph.templates")
+# Get path to templates directory relative to this file
+TEMPLATES = Path(__file__).parent.parent / "templates"
 
 
 @dataclass
@@ -47,8 +47,8 @@ class Init(Command):
                 .ralph/          # ralph state (logs/, state.json - runtime)
                 ├── hooks.py -> prod/.ralph/hooks.py
                 └── .gitignore -> prod/.ralph/.gitignore
-                opencode.jsonc   # OpenCode configuration (in root)
-                PROMPT.xml       # agent system prompt (in root)
+                opencode.jsonc -> /path/to/ralph/templates/opencode.jsonc
+                PROMPT.xml -> /path/to/ralph/templates/PROMPT.xml
                 prod/            # worktree on main
                 ├── .ralph/      # tracked ralph config
                 │   ├── hooks.py
@@ -56,8 +56,9 @@ class Init(Command):
                 └── ...          # other project files
                 dev/             # worktree on dev
 
-        If base_dir is already a git repo, it is converted to bare and
-        worktrees are added. Otherwise a fresh bare repo is created.
+        The opencode.jsonc and PROMPT.xml files are symlinked to Ralph's
+        installation templates. This ensures projects always use the latest
+        versions and updates are applied automatically when Ralph is upgraded.
         """
         root = self.cfg.base_dir
 
@@ -74,9 +75,9 @@ class Init(Command):
 
         self._scaffold_ralph_dir(root)
         
-        # Copy templates to project root (tracked directly, no symlinks)
-        self._write_template(root / "opencode.jsonc", self._read_template("opencode.jsonc"))
-        self._write_template(root / "PROMPT.xml", self._read_template("PROMPT.xml"))
+        # Symlink templates from Ralph's installation (auto-updates with Ralph)
+        self._symlink_template(root, "opencode.jsonc")
+        self._symlink_template(root, "PROMPT.xml")
         # AGENTS.md can be anywhere in the repo - user creates it manually
 
         logger.info("Initialized %s", root)
@@ -118,7 +119,7 @@ class Init(Command):
     @staticmethod
     def _read_template(name: str) -> str:
         """Read a built-in template file by name."""
-        return TEMPLATES.joinpath(name).read_text()
+        return (TEMPLATES / name).read_text()
 
     @staticmethod
     def _write_template(dest: Path, content: str) -> None:
@@ -157,3 +158,20 @@ class Init(Command):
             symlink_path.unlink()
         symlink_path.symlink_to(worktree_path.relative_to(root))
         logger.info("Created symlink %s -> %s", symlink_path, worktree_path)
+
+    @staticmethod
+    def _symlink_template(root: Path, filename: str) -> None:
+        """Create symlink from project root to Ralph's template.
+        
+        Args:
+            root: Project root directory
+            filename: Template file name (e.g., "opencode.jsonc")
+        """
+        symlink_path = root / filename
+        template_path = TEMPLATES / filename
+        
+        # Create or update symlink at root
+        if symlink_path.exists() or symlink_path.is_symlink():
+            symlink_path.unlink()
+        symlink_path.symlink_to(template_path)
+        logger.info("Created symlink %s -> %s (Ralph template)", symlink_path, template_path)
