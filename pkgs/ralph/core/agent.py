@@ -9,6 +9,8 @@ from xml.etree import ElementTree
 
 import bd
 
+from .exceptions import BadAgentStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,7 @@ class Agent:
             Lines of stdout from OpenCode
 
         Raises:
-            BadRalphStatus: If status XML is missing, unparseable, or unknown
+            BadAgentStatus: If status XML is missing, unparseable, or unknown
             subprocess.TimeoutExpired: If timeout is exceeded
         """
         self.status = self.Status.WORKING
@@ -127,20 +129,17 @@ class Agent:
                 break
 
         if not status_xml:
-            raise BadRalphStatus("No output from OpenCode")
+            raise BadAgentStatus("No output from OpenCode")
 
         try:
             status_msg = ElementTree.fromstring(status_xml).text
         except ElementTree.ParseError:
-            raise BadRalphStatus(
+            raise BadAgentStatus(
                 f"Failed to parse status XML from last line: {status_xml!r}",
             )
 
         try:
             self.status = self.Status(status_msg)
         except ValueError:
-            raise BadRalphStatus(f"Unknown status value: {status_msg!r}")
+            raise BadAgentStatus(f"Unknown status value: {status_msg!r}")
 
-
-class BadRalphStatus(ValueError):
-    """Raised when Ralph's status XML is missing, unparseable, or invalid."""

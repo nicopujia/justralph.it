@@ -3,10 +3,8 @@
 import json
 import logging
 import subprocess
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Self
 
 logger = logging.getLogger(__name__)
@@ -123,54 +121,6 @@ def get_next_ready_issue() -> Issue | None:
         return
 
     return Issue.parse(issues[0])
-
-
-def wait_for_next_ready_issue(
-    poll_interval: float,
-    stop_file: Path,
-    restart_file: Path,
-) -> Issue:
-    """Block until a ready issue appears, then return it.
-
-    Polls `bd ready` every poll_interval seconds and checks for signal files.
-
-    Args:
-        poll_interval: Seconds to wait between polls
-        stop_file: Path to stop signal file
-        restart_file: Path to restart signal file
-
-    Returns:
-        The first ready issue found
-
-    Raises:
-        StopRequested: If stop file appears while waiting
-        RestartRequested: If restart file appears while waiting
-    """
-    logger.info("Waiting for a ready issue (polling every %ss)...", poll_interval)
-    while True:
-        if stop_file.exists():
-            reason = stop_file.read_text() or "found empty stop file"
-            stop_file.unlink()
-            raise StopRequested(reason)
-
-        if restart_file.exists():
-            reason = restart_file.read_text() or "found empty restart file"
-            restart_file.unlink()
-            raise RestartRequested(reason)
-
-        issue = get_next_ready_issue()
-        if issue is not None:
-            logger.info("Found ready issue: %s", issue.id)
-            return issue
-        time.sleep(poll_interval)
-
-
-class StopRequested(Exception):
-    """Raised when a stop file is detected during polling."""
-
-
-class RestartRequested(Exception):
-    """Raised when a restart file is detected during polling."""
 
 
 def update_issue(

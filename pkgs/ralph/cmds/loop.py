@@ -14,6 +14,7 @@ from bd import Issue
 
 from ..config import BASE_DIR, LOGS_DIR, Config
 from ..core.agent import Agent
+from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
 from ..core.state import State
 from ..utils.git import reset_git_state
@@ -131,9 +132,9 @@ class Loop(Command):
                 agent = self._create_agent(issue, i)
                 self._process_issue(agent, issue, i)
                 self._consecutive_failures = 0
-            except bd.StopRequested:
+            except StopRequested:
                 break
-            except bd.RestartRequested:
+            except RestartRequested:
                 self._hooks.post_loop(self.cfg, i)
                 return True
             except Exception as exc:
@@ -159,13 +160,13 @@ class Loop(Command):
             reason = self.cfg.stop_file.read_text() or "found empty stop file"
             self.cfg.stop_file.unlink()
             logger.warning("Stopping loop: %s", reason)
-            raise bd.StopRequested(reason)
+            raise StopRequested(reason)
 
         if self.cfg.restart_file.exists():
             reason = self.cfg.restart_file.read_text() or "found empty restart file"
             self.cfg.restart_file.unlink()
             logger.info("Restart requested: %s", reason)
-            raise bd.RestartRequested(reason)
+            raise RestartRequested(reason)
 
     def _check_resources(self) -> None:
         """Stop if CPU, RAM, or disk usage exceeds the threshold."""
@@ -180,7 +181,7 @@ class Loop(Command):
             logger.warning(
                 "Stopping loop: resource usage over %s%% threshold", threshold
             )
-            raise bd.StopRequested("resource usage over threshold")
+            raise StopRequested("resource usage over threshold")
 
     # -- issue acquisition -------------------------------------------------
 
@@ -192,18 +193,13 @@ class Loop(Command):
             return issue
 
         logger.info("No ready issues. Waiting...")
-        try:
-            return bd.wait_for_next_ready_issue(
-                self.cfg.poll_interval,
-                stop_file=self.cfg.stop_file,
-                restart_file=self.cfg.restart_file,
-            )
-        except bd.StopRequested:
-            logger.warning("Stopping while waiting for issues")
-            raise
-        except bd.RestartRequested:
-            logger.info("Restart requested while waiting for issues")
-            raise
+        while True:
+            self._check_signals()
+            issue = bd.get_next_ready_issue()
+            if issue:
+                logger.info("Retrieved issue: %r", issue)
+                return issue
+            time.sleep(self.cfg.poll_interval)
 
     # -- agent lifecycle ---------------------------------------------------
 
