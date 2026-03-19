@@ -5,6 +5,7 @@ import logging
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Self
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,12 @@ BD_TIMEOUT = 30
 DEFAULT_ISSUE_TYPE = "task"
 
 
-class IssueStatus:
-    """Issue status values used by Beads."""
+class IssueStatus(StrEnum):
+    """Issue status values used by Beads.
+
+    Inherits from StrEnum so values compare equal to plain strings
+    (e.g. ``IssueStatus.OPEN == "open"``).
+    """
 
     OPEN = "open"
     IN_PROGRESS = "in_progress"
