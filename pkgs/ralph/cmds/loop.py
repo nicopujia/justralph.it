@@ -22,14 +22,6 @@ from . import Command
 logger = logging.getLogger(__name__)
 
 
-class _Stop(Exception):
-    """Signal to break out of the iteration loop."""
-
-
-class _Restart(Exception):
-    """Signal to restart the iteration loop."""
-
-
 @dataclass
 class LoopConfig(Config):
     """Configuration for the loop command."""
@@ -139,9 +131,9 @@ class Loop(Command):
                 agent = self._create_agent(issue, i)
                 self._process_issue(agent, issue, i)
                 self._consecutive_failures = 0
-            except _Stop:
+            except bd.StopRequested:
                 break
-            except _Restart:
+            except bd.RestartRequested:
                 self._hooks.post_loop(self.cfg, i)
                 return True
             except Exception as exc:
@@ -167,13 +159,13 @@ class Loop(Command):
             reason = self.cfg.stop_file.read_text() or "found empty stop file"
             self.cfg.stop_file.unlink()
             logger.warning("Stopping loop: %s", reason)
-            raise _Stop
+            raise bd.StopRequested(reason)
 
         if self.cfg.restart_file.exists():
             reason = self.cfg.restart_file.read_text() or "found empty restart file"
             self.cfg.restart_file.unlink()
             logger.info("Restart requested: %s", reason)
-            raise _Restart
+            raise bd.RestartRequested(reason)
 
     def _check_resources(self) -> None:
         """Stop if CPU, RAM, or disk usage exceeds the threshold."""
@@ -188,7 +180,7 @@ class Loop(Command):
             logger.warning(
                 "Stopping loop: resource usage over %s%% threshold", threshold
             )
-            raise _Stop
+            raise bd.StopRequested("resource usage over threshold")
 
     # -- issue acquisition -------------------------------------------------
 
@@ -206,12 +198,12 @@ class Loop(Command):
                 stop_file=self.cfg.stop_file,
                 restart_file=self.cfg.restart_file,
             )
-        except bd.StopRequested as e:
-            logger.warning("Stopping while waiting for issues: %s", e)
-            raise _Stop from e
-        except bd.RestartRequested as e:
-            logger.info("Restart requested while waiting for issues: %s", e)
-            raise _Restart from e
+        except bd.StopRequested:
+            logger.warning("Stopping while waiting for issues")
+            raise
+        except bd.RestartRequested:
+            logger.info("Restart requested while waiting for issues")
+            raise
 
     # -- agent lifecycle ---------------------------------------------------
 
