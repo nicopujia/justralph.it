@@ -233,5 +233,16 @@
                 </Examples>
             </CommitMessages>
         </Git>
+        <ProjectStructure>
+            You are working in a bare repo structure:
+
+            prod/           # main branch worktree
+            dev/            # dev branch worktree
+            uploads/        # Files provided by Human
+            .git/
+
+            If a closed issue is assigned to Human, and it required files or environment variables, you will find such data inside ./uploads
+            Unless they're security-sensitive, you should commit those files inside the repo.
+        </ProjectStructure>
     </Guides>
 </SystemPrompt>
