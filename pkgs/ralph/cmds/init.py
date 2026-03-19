@@ -46,15 +46,14 @@ class Init(Command):
 
             base_dir/
                 .git/            # bare repo
-                .ralph/          # ralph state (logs/, state.json - runtime)
-                ├── hooks.py -> prod/.ralph/hooks.py
-                └── .gitignore -> prod/.ralph/.gitignore
                 opencode.jsonc -> /path/to/ralph/templates/opencode.jsonc
                 PROMPT.xml -> /path/to/ralph/templates/PROMPT.xml
                 prod/            # worktree on main
-                ├── .ralph/      # tracked ralph config
+                ├── .ralph/      # ralph config, state, and logs
                 │   ├── hooks.py
-                │   └── .gitignore
+                │   ├── .gitignore
+                │   ├── logs/
+                │   └── state.json
                 └── ...          # other project files
                 dev/             # worktree on dev
 
@@ -106,15 +105,21 @@ class Init(Command):
     # -- ralph config files ------------------------------------------------
 
     def _scaffold_ralph_dir(self, root: Path) -> None:
-        """Create .ralph/ at root (runtime) and prod/.ralph/ (tracked) with symlinks."""
-        # Runtime directory at root (logs, state - not tracked)
-        ralph_dir = root / ".ralph"
+        """Create prod/.ralph/ with hooks, .gitignore, logs dir, and runtime files."""
+        ralph_dir = root / "prod" / ".ralph"
         ralph_dir.mkdir(parents=True, exist_ok=True)
         (ralph_dir / "logs").mkdir(parents=True, exist_ok=True)
         
-        # Tracked config in prod/.ralph/ with symlinks to root
-        self._symlink_to_worktree(root, "prod", ".ralph/hooks.py", self._read_template("hooks.py"))
-        self._symlink_to_worktree(root, "prod", ".ralph/.gitignore", "logs/\nstate.json\n*.ralph\n")
+        # Write template files to prod/.ralph/
+        hooks_path = ralph_dir / "hooks.py"
+        if not hooks_path.exists():
+            hooks_path.write_text(self._read_template("hooks.py"))
+            logger.info("Created %s", hooks_path)
+        
+        gitignore_path = ralph_dir / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text("logs/\nstate.json\n*.ralph\n")
+            logger.info("Created %s", gitignore_path)
 
     # -- helpers -----------------------------------------------------------
 
