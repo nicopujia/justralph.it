@@ -7,68 +7,51 @@ from pathlib import Path
 
 import bd
 
-from .git import reset_git_state
+from ..utils.git import reset_git_state
 
 logger = logging.getLogger(__name__)
-
-
-def cleanup_failed_iteration(issue_id: str, status: str = "open") -> None:
-    """Clean up after a failed iteration: reset git state and update issue.
-
-    This is used when Ralph fails to complete an issue for any reason
-    (exception, timeout, bad status, needs help, blocked, etc).
-    It ensures the issue is properly updated and git is in a clean state.
-
-    Args:
-        issue_id: The issue ID (e.g., 'bd-123')
-        status: Status to set on the issue (default: 'open')
-    """
-    logger.info("Cleaning up failed iteration for issue %s", issue_id)
-    reset_git_state(issue_id)
-    try:
-        bd.update_issue(issue_id, status=status, assignee="")
-        logger.info("Set issue %s to %s and cleared assignee", issue_id, status)
-    except RuntimeError:
-        logger.error("Failed to update issue %s", issue_id)
 
 
 class State:
     """Manages loop state on disk for crash recovery.
 
-    Write state before each iteration; clear it after. If the file
-    exists on startup, the previous run crashed mid-iteration.
+    Tracks the current issue_id and iteration. Write state before each
+    iteration; clear it after. If the file exists on startup, the
+    previous run crashed mid-iteration.
     """
 
     def __init__(self, file: Path) -> None:
         self._file = file
+        self.issue_id: str | None = None
 
     def save(self, issue_id: str, iteration: int) -> None:
         """Persist the current issue and iteration index."""
+        self.issue_id = issue_id
         self._file.write_text(
             json.dumps({"issue_id": issue_id, "iteration": iteration})
         )
 
     def clear(self) -> None:
-        """Remove the state file (idempotent)."""
+        """Remove the state file and reset issue_id."""
+        self.issue_id = None
         self._file.unlink(missing_ok=True)
 
     def check_crash_recovery(self) -> int:
         """Recover from a mid-iteration crash if a state file exists.
 
-        - Runs ``git reset --hard`` to discard partial changes.
-        - Sets the interrupted issue back to open status and clears assignee.
-        - Returns the saved iteration index so the loop can resume from it.
+        Runs ``git reset --hard`` to discard partial changes, sets the
+        interrupted issue back to open status and clears its assignee,
+        then returns the saved iteration index so the loop can resume.
 
         Returns 0 if no crash was detected.
         """
         if not self._file.exists():
             return 0
 
-        issue_id = None
         iteration = 0
         try:
             data = json.loads(self._file.read_text())
-            issue_id = data.get("issue_id")
+            self.issue_id = data.get("issue_id")
             iteration = data.get("iteration", 0)
         except (json.JSONDecodeError, OSError):
             logger.warning("Found corrupt state file; removing it")
@@ -77,11 +60,10 @@ class State:
 
         logger.warning(
             "Detected incomplete previous run (issue=%s, iteration=%s). Recovering...",
-            issue_id or "?",
+            self.issue_id or "?",
             iteration,
         )
 
-        # discard any partial changes from the crashed iteration
         try:
             subprocess.run(
                 ["git", "reset", "--hard"],
@@ -93,9 +75,28 @@ class State:
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.error("git reset --hard failed: %s", e)
 
-        # reset git state and reopen the issue
-        if issue_id:
-            cleanup_failed_iteration(issue_id)
+        if self.issue_id:
+            self.cleanup_failed_iteration()
 
         self.clear()
         return iteration
+
+    def cleanup_failed_iteration(self, status: str = "open") -> None:
+        """Reset git state and update the issue after a failed iteration.
+
+        Uses ``self.issue_id``. No-op if issue_id is not set.
+
+        Args:
+            status: Status to set on the issue (default: 'open')
+        """
+        if not self.issue_id:
+            return
+        logger.info("Cleaning up failed iteration for issue %s", self.issue_id)
+        reset_git_state(self.issue_id)
+        try:
+            bd.update_issue(self.issue_id, status=status, assignee="")
+            logger.info(
+                "Set issue %s to %s and cleared assignee", self.issue_id, status
+            )
+        except RuntimeError:
+            logger.error("Failed to update issue %s", self.issue_id)

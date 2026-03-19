@@ -126,7 +126,7 @@
             Finally, output <Status>COMPLETED ASSIGNED ISSUE</Status> in a new line and stop.
         </Step>
     </Workflow>
-    <SystemReminders>
+    <Reminders>
         <Reminder title="Power">
             You have full root and internet access on this machine.
             Take advantage of this power to minimize the need of human help.
@@ -167,7 +167,7 @@
             If the implementation is easy to explain, it may be a good idea.
             Namespaces are one honking great idea -- let's do more of those!
         </Reminder>
-    </SystemReminders>
+    </Reminders>
     <Guides>
         <Subagents title="How to manage your subagents">
             <Instruction>

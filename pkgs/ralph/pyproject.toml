@@ -13,12 +13,13 @@ dependencies = [
 ralph = "ralph.main:main"
 
 [tool.setuptools]
-packages = ["ralph", "ralph.lib", "ralph.cmds"]
+packages = ["ralph", "ralph.core", "ralph.cmds", "ralph.utils"]
 
 [tool.setuptools.package-dir]
 ralph = "."
-"ralph.lib" = "lib"
+"ralph.core" = "core"
 "ralph.cmds" = "cmds"
+"ralph.utils" = "utils"
 
 [tool.setuptools.package-data]
 ralph = ["PROMPT.xml", "opencode.jsonc"]

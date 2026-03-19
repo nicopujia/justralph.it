@@ -1,32 +1,68 @@
-"""Ralph CLI entry point.
-
-Usage::
-
-    ralph init          # scaffold the .ralph/ directory
-    ralph loop          # run the main agent loop (requires init first)
-    ralph loop --help   # show loop-specific options
-"""
+"""Ralph CLI entry point."""
 
 import argparse
+import importlib
+import logging
+import pkgutil
 from pathlib import Path
 
-from .cmds import init, loop
+from . import cmds
+from .cmds import Command
 from .config import Config, get_fields
 
+LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the top-level parser with subcommands.
 
-    Flags are derived automatically from :class:`Config` field metadata so
-    config and its documentation live in a single place.
-    """
+def main() -> None:
+    """Parse CLI args and dispatch to the matching command."""
+    commands = _discover_commands()
+
     parser = argparse.ArgumentParser(prog="ralph", description="Ralph CLI")
+    _add_fields(parser, Config)
 
-    # ── Global flags (shared across all subcommands) ─────────────────────
-    global_names = {"base_dir", "log_level"}
-    for f, flag, default in get_fields():
-        if f.name not in global_names:
-            continue
+    sub = parser.add_subparsers(dest="command")
+    for name, cmd in commands.items():
+        cmd_parser = sub.add_parser(name, help=cmd.help)
+        _add_fields(cmd_parser, cmd.config)
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        parser.print_help()
+        raise SystemExit(1)
+
+    cmd = commands[args.command]
+    cmd.cfg = cmd.config(**{k: v for k, v in vars(args).items() if k != "command"})
+
+    log_level = getattr(logging, cmd.cfg.log_level.upper(), logging.INFO)
+    logging.basicConfig(format=LOG_FORMAT, datefmt=LOG_DATEFMT, level=log_level)
+
+    cmd.run()
+
+
+def _discover_commands() -> dict[str, Command]:
+    """Import every module in ``ralph.cmds`` and return {name: instance}."""
+    result: dict[str, Command] = {}
+    for info in pkgutil.iter_modules(cmds.__path__, cmds.__name__ + "."):
+        mod = importlib.import_module(info.name)
+        cmd_name = info.name.rsplit(".", 1)[-1]
+        for obj in vars(mod).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, Command)
+                and obj is not Command
+            ):
+                result[cmd_name] = obj()
+    return result
+
+
+def _add_fields(
+    parser: argparse.ArgumentParser,
+    cfg_cls: type[Config],
+) -> None:
+    """Add ``--flags`` to *parser* derived from *cfg_cls* fields."""
+    for f, flag, default in get_fields(cfg_cls):
         kw: dict = {
             "type": f.type if f.type is not Path else Path,
             "default": default,
@@ -35,45 +71,6 @@ def _build_parser() -> argparse.ArgumentParser:
         if "choices" in f.metadata:
             kw["choices"] = f.metadata["choices"]
         parser.add_argument(flag, **kw)
-
-    # ── Subcommands ──────────────────────────────────────────────────────
-    sub = parser.add_subparsers(dest="command")
-
-    sub.add_parser("init", help="Scaffold the .ralph/ directory")
-
-    loop_parser = sub.add_parser("loop", help="Run the main agent loop")
-    loop_only = {f.name for f, _, _ in get_fields()} - global_names
-    for f, flag, default in get_fields():
-        if f.name not in loop_only:
-            continue
-        kw = {
-            "type": f.type if f.type is not Path else Path,
-            "default": default,
-            "help": f"{f.metadata['help']} (default: {default})",
-        }
-        if "choices" in f.metadata:
-            kw["choices"] = f.metadata["choices"]
-        loop_parser.add_argument(flag, **kw)
-
-    return parser
-
-
-def main() -> None:
-    """Parse CLI args and dispatch to the appropriate command."""
-    parser = _build_parser()
-    args = parser.parse_args()
-
-    if args.command is None:
-        parser.print_help()
-        raise SystemExit(1)
-
-    cfg = Config(**{k: v for k, v in vars(args).items() if k != "command"})
-
-    match args.command:
-        case "init":
-            init.run(cfg)
-        case "loop":
-            loop.run(cfg)
 
 
 if __name__ == "__main__":
