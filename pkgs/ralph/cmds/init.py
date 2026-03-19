@@ -13,6 +13,7 @@ from ..utils.git import (
     convert_to_bare,
     has_worktree,
     init_bare,
+    is_bare,
     is_repo,
     reset_branch,
 )
@@ -92,7 +93,8 @@ class Init(Command):
 
     def _init_existing(self, root: Path) -> None:
         """Convert an existing repo to bare and add missing worktrees."""
-        convert_to_bare(root)
+        if not is_bare(root):
+            convert_to_bare(root)
         if not has_worktree(root, "prod"):
             add_worktree(root, "prod", branch="main")
         if not has_worktree(root, "dev"):

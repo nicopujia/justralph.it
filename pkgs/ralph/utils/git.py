@@ -21,6 +21,12 @@ def is_repo(path: Path) -> bool:
     return _run("rev-parse", "--git-dir", cwd=path, check=False).returncode == 0
 
 
+def is_bare(path: Path) -> bool:
+    """Return True if the repo at *path* is bare."""
+    result = _run("config", "--get", "core.bare", cwd=path, check=False)
+    return result.stdout.strip().lower() == "true"
+
+
 def init_bare(path: Path) -> None:
     """Create a bare repo at *path/.git* with an initial empty commit.
 
