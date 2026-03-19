@@ -102,7 +102,7 @@ def load_hooks(cfg: Config) -> Hooks:
         AttributeError: If CustomHooks class is not defined
         TypeError: If CustomHooks does not subclass Hooks
     """
-    hooks_file = cfg.base_dir / "hooks.py"
+    hooks_file = cfg.base_dir / ".ralph" / "hooks.py"
     if not hooks_file.exists():
         raise FileNotFoundError(f"{hooks_file} not found. Run `ralph init` first.")
 

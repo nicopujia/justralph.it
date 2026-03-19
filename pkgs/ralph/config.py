@@ -15,9 +15,10 @@ import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-# Base paths (derived, not directly configurable)
-BASE_DIR = Path.cwd() / ".ralph"
-LOGS_DIR = BASE_DIR / "logs"
+# Default project root (current working directory)
+PROJECT_ROOT = Path.cwd()
+RALPH_DIR = PROJECT_ROOT / ".ralph"
+LOGS_DIR = RALPH_DIR / "logs"
 
 
 @dataclass
@@ -25,8 +26,8 @@ class Config:
     """Global configuration shared by every command."""
 
     base_dir: Path = field(
-        default=BASE_DIR,
-        metadata={"help": "Base directory for Ralph runtime files"},
+        default=PROJECT_ROOT,
+        metadata={"help": "Project root directory"},
     )
     log_level: str = field(
         default="INFO",

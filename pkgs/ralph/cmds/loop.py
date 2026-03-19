@@ -12,7 +12,7 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import BASE_DIR, LOGS_DIR, Config
+from ..config import LOGS_DIR, RALPH_DIR, Config
 from ..core.agent import Agent
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
@@ -36,15 +36,15 @@ class LoopConfig(Config):
         metadata={"help": "Path to logs directory"},
     )
     state_file: Path = field(
-        default=BASE_DIR / "state.json",
+        default=RALPH_DIR / "state.json",
         metadata={"help": "Path to state file for crash recovery"},
     )
     stop_file: Path = field(
-        default=BASE_DIR / "stop.ralph",
+        default=RALPH_DIR / "stop.ralph",
         metadata={"help": "Path to stop file"},
     )
     restart_file: Path = field(
-        default=BASE_DIR / "restart.ralph",
+        default=RALPH_DIR / "restart.ralph",
         metadata={"help": "Path to restart file"},
     )
     model: str = field(
@@ -89,9 +89,10 @@ class Loop(Command):
 
     def run(self) -> None:
         """Verify initialization, set up state, and loop until stopped."""
-        if not self.cfg.base_dir.is_dir():
+        ralph_dir = self.cfg.base_dir / ".ralph"
+        if not ralph_dir.is_dir():
             print(
-                f"Error: {self.cfg.base_dir} does not exist. Run 'ralph init' first.",
+                f"Error: {ralph_dir} does not exist. Run 'ralph init' first.",
                 file=sys.stderr,
             )
             raise SystemExit(1)

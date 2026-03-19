@@ -1,40 +1,24 @@
-"""Scaffold the .ralph/ directory."""
+"""Scaffold a Ralph project directory."""
 
 import logging
 import shutil
 from dataclasses import dataclass, field
+from importlib import resources
+from pathlib import Path
 
 from ..config import Config
+from ..utils.git import (
+    add_worktree,
+    convert_to_bare,
+    has_worktree,
+    init_bare,
+    is_repo,
+)
 from . import Command
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HOOKS = '''\
-"""Ralph lifecycle hooks.
-
-Override methods to customise behaviour.
-Run `python -c "from ralph.core.hooks import Hooks; help(Hooks)"` to see the full interface.
-"""
-
-from ralph.core.hooks import Hooks
-
-
-class CustomHooks(Hooks):
-    def pre_loop(self, cfg):
-        pass
-
-    def pre_iter(self, cfg, issue, iteration):
-        pass
-
-    def post_iter(self, cfg, issue, iteration, status, error):
-        pass
-
-    def post_loop(self, cfg, iterations_completed):
-        pass
-
-    def extra_args_kwargs(self, cfg, issue):
-        return (), {}
-'''
+TEMPLATES = resources.files("ralph.templates")
 
 
 @dataclass
@@ -43,39 +27,101 @@ class InitConfig(Config):
 
     force: bool = field(
         default=False,
-        metadata={"help": "Delete and re-create the .ralph/ directory"},
+        metadata={"help": "Delete and re-create the project directory"},
+    )
+    agents_md: Path = field(
+        default=Path(""),
+        metadata={
+            "help": "Path to AGENTS.md template (default: built-in empty template)",
+        },
     )
 
 
 class Init(Command):
-    help = "Scaffold the .ralph/ directory"
+    help = "Scaffold a Ralph project with worktrees"
     config = InitConfig
     cfg: InitConfig
 
     def run(self) -> None:
-        """Create .ralph/ and its default files.
+        """Scaffold or reorganize a project into the Ralph worktree layout.
 
-        Creates base_dir, logs_dir, a default hooks.py, and a .gitignore.
-        Safe to re-run; existing files are not overwritten unless --force
-        is given, which deletes the entire directory first.
+        Target structure::
+
+            base_dir/
+                .git/            # bare repo
+                .ralph/          # ralph config (hooks, logs, state)
+                AGENTS.md        # project instructions for agents
+                opencode.jsonc   # OpenCode configuration
+                prod/            # worktree on main
+                dev/             # worktree on dev
+
+        If base_dir is already a git repo, it is converted to bare and
+        worktrees are added. Otherwise a fresh bare repo is created.
         """
-        cfg = self.cfg
+        root = self.cfg.base_dir
 
-        if cfg.force and cfg.base_dir.exists():
-            shutil.rmtree(cfg.base_dir)
-            logger.info("Removed %s", cfg.base_dir)
+        if self.cfg.force and root.exists():
+            shutil.rmtree(root)
+            logger.info("Removed %s", root)
 
-        cfg.base_dir.mkdir(parents=True, exist_ok=True)
-        (cfg.base_dir / "logs").mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
 
-        hooks_file = cfg.base_dir / "hooks.py"
-        if not hooks_file.exists():
-            hooks_file.write_text(DEFAULT_HOOKS)
-            logger.info("Created %s", hooks_file)
+        if is_repo(root):
+            self._init_existing(root)
+        else:
+            self._init_fresh(root)
 
-        gitignore = cfg.base_dir / ".gitignore"
-        if not gitignore.exists():
-            gitignore.write_text("logs/\nstate.json\n*.ralph\n")
-            logger.info("Created %s", gitignore)
+        self._scaffold_ralph_dir(root)
+        self._write_template(root / "AGENTS.md", self._agents_md_content())
+        self._write_template(root / "opencode.jsonc", self._read_template("opencode.jsonc"))
 
-        logger.info("Initialized %s", cfg.base_dir)
+        logger.info("Initialized %s", root)
+
+    # -- repo setup --------------------------------------------------------
+
+    def _init_fresh(self, root: Path) -> None:
+        """Create a bare repo with prod and dev worktrees."""
+        init_bare(root)
+        add_worktree(root, "prod", branch="main")
+        add_worktree(root, "dev", branch="dev", new_branch=True)
+
+    def _init_existing(self, root: Path) -> None:
+        """Convert an existing repo to bare and add missing worktrees."""
+        convert_to_bare(root)
+        if not has_worktree(root, "prod"):
+            add_worktree(root, "prod", branch="main")
+        if not has_worktree(root, "dev"):
+            add_worktree(root, "dev", branch="dev", new_branch=True)
+
+    # -- ralph config files ------------------------------------------------
+
+    def _scaffold_ralph_dir(self, root: Path) -> None:
+        """Create .ralph/ with hooks, logs, and .gitignore."""
+        ralph_dir = root / ".ralph"
+        ralph_dir.mkdir(parents=True, exist_ok=True)
+        (ralph_dir / "logs").mkdir(parents=True, exist_ok=True)
+
+        self._write_template(ralph_dir / "hooks.py", self._read_template("hooks.py"))
+        self._write_template(ralph_dir / ".gitignore", "logs/\nstate.json\n*.ralph\n")
+
+    # -- helpers -----------------------------------------------------------
+
+    def _agents_md_content(self) -> str:
+        """Return AGENTS.md content from user-supplied path or built-in template."""
+        src = self.cfg.agents_md
+        if src and src != Path(""):
+            return src.read_text()
+        return self._read_template("AGENTS.md")
+
+    @staticmethod
+    def _read_template(name: str) -> str:
+        """Read a built-in template file by name."""
+        return TEMPLATES.joinpath(name).read_text()
+
+    @staticmethod
+    def _write_template(dest: Path, content: str) -> None:
+        """Write *content* to *dest* if it does not already exist."""
+        if dest.exists():
+            return
+        dest.write_text(content)
+        logger.info("Created %s", dest)

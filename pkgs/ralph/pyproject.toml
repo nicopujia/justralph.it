@@ -13,16 +13,18 @@ dependencies = [
 ralph = "ralph.main:main"
 
 [tool.setuptools]
-packages = ["ralph", "ralph.core", "ralph.cmds", "ralph.utils"]
+packages = ["ralph", "ralph.core", "ralph.cmds", "ralph.utils", "ralph.templates"]
 
 [tool.setuptools.package-dir]
 ralph = "."
 "ralph.core" = "core"
 "ralph.cmds" = "cmds"
 "ralph.utils" = "utils"
+"ralph.templates" = "templates"
 
 [tool.setuptools.package-data]
-ralph = ["PROMPT.xml", "opencode.jsonc"]
+ralph = ["PROMPT.xml"]
+"ralph.templates" = ["AGENTS.md", "hooks.py", "opencode.jsonc"]
 
 [tool.uv.sources]
 bd = { workspace = true }
