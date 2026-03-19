@@ -73,9 +73,11 @@ class Init(Command):
             self._init_fresh(root)
 
         self._scaffold_ralph_dir(root)
-        self._write_template(root / "AGENTS.md", self._agents_md_content())
-        self._write_template(root / "opencode.jsonc", self._read_template("opencode.jsonc"))
-        self._write_template(root / "PROMPT.xml", self._read_template("PROMPT.xml"))
+        
+        # Project config files live in prod/ worktree, symlinked to root for convenience
+        self._symlink_to_worktree(root, "prod", "AGENTS.md", self._agents_md_content())
+        self._symlink_to_worktree(root, "prod", "opencode.jsonc", self._read_template("opencode.jsonc"))
+        self._symlink_to_worktree(root, "prod", "PROMPT.xml", self._read_template("PROMPT.xml"))
 
         logger.info("Initialized %s", root)
 
@@ -127,3 +129,27 @@ class Init(Command):
             return
         dest.write_text(content)
         logger.info("Created %s", dest)
+
+    @staticmethod
+    def _symlink_to_worktree(root: Path, worktree: str, filename: str, content: str) -> None:
+        """Write file to worktree and create symlink at root.
+        
+        Args:
+            root: Project root directory
+            worktree: Worktree name (e.g., "prod", "dev")
+            filename: File name to create
+            content: File content to write
+        """
+        worktree_path = root / worktree / filename
+        symlink_path = root / filename
+        
+        # Write file in worktree if it doesn't exist
+        if not worktree_path.exists():
+            worktree_path.write_text(content)
+            logger.info("Created %s", worktree_path)
+        
+        # Create or update symlink at root
+        if symlink_path.exists() or symlink_path.is_symlink():
+            symlink_path.unlink()
+        symlink_path.symlink_to(worktree_path.relative_to(root))
+        logger.info("Created symlink %s -> %s", symlink_path, worktree_path)
