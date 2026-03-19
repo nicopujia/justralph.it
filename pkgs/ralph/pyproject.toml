@@ -10,13 +10,15 @@ dependencies = [
 ]
 
 [project.scripts]
-ralph = "ralph.loop:main"
+ralph = "ralph.main:main"
 
 [tool.setuptools]
-packages = ["ralph"]
+packages = ["ralph", "ralph.lib", "ralph.cmds"]
 
 [tool.setuptools.package-dir]
 ralph = "."
+"ralph.lib" = "lib"
+"ralph.cmds" = "cmds"
 
 [tool.setuptools.package-data]
 ralph = ["PROMPT.xml", "opencode.jsonc"]

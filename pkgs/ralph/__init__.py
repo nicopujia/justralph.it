@@ -3,15 +3,13 @@
 This package provides the core functionality for Ralph, an autonomous agent
 that claims, processes, and completes issues from a Beads issue tracker.
 
-Main modules:
-    agent: OpenCode agent wrapper with status tracking
-    loop: Main control loop with crash recovery
-    config: CLI configuration and runtime settings
-    state: State persistence for crash recovery
-    git: Git branch and repository management
-    hooks: User-customizable hooks for extending Ralph
-    init: Ralph environment initialization
+Package layout:
+    config: Single source of truth for all configuration and defaults
+    main:   CLI entry point (argparse with subcommands)
+    cmds/:  One module per CLI command (init, loop)
+    lib/:   Core business logic (agent, git, hooks, init, loop, state)
 
 Usage:
-    python -m ralph.loop [--model MODEL] [--max-iters N]
+    ralph init              # scaffold .ralph/ directory
+    ralph loop [--flags]    # run the main agent loop
 """

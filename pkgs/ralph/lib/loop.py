@@ -13,27 +13,25 @@ import time
 import bd
 import psutil
 
+from ..config import Config
 from .agent import Agent
-from .config import Config, get_config
 from .git import reset_git_state
 from .hooks import Hooks
-from .init import init_ralph_dir, load_hooks
+from .init import load_hooks
 from .state import State, cleanup_failed_iteration
 
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
+def run_loop(cfg: Config) -> None:
     """Entry point for Ralph's main loop.
 
-    Initializes the Ralph runtime environment, sets up logging, loads hooks,
-    checks for crash recovery, and starts the main loop. Supports restarting
-    via the restart signal file.
+    Sets up logging, loads hooks, checks for crash recovery, and starts the
+    main loop. Supports restarting via the restart signal file.
+
+    Args:
+        cfg: Runtime configuration (already populated by the CLI layer)
     """
-    cfg = get_config()
-
-    init_ralph_dir(cfg)
-
     log_fmt = logging.Formatter(
         "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -244,7 +242,3 @@ def _run_loop(
     hooks.post_loop(cfg, i)
 
     return restart
-
-
-if __name__ == "__main__":
-    main()

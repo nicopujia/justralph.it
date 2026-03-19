@@ -5,7 +5,7 @@ import logging
 import sys
 from types import ModuleType
 
-from .config import Config
+from ..config import Config
 from .hooks import Hooks
 
 logger = logging.getLogger(__name__)
@@ -14,10 +14,10 @@ DEFAULT_HOOKS = '''\
 """Ralph lifecycle hooks.
 
 Override methods to customise behaviour.
-Run `python -c "from ralph.hooks import Hooks; help(Hooks)"` to see the full interface.
+Run `python -c "from ralph.lib.hooks import Hooks; help(Hooks)"` to see the full interface.
 """
 
-from ralph.hooks import Hooks
+from ralph.lib.hooks import Hooks
 
 
 class CustomHooks(Hooks):
@@ -95,6 +95,8 @@ def load_hooks(cfg: Config) -> Hooks:
     if hooks_cls is None:
         raise AttributeError(f"{hooks_file} must define a CustomHooks class")
     if not issubclass(hooks_cls, Hooks):
-        raise TypeError(f"CustomHooks in {hooks_file} must subclass ralph.hooks.Hooks")
+        raise TypeError(
+            f"CustomHooks in {hooks_file} must subclass ralph.lib.hooks.Hooks"
+        )
 
     return hooks_cls()

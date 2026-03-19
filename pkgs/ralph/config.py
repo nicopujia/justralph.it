@@ -1,138 +1,106 @@
-"""Configuration management for Ralph's runtime settings."""
+"""Single source of truth for Ralph's configuration and defaults.
 
-import argparse
+Every configurable value is defined here exactly once as a field on the
+:class:`Config` dataclass.  The CLI layer (``ralph.main``) reads field
+metadata to build ``argparse`` flags automatically — no duplication needed.
+
+Field metadata keys
+-------------------
+* ``help``  – description shown in ``--help`` (required for CLI-exposed fields)
+* ``cli``   – if explicitly ``False``, the field is hidden from the CLI
+* ``env``   – environment-variable name that overrides the default
+* ``choices`` – passed through to argparse
+"""
+
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-# Directories and file paths
+# ── Base paths (derived, not directly configurable) ──────────────────────
 BASE_DIR = Path.cwd() / ".ralph"
 LOGS_DIR = BASE_DIR / "logs"
-STATE_FILE = BASE_DIR / "state.json"
-MAIN_LOG_FILE = LOGS_DIR / "main.log"
-STOP_FILE = BASE_DIR / "stop.ralph"
-RESTART_FILE = BASE_DIR / "restart.ralph"
-
-# Strings
-MODEL = "opencode/kimi-k2.5"
-LOG_LEVEL = "INFO"  # Default log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-# Numbers
-VM_RES_THRESHOLD = 95.0  # Virtual machine resources usage threshold (%)
-POLL_INTERVAL = 30.0  # Seconds to wait between checking for new issues
-SUBPROCESS_TIMEOUT = 600.0  # OpenCode subprocess timeout in seconds (10 minutes)
-MAX_ITERS = -1  # Maximum loop iterations (-1 = infinite)
-MAX_RETRIES = -1  # Maximum retries on failure (-1 = infinite)
 
 
 @dataclass
 class Config:
-    """Runtime configuration for Ralph, populated from CLI args or defaults."""
+    """Runtime configuration for Ralph.
 
-    model: str = MODEL
-    stop_file: Path = STOP_FILE
-    restart_file: Path = RESTART_FILE
-    state_file: Path = STATE_FILE
-    log_file: Path = MAIN_LOG_FILE
-    logs_dir: Path = LOGS_DIR
-    vm_res_threshold: float = VM_RES_THRESHOLD
-    max_iters: int = MAX_ITERS
-    base_dir: Path = BASE_DIR
-    poll_interval: float = POLL_INTERVAL
-    subprocess_timeout: float = SUBPROCESS_TIMEOUT
-    max_retries: int = MAX_RETRIES
-    log_level: str = LOG_LEVEL
-
-
-def get_config() -> Config:
-    """Parse CLI arguments and return a Config instance.
-
-    All configuration values have defaults and can be overridden via CLI flags.
-    See `python -m ralph.loop --help` for available options.
-
-    Returns:
-        Config instance populated from CLI arguments or defaults
+    Every field carries its own default and ``metadata["help"]`` docstring so
+    that ``ralph <cmd> --help`` stays in sync automatically.
     """
-    parser = argparse.ArgumentParser(description="Ralph")
-    # Arguments are ordered alphabetically by flag name for maintainability
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
+
+    # ── Paths ────────────────────────────────────────────────────────────
+    base_dir: Path = field(
         default=BASE_DIR,
-        help=f"Base directory for Ralph runtime files (default: {BASE_DIR})",
+        metadata={"help": "Base directory for Ralph runtime files"},
     )
-    parser.add_argument(
-        "--log-file",
-        type=Path,
-        default=MAIN_LOG_FILE,
-        help=f"Path to log file (default: {MAIN_LOG_FILE})",
+    log_file: Path = field(
+        default=BASE_DIR / "logs" / "main.log",
+        metadata={"help": "Path to log file"},
     )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default=os.environ.get("LOG_LEVEL", LOG_LEVEL),
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help=f"Log level (default: {LOG_LEVEL}, env: LOG_LEVEL)",
-    )
-    parser.add_argument(
-        "--logs-dir",
-        type=Path,
+    logs_dir: Path = field(
         default=LOGS_DIR,
-        help=f"Path to logs directory (default: {LOGS_DIR})",
+        metadata={"help": "Path to logs directory"},
     )
-    parser.add_argument(
-        "--max-iters",
-        type=int,
-        default=MAX_ITERS,
-        help=f"Maximum iterations (-1 for no limit, default: {MAX_ITERS})",
+    state_file: Path = field(
+        default=BASE_DIR / "state.json",
+        metadata={"help": "Path to state file for crash recovery"},
     )
-    parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=MAX_RETRIES,
-        help=f"Max retries on failure (-1 for no limit, default: {MAX_RETRIES})",
+    stop_file: Path = field(
+        default=BASE_DIR / "stop.ralph",
+        metadata={"help": "Path to stop file"},
     )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=MODEL,
-        help=f"Model to use (default: {MODEL}). Read more: https://opencode.ai/docs/models",
+    restart_file: Path = field(
+        default=BASE_DIR / "restart.ralph",
+        metadata={"help": "Path to restart file"},
     )
-    parser.add_argument(
-        "--poll-interval",
-        type=float,
-        default=POLL_INTERVAL,
-        help=f"Poll interval in seconds for checking new issues (default: {POLL_INTERVAL})",
+
+    # ── Strings ──────────────────────────────────────────────────────────
+    model: str = field(
+        default="opencode/kimi-k2.5",
+        metadata={
+            "help": ("Model to use. Read more: https://opencode.ai/docs/models"),
+        },
     )
-    parser.add_argument(
-        "--restart-file",
-        type=Path,
-        default=RESTART_FILE,
-        help=f"Path to restart file (default: {RESTART_FILE})",
+    log_level: str = field(
+        default="INFO",
+        metadata={
+            "help": "Log level",
+            "env": "LOG_LEVEL",
+            "choices": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        },
     )
-    parser.add_argument(
-        "--state-file",
-        type=Path,
-        default=STATE_FILE,
-        help=f"Path to state file for crash recovery (default: {STATE_FILE})",
+
+    # ── Numbers ──────────────────────────────────────────────────────────
+    vm_res_threshold: float = field(
+        default=95.0,
+        metadata={"help": "VM resource threshold in percent"},
     )
-    parser.add_argument(
-        "--stop-file",
-        type=Path,
-        default=STOP_FILE,
-        help=f"Path to stop file (default: {STOP_FILE})",
+    poll_interval: float = field(
+        default=30.0,
+        metadata={"help": "Poll interval in seconds for checking new issues"},
     )
-    parser.add_argument(
-        "--subprocess-timeout",
-        type=float,
-        default=SUBPROCESS_TIMEOUT,
-        help=f"Timeout for OpenCode subprocess in seconds (default: {SUBPROCESS_TIMEOUT})",
+    subprocess_timeout: float = field(
+        default=600.0,
+        metadata={"help": "Timeout for OpenCode subprocess in seconds"},
     )
-    parser.add_argument(
-        "--vm-res-threshold",
-        type=float,
-        default=VM_RES_THRESHOLD,
-        help=f"VM resource threshold in percent (default: {VM_RES_THRESHOLD})",
+    max_iters: int = field(
+        default=-1,
+        metadata={"help": "Maximum iterations (-1 for no limit)"},
     )
-    namespace = parser.parse_args()
-    return Config(**vars(namespace))
+    max_retries: int = field(
+        default=-1,
+        metadata={"help": "Max retries on failure (-1 for no limit)"},
+    )
+
+
+def get_fields():
+    """Yield ``(field_obj, cli_flag, default_value)`` for every CLI-visible field."""
+    for f in fields(Config):
+        if f.metadata.get("cli") is False:
+            continue
+        flag = f"--{f.name.replace('_', '-')}"
+        # Resolve env-var override
+        env_name = f.metadata.get("env")
+        default = os.environ.get(env_name, f.default) if env_name else f.default
+        yield f, flag, default

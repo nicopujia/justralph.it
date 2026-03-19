@@ -11,7 +11,7 @@ from typing import Any
 from bd import Issue
 
 from .agent import Agent
-from .config import Config
+from ..config import Config
 
 
 class Hooks(ABC):
