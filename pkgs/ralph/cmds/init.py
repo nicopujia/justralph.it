@@ -15,7 +15,6 @@ from ..utils.git import (
     init_bare,
     is_bare,
     is_repo,
-    reset_branch,
 )
 from . import Command
 
@@ -99,9 +98,6 @@ class Init(Command):
             add_worktree(root, "prod", branch="main")
         if not has_worktree(root, "dev"):
             add_worktree(root, "dev", branch="dev", new_branch=True)
-        else:
-            # Ensure dev branch is synced with main
-            reset_branch(root, "dev", "main")
 
     # -- ralph config files ------------------------------------------------
 
