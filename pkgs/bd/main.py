@@ -1,8 +1,4 @@
-"""Python wrapper for the Beads (`bd`) CLI.
-
-Provides dataclasses and functions for interacting with Beads issues,
-including querying ready issues, updating status, and polling for new work.
-"""
+"""Thin Python wrapper for the Beads (`bd`) CLI."""
 
 import json
 import logging
@@ -11,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Self
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +46,6 @@ class Issue:
         lines: list[str] = ["<Issue>"]
         for f in self.__dataclass_fields__:
             value = getattr(self, f)
-            # Skip unset / default-empty values
             if value is None or value == "" or value == [] or value == {} or value == 0:
                 continue
             tag = f.replace("_", " ").title().replace(" ", "")
@@ -66,53 +62,43 @@ class Issue:
         lines.append("</Issue>")
         return "\n".join(lines)
 
+    @classmethod
+    def parse(cls, data: dict) -> Self:
+        """Parse a JSON dict from bd CLI output into an Issue.
 
-def _parse_issue(data: dict) -> Issue:
-    """Parse a JSON dict from bd CLI output into an Issue.
+        Args:
+            data: JSON dict from `bd show --json` or `bd ready --json`
 
-    Args:
-        data: Raw JSON dict from `bd show --json` or `bd ready --json`
+        Returns:
+            Parsed Issue instance with all fields populated
+        """
 
-    Returns:
-        Parsed Issue instance with all fields populated
-    """
-
-    def _parse_dt(value: str | None) -> datetime | None:
-        if not value:
-            return
-        try:
-            return datetime.fromisoformat(value)
-        except (ValueError, TypeError):
-            return
-
-    return Issue(
-        id=data["id"],
-        title=data.get("title", ""),
-        status=data.get("status", "open"),
-        priority=data.get("priority", 2),
-        issue_type=data.get("issue_type", "task"),
-        description=data.get("description", ""),
-        acceptance=data.get("acceptance", ""),
-        design=data.get("design", ""),
-        notes=data.get("notes", ""),
-        assignee=data.get("assignee", ""),
-        labels=data.get("labels") or [],
-        estimate=data.get("estimate", 0),
-        external_ref=data.get("external_ref", ""),
-        parent=data.get("parent", ""),
-        spec_id=data.get("spec_id", ""),
-        due=_parse_dt(data.get("due")),
-        defer=_parse_dt(data.get("defer")),
-        created_at=_parse_dt(data.get("created_at")),
-        updated_at=_parse_dt(data.get("updated_at")),
-        metadata=data.get("metadata") or {},
-    )
+        return cls(
+            id=data["id"],
+            title=data.get("title", ""),
+            status=data.get("status", "open"),
+            priority=data.get("priority", 2),
+            issue_type=data.get("issue_type", "task"),
+            description=data.get("description", ""),
+            acceptance=data.get("acceptance", ""),
+            design=data.get("design", ""),
+            notes=data.get("notes", ""),
+            assignee=data.get("assignee", ""),
+            labels=data.get("labels") or [],
+            estimate=data.get("estimate", 0),
+            external_ref=data.get("external_ref", ""),
+            parent=data.get("parent", ""),
+            spec_id=data.get("spec_id", ""),
+            due=_parse_dt(data.get("due")),
+            defer=_parse_dt(data.get("defer")),
+            created_at=_parse_dt(data.get("created_at")),
+            updated_at=_parse_dt(data.get("updated_at")),
+            metadata=data.get("metadata") or {},
+        )
 
 
 def get_next_ready_issue() -> Issue | None:
-    """Get the next ready issue (open, no active blockers) from Beads.
-
-    Calls `bd ready --json --limit 1` and parses the first result.
+    """Get the next open issue with no active blockers.
 
     Returns:
         The first ready issue, or None if no ready issues exist
@@ -136,15 +122,7 @@ def get_next_ready_issue() -> Issue | None:
     if not issues:
         return
 
-    return _parse_issue(issues[0])
-
-
-class StopRequested(Exception):
-    """Raised when a stop file is detected during polling."""
-
-
-class RestartRequested(Exception):
-    """Raised when a restart file is detected during polling."""
+    return Issue.parse(issues[0])
 
 
 def wait_for_next_ready_issue(
@@ -187,21 +165,19 @@ def wait_for_next_ready_issue(
         time.sleep(poll_interval)
 
 
+class StopRequested(Exception):
+    """Raised when a stop file is detected during polling."""
+
+
+class RestartRequested(Exception):
+    """Raised when a restart file is detected during polling."""
+
+
 def update_issue(
     issue_id: str,
     status: str | None = None,
     assignee: str | None = None,
 ) -> None:
-    """Update an issue's status and/or assignee fields.
-
-    Args:
-        issue_id: The issue ID (e.g., 'bd-123')
-        status: New status value (e.g., 'open', 'in_progress', 'blocked')
-        assignee: New assignee value
-
-    Raises:
-        RuntimeError: If bd update command fails
-    """
     args = ["update", issue_id]
     if status:
         args.extend(["--status", status])
@@ -214,14 +190,6 @@ def update_issue(
 
 
 def close_issue(issue_id: str) -> None:
-    """Mark an issue as closed/done.
-
-    Args:
-        issue_id: The issue ID (e.g., 'bd-123')
-
-    Raises:
-        RuntimeError: If bd close command fails
-    """
     result = _run_bd("close", issue_id)
     if result is None:
         raise RuntimeError(f"Failed to mark issue {issue_id} as done")
@@ -252,4 +220,14 @@ def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
         return
     except subprocess.CalledProcessError as e:
         logger.error("bd %s failed: %s", args[0] if args else "?", e.stderr.strip())
+        return
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    """Parse datetime string and return None if failed."""
+    if not value:
+        return
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
         return
