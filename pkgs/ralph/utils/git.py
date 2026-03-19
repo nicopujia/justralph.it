@@ -88,6 +88,21 @@ def has_worktree(repo: Path, name: str) -> bool:
     return False
 
 
+def reset_branch(repo: Path, branch: str, target: str) -> None:
+    """Reset *branch* to point at the same commit as *target*.
+
+    Useful for syncing a worktree branch (e.g. dev) with another (e.g. main)
+    without checking it out.
+
+    Args:
+        repo: Root of the bare repo.
+        branch: Branch to reset.
+        target: Branch or ref to reset *branch* to.
+    """
+    _run("branch", "-f", branch, target, cwd=repo)
+    logger.info("Reset branch %s to %s", branch, target)
+
+
 def _prune_empty_dirs(root: Path, keep: set[str]) -> None:
     """Remove empty directories under *root*, skipping *keep* names."""
     for d in sorted(root.rglob("*"), reverse=True):
