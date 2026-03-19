@@ -13,7 +13,7 @@ import psutil
 from bd import Issue
 
 from ..config import LOGS_DIR, RALPH_DIR, RALPH_DIR_NAME, Config
-from ..core.agent import Agent
+from ..core.agent import Agent, AgentStatus
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
 from ..core.state import State
@@ -241,10 +241,10 @@ class Loop(Command):
     def _handle_status(self, agent: Agent, issue: Issue) -> None:
         """Act on the agent's final status."""
         match agent.status:
-            case Agent.Status.DONE:
+            case AgentStatus.DONE:
                 logger.info("Marking issue %s as done", issue.id)
                 bd.close_issue(issue.id)
-            case Agent.Status.BLOCKED | Agent.Status.HELP:
+            case AgentStatus.BLOCKED | AgentStatus.HELP:
                 logger.info("Issue %s is blocked", issue.id)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
             case _:

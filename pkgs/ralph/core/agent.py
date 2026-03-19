@@ -4,7 +4,7 @@ import logging
 import subprocess
 import time
 from collections.abc import Generator
-from enum import Enum
+from enum import StrEnum
 from xml.etree import ElementTree
 
 import bd
@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 OPENCODE_CMD = "opencode"
 
 
+class AgentStatus(StrEnum):
+    """Agent execution result values.
+
+    These values are output by Ralph (the OpenCode agent) as XML status
+    messages to indicate the result of processing an issue.
+    """
+
+    IDLE = "HAVEN'T STARTED YET"
+    WORKING = "STILL WORKING"
+    DONE = "COMPLETED ASSIGNED ISSUE"
+    HELP = "HUMAN HELP ABSOLUTELY NEEDED"
+    BLOCKED = "FOUND NEW BLOCKER ISSUE"
+
+
 class Agent:
     """Wraps OpenCode to process a Beads issue and track completion status.
 
@@ -24,19 +38,6 @@ class Agent:
     the final status XML to determine if the issue was completed, needs help,
     or discovered a blocking issue.
     """
-
-    class Status(Enum):
-        """Agent execution status values.
-
-        These values are output by Ralph (the OpenCode agent) as XML status
-        messages to indicate the result of processing an issue.
-        """
-
-        IDLE = "HAVEN'T STARTED YET"
-        WORKING = "STILL WORKING"
-        DONE = "COMPLETED ASSIGNED ISSUE"
-        HELP = "HUMAN HELP ABSOLUTELY NEEDED"
-        BLOCKED = "FOUND NEW BLOCKER ISSUE"
 
     def __init__(
         self,
@@ -55,7 +56,7 @@ class Agent:
             *args: Additional arguments passed to OpenCode
             **kwargs: Additional keyword arguments passed to subprocess.Popen
         """
-        self.status = self.Status.IDLE
+        self.status = AgentStatus.IDLE
         self.issue = issue
         self.i = i
         self._model = model
@@ -86,7 +87,7 @@ class Agent:
             BadAgentStatus: If status XML is missing, unparseable, or unknown
             subprocess.TimeoutExpired: If timeout is exceeded
         """
-        self.status = self.Status.WORKING
+        self.status = AgentStatus.WORKING
         try:
             args = [
                 OPENCODE_CMD,
@@ -123,7 +124,7 @@ class Agent:
 
                 process.wait()
         finally:
-            self.status = self.Status.IDLE
+            self.status = AgentStatus.IDLE
 
         status_xml = ""
         for line in reversed(lines):
@@ -142,7 +143,7 @@ class Agent:
             )
 
         try:
-            self.status = self.Status(status_msg)
+            self.status = AgentStatus(status_msg)
         except ValueError:
             raise BadAgentStatus(f"Unknown status value: {status_msg!r}")
 

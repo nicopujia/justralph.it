@@ -21,7 +21,7 @@ from ..config import (
     RALPH_DIR_NAME,
     Config,
 )
-from .agent import Agent
+from .agent import AgentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class Hooks(ABC):
         cfg: Config,
         issue: Issue,
         iteration: int,
-        status: Agent.Status,
+        status: AgentStatus,
         error: Exception | None,
     ) -> None:
         """Run after each iteration completes or fails.
@@ -66,7 +66,7 @@ class Hooks(ABC):
             cfg: Runtime configuration
             issue: The issue that was processed
             iteration: Current iteration index
-            status: Final Agent.Status from the run
+            status: Final AgentStatus from the run
             error: Exception if one occurred, otherwise None
         """
 
