@@ -49,11 +49,19 @@ class Init(Command):
 
             base_dir/
                 .git/            # bare repo
-                .ralph/          # ralph config (hooks, logs, state)
-                AGENTS.md        # project instructions for agents
-                opencode.jsonc   # OpenCode configuration
-                PROMPT.xml       # agent system prompt
+                .ralph/          # ralph state (logs/, state.json - runtime)
+                ├── hooks.py -> prod/.ralph/hooks.py
+                └── .gitignore -> prod/.ralph/.gitignore
+                AGENTS.md -> prod/AGENTS.md
+                opencode.jsonc -> prod/opencode.jsonc
+                PROMPT.xml -> prod/PROMPT.xml
                 prod/            # worktree on main
+                ├── .ralph/      # tracked ralph config
+                │   ├── hooks.py
+                │   └── .gitignore
+                ├── AGENTS.md
+                ├── opencode.jsonc
+                └── PROMPT.xml
                 dev/             # worktree on dev
 
         If base_dir is already a git repo, it is converted to bare and
@@ -100,13 +108,15 @@ class Init(Command):
     # -- ralph config files ------------------------------------------------
 
     def _scaffold_ralph_dir(self, root: Path) -> None:
-        """Create .ralph/ with hooks, logs, and .gitignore."""
+        """Create .ralph/ at root (runtime) and prod/.ralph/ (tracked) with symlinks."""
+        # Runtime directory at root (logs, state - not tracked)
         ralph_dir = root / ".ralph"
         ralph_dir.mkdir(parents=True, exist_ok=True)
         (ralph_dir / "logs").mkdir(parents=True, exist_ok=True)
-
-        self._write_template(ralph_dir / "hooks.py", self._read_template("hooks.py"))
-        self._write_template(ralph_dir / ".gitignore", "logs/\nstate.json\n*.ralph\n")
+        
+        # Tracked config in prod/.ralph/ with symlinks to root
+        self._symlink_to_worktree(root, "prod", ".ralph/hooks.py", self._read_template("hooks.py"))
+        self._symlink_to_worktree(root, "prod", ".ralph/.gitignore", "logs/\nstate.json\n*.ralph\n")
 
     # -- helpers -----------------------------------------------------------
 
@@ -137,16 +147,22 @@ class Init(Command):
         Args:
             root: Project root directory
             worktree: Worktree name (e.g., "prod", "dev")
-            filename: File name to create
+            filename: File path relative to worktree (e.g., "AGENTS.md" or ".ralph/hooks.py")
             content: File content to write
         """
         worktree_path = root / worktree / filename
         symlink_path = root / filename
         
+        # Ensure parent directories exist in worktree
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        
         # Write file in worktree if it doesn't exist
         if not worktree_path.exists():
             worktree_path.write_text(content)
             logger.info("Created %s", worktree_path)
+        
+        # Ensure parent directories exist at root for the symlink
+        symlink_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Create or update symlink at root
         if symlink_path.exists() or symlink_path.is_symlink():
