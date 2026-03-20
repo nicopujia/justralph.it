@@ -63,6 +63,22 @@ uv sync
 uv pip install -e pkgs/bd -e pkgs/ralph
 ```
 
+### 3. Run the services
+
+Server:
+
+```bash
+cd ./server
+fastapi dev ./server/main.py
+```
+
+Client:
+
+```bash
+cd ./client
+bun dev
+```
+
 ## Test
 
 ```sh
