@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "bd",
+    "fastapi[standard]>=0.135.1",
     "ralph",
 ]
 
