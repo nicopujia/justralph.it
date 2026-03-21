@@ -13,13 +13,36 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import LOGS_DIR, PROD_WORKTREE, PROJECT_ROOT, RALPH_DIR, RALPH_DIR_NAME, Config
+from ..config import (
+    BRANCH_PREFIX,
+    DEV_WORKTREE,
+    LOGS_DIR,
+    PROD_WORKTREE,
+    PROJECT_ROOT,
+    RALPH_DIR,
+    RALPH_DIR_NAME,
+    Config,
+)
 from ..core.agent import Agent, AgentStatus
 from ..core.events import Event, EventBus, EventType
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
 from ..core.state import State
-from ..utils.git import reset_git_state
+from ..utils.backup import snapshot_issues
+from ..utils.git import (
+    create_tag,
+    done_tag,
+    ensure_on_main,
+    get_latest_tag,
+    hard_reset,
+    has_changes_since,
+    is_worktree_clean,
+    merge_from,
+    pre_iter_tag,
+    reset_git_state,
+    rollback_to_tag,
+    sync_to_branch,
+)
 from . import Command
 
 logger = logging.getLogger(__name__)
@@ -80,6 +103,10 @@ class LoopConfig(Config):
         default=-1,
         metadata={"help": "Max retries on failure (-1 for no limit)"},
     )
+    progress_timeout: float = field(
+        default=120.0,
+        metadata={"help": "Kill agent if no output for this many seconds"},
+    )
 
     def __post_init__(self):
         """Recompute path defaults when base_dir is not the cwd."""
@@ -136,10 +163,14 @@ class Loop(Command):
         file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(file_handler)
 
-        prod_dir = self.cfg.base_dir / PROD_WORKTREE
-        self._state = State(self.cfg.state_file, prod_dir=prod_dir, bd_cwd=self.cfg.base_dir)
+        self._prod_dir = self.cfg.base_dir / PROD_WORKTREE
+        self._dev_dir = self.cfg.base_dir / DEV_WORKTREE
+        self._backup_dir = self._prod_dir / RALPH_DIR_NAME / "backups"
+        self._backup_dir.mkdir(parents=True, exist_ok=True)
+        self._state = State(self.cfg.state_file, prod_dir=self._prod_dir, bd_cwd=self.cfg.base_dir)
         self._hooks = load_hooks(self.cfg)
         self._consecutive_failures = 0
+        self._current_iteration = 0
 
         def _signal_handler(signum, _frame):
             sig_name = signal.Signals(signum).name
@@ -188,6 +219,7 @@ class Loop(Command):
             finally:
                 i += 1
                 self._state.clear()
+                self._verify_worktree_health()
                 if self.cfg.max_iters >= 0 and i >= self.cfg.max_iters:
                     logger.warning(
                         "Stopping loop: reached max iterations (%s)",
@@ -268,17 +300,37 @@ class Loop(Command):
     # -- agent lifecycle ---------------------------------------------------
 
     def _create_agent(self, issue: Issue, iteration: int) -> Agent:
-        """Build an Agent, claim the issue, and prepare git state."""
+        """Build an Agent, claim the issue, and prepare git/backup state.
+
+        1. Tag prod/main as a rollback checkpoint
+        2. Snapshot bd issues for rollback
+        3. Sync dev worktree to main
+        4. Reset git state in dev
+        5. Create agent (cwd=base_dir, agent cd's into ./dev/ per PROMPT.xml)
+        """
+        # Checkpoint: tag prod/main before any work
+        tag = pre_iter_tag(issue.id, iteration)
+        create_tag(tag, message=f"pre-iter: {issue.id} iter {iteration}", cwd=self._prod_dir)
+        self._emit(EventType.TAG_CREATED, tag=tag)
+
+        # Snapshot bd issues for potential rollback
+        snapshot_issues(iteration, self._backup_dir, bd_cwd=self.cfg.base_dir)
+
+        # Prepare dev worktree: sync to main, clean up old branches
+        sync_to_branch("main", cwd=self._dev_dir)
+        reset_git_state(issue.id, cwd=self._dev_dir)
+
+        # Create agent with cwd=base_dir (where opencode.jsonc + PROMPT.xml live)
         extra_args, extra_kwargs = self._hooks.extra_args_kwargs(self.cfg, issue)
         extra_kwargs.setdefault("cwd", str(self.cfg.base_dir))
         agent = Agent(issue, self.cfg.model, iteration, *extra_args, bd_cwd=self.cfg.base_dir, **extra_kwargs)
         agent.claim_issue()
         self._emit(EventType.ISSUE_CLAIMED, issue_id=issue.id, title=issue.title)
-        reset_git_state(issue.id, cwd=self.cfg.base_dir / PROD_WORKTREE)
         return agent
 
     def _process_issue(self, agent: Agent, issue: Issue, iteration: int) -> None:
         """Run the agent and handle its outcome."""
+        self._current_iteration = iteration
         iter_handler = self._add_iteration_log(iteration)
         self._hooks.pre_iter(self.cfg, issue, iteration)
         self._emit(EventType.ITER_STARTED, issue_id=issue.id, iteration=iteration)
@@ -287,7 +339,7 @@ class Loop(Command):
         iter_error: Exception | None = None
         try:
             self._run_agent(agent)
-            self._handle_status(agent, issue)
+            self._handle_status(agent, issue, iteration)
         except Exception as exc:
             iter_error = exc
             raise
@@ -298,7 +350,10 @@ class Loop(Command):
     def _run_agent(self, agent: Agent) -> None:
         """Stream agent output to the logger and event bus."""
         logger.info("Starting agent")
-        for line in agent.run(timeout=self.cfg.subprocess_timeout):
+        for line in agent.run(
+            timeout=self.cfg.subprocess_timeout,
+            progress_timeout=self.cfg.progress_timeout,
+        ):
             stripped = line.rstrip()
             logger.info("[agent] %s", stripped)
             self._hooks.on_agent_output(stripped)
@@ -306,39 +361,82 @@ class Loop(Command):
         logger.info("Agent finished: %s", agent.status)
         self._emit(EventType.AGENT_STATUS, status=str(agent.status), issue_id=agent.issue.id)
 
-    def _handle_status(self, agent: Agent, issue: Issue) -> None:
-        """Act on the agent's final status."""
+    def _handle_status(self, agent: Agent, issue: Issue, iteration: int) -> None:
+        """Validate agent work and promote to prod on success."""
+        tag = pre_iter_tag(issue.id, iteration)
+        branch = f"{BRANCH_PREFIX}{issue.id}"
+
         match agent.status:
             case AgentStatus.DONE:
-                logger.info("Marking issue %s as done", issue.id)
+                # Validate: agent produced changes in dev
+                if not has_changes_since("main", cwd=self._dev_dir):
+                    logger.error("Agent returned DONE but produced no changes")
+                    bd.update_issue(
+                        issue.id, status=bd.IssueStatus.BLOCKED,
+                        append_notes="validation failed: no changes after DONE",
+                        cwd=self.cfg.base_dir,
+                    )
+                    self._emit(EventType.VALIDATION_FAILED, issue_id=issue.id, reason="no_changes")
+                    return
+
+                # Promote: merge agent's branch into prod/main
+                ensure_on_main(cwd=self._prod_dir)
+                if not merge_from(branch, cwd=self._prod_dir):
+                    logger.error("Merge of %s into prod/main failed", branch)
+                    rollback_to_tag(tag, cwd=self._prod_dir)
+                    bd.update_issue(
+                        issue.id, status=bd.IssueStatus.BLOCKED,
+                        append_notes="merge to prod failed -- rolled back",
+                        cwd=self.cfg.base_dir,
+                    )
+                    self._emit(EventType.ROLLBACK, issue_id=issue.id, tag=tag)
+                    return
+
+                # Success
+                create_tag(done_tag(issue.id), message=f"completed: {issue.id}", cwd=self._prod_dir)
                 bd.close_issue(issue.id, cwd=self.cfg.base_dir)
                 self._emit(EventType.ISSUE_DONE, issue_id=issue.id)
+
             case AgentStatus.HELP:
                 logger.warning("Ralph needs help on issue %s", issue.id)
+                self._ensure_prod_clean(tag)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
                 self._emit(EventType.ISSUE_HELP, issue_id=issue.id)
+
             case AgentStatus.BLOCKED:
                 logger.info("Issue %s is blocked", issue.id)
+                self._ensure_prod_clean(tag)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
                 self._emit(EventType.ISSUE_BLOCKED, issue_id=issue.id)
+
             case _:
-                logger.warning(
-                    "Unexpected status %s for issue %s",
-                    agent.status,
-                    issue.id,
-                )
+                logger.warning("Unexpected status %s for %s", agent.status, issue.id)
+                self._ensure_prod_clean(tag)
                 self._state.cleanup_failed_iteration()
                 raise ValueError(f"Unexpected agent status: {agent.status}")
+
+    def _ensure_prod_clean(self, fallback_tag: str) -> None:
+        """Verify prod worktree is clean; rollback to tag if not."""
+        if not is_worktree_clean(cwd=self._prod_dir):
+            logger.warning("Prod worktree dirty; rolling back to %s", fallback_tag)
+            rollback_to_tag(fallback_tag, cwd=self._prod_dir)
+            self._emit(EventType.ROLLBACK, tag=fallback_tag)
 
     # -- failure handling --------------------------------------------------
 
     def _handle_failure(self, exc: Exception) -> None:
-        """Log the failure, clean up, and apply backoff or stop."""
+        """Log the failure, clean up, rollback prod, and apply backoff."""
         self._consecutive_failures += 1
         logger.exception(
             "Failed unexpectedly (consecutive failures: %s)",
             self._consecutive_failures,
         )
+
+        # Rollback prod if a pre-iter tag exists for this iteration
+        if self._state.issue_id:
+            tag = pre_iter_tag(self._state.issue_id, self._current_iteration)
+            self._ensure_prod_clean(tag)
+
         self._state.cleanup_failed_iteration()
         self._emit(EventType.ITER_FAILED, error=str(exc))
 
@@ -355,6 +453,21 @@ class Loop(Command):
             backoff = min(2**self._consecutive_failures, MAX_BACKOFF_SECONDS)
             logger.info("Backing off for %ss before retrying", backoff)
             time.sleep(backoff)
+
+    def _verify_worktree_health(self) -> None:
+        """Ensure prod worktree is clean after each iteration."""
+        if is_worktree_clean(cwd=self._prod_dir):
+            return
+        logger.warning("Prod worktree not clean after iteration; resetting")
+        last_good = (
+            get_latest_tag("done/*", cwd=self._prod_dir)
+            or get_latest_tag("pre-iter/*", cwd=self._prod_dir)
+        )
+        if last_good:
+            rollback_to_tag(last_good, cwd=self._prod_dir)
+        else:
+            hard_reset(cwd=self._prod_dir)
+            ensure_on_main(cwd=self._prod_dir)
 
     # -- event helpers -----------------------------------------------------
 
