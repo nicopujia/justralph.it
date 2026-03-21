@@ -340,10 +340,12 @@ class Loop(Command):
     def _process_issue(self, agent: Agent, issue: Issue, iteration: int) -> None:
         """Run the agent and handle its outcome."""
         self._current_iteration = iteration
+        # Save state FIRST so cleanup_failed_iteration can find the issue_id
+        # if hooks or logging throw before the agent runs
+        self._state.save(issue.id, iteration)
         iter_handler = self._add_iteration_log(iteration)
         self._hooks.pre_iter(self.cfg, issue, iteration)
         self._emit(EventType.ITER_STARTED, issue_id=issue.id, iteration=iteration)
-        self._state.save(issue.id, iteration)
 
         iter_error: Exception | None = None
         try:
