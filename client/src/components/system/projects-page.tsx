@@ -2,6 +2,8 @@ import { ArrowRight, FolderPlus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { type ProjectSummary } from "@/components/system/app-data";
+import { ProjectManageModal } from "@/components/system/project-manage-modal";
 import { NewProjectModal } from "@/components/system/new-project-modal";
 import { useProjectStore } from "@/components/system/project-store";
 import { ProjectSidebar } from "@/components/system/project-sidebar";
@@ -10,8 +12,10 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export function ProjectsPage() {
   const navigate = useNavigate();
-  const { createProject, projects } = useProjectStore();
+  const { createProject, deleteProject, projects, renameProject } = useProjectStore();
   const [modalOpen, setModalOpen] = useState(false);
+  const [manageMode, setManageMode] = useState<"rename" | "delete" | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ProjectSummary | undefined>();
 
   function handleCreateProject(input: { title: string; description: string }) {
     const projectId = createProject(input);
@@ -19,10 +23,34 @@ export function ProjectsPage() {
     navigate(`/app/projects/${projectId}`);
   }
 
+  function handleOpenRename(project: ProjectSummary) {
+    setSelectedProject(project);
+    setManageMode("rename");
+  }
+
+  function handleOpenDelete(project: ProjectSummary) {
+    setSelectedProject(project);
+    setManageMode("delete");
+  }
+
+  function handleManageOpenChange(open: boolean) {
+    if (open) {
+      return;
+    }
+
+    setManageMode(null);
+    setSelectedProject(undefined);
+  }
+
   return (
     <>
       <div className="grid h-full overflow-hidden lg:grid-cols-[320px_1fr]">
-        <ProjectSidebar projects={projects} onCreateProject={() => setModalOpen(true)} />
+        <ProjectSidebar
+          projects={projects}
+          onCreateProject={() => setModalOpen(true)}
+          onRenameProject={handleOpenRename}
+          onDeleteProject={handleOpenDelete}
+        />
 
         <section className="relative flex h-full min-h-0 items-center justify-center overflow-hidden px-6 py-10 sm:px-8 lg:px-12">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.05),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_28%)]" />
@@ -50,6 +78,13 @@ export function ProjectsPage() {
       </div>
 
       <NewProjectModal open={modalOpen} onOpenChange={setModalOpen} onCreateProject={handleCreateProject} />
+      <ProjectManageModal
+        mode={manageMode}
+        project={selectedProject}
+        onOpenChange={handleManageOpenChange}
+        onRenameProject={renameProject}
+        onDeleteProject={deleteProject}
+      />
     </>
   );
 }

@@ -12,6 +12,8 @@ To start a development server:
 bun dev
 ```
 
+In the app project sidebar, each project card now exposes an actions menu with rename and delete controls.
+
 To run for production:
 
 ```bash

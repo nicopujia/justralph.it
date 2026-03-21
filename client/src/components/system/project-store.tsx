@@ -15,8 +15,10 @@ type CreateProjectInput = {
 
 type ProjectStoreValue = {
   projects: ProjectSummary[];
-  getProjectDetail: (projectId: string) => ProjectDetail;
+  getProjectDetail: (projectId: string) => ProjectDetail | undefined;
   createProject: (input: CreateProjectInput) => string;
+  renameProject: (projectId: string, title: string) => void;
+  deleteProject: (projectId: string) => void;
 };
 
 const ProjectStoreContext = createContext<ProjectStoreValue | null>(null);
@@ -49,10 +51,10 @@ export function ProjectStoreProvider({ children }: { children: ReactNode }) {
   const [collection, setCollection] = useState<ProjectCollection>(() => createInitialProjectCollection());
 
   const value = useMemo<ProjectStoreValue>(
-    () => ({
-      projects: collection.projects,
-      getProjectDetail: (projectId: string) => collection.projectDetailsById[projectId] ?? collection.projectDetailsById["northstar-web"],
-      createProject: ({ title, description }) => {
+      () => ({
+        projects: collection.projects,
+        getProjectDetail: (projectId: string) => collection.projectDetailsById[projectId],
+        createProject: ({ title, description }) => {
         const normalizedTitle = title.trim();
         const normalizedDescription = description.trim();
         const baseId = slugifyProjectTitle(normalizedTitle) || "new-project";
@@ -112,9 +114,59 @@ export function ProjectStoreProvider({ children }: { children: ReactNode }) {
         }));
 
         return projectId;
-      },
-    }),
-    [collection],
+        },
+        renameProject: (projectId: string, title: string) => {
+          const normalizedTitle = title.trim();
+
+          if (!normalizedTitle) {
+            return;
+          }
+
+          setCollection(current => {
+            const project = current.projectDetailsById[projectId];
+
+            if (!project) {
+              return current;
+            }
+
+            return {
+              projects: current.projects.map(item =>
+                item.id === projectId
+                  ? {
+                      ...item,
+                      name: normalizedTitle,
+                      client: deriveClientName(normalizedTitle),
+                      activity: "Renamed just now",
+                    }
+                  : item,
+              ),
+              projectDetailsById: {
+                ...current.projectDetailsById,
+                [projectId]: {
+                  ...project,
+                  title: normalizedTitle,
+                  updatedAt: "Updated just now",
+                },
+              },
+            };
+          });
+        },
+        deleteProject: (projectId: string) => {
+          setCollection(current => {
+            if (!current.projectDetailsById[projectId]) {
+              return current;
+            }
+
+            const { [projectId]: _removed, ...remainingDetails } = current.projectDetailsById;
+
+            return {
+              projects: current.projects.filter(project => project.id !== projectId),
+              projectDetailsById: remainingDetails,
+            };
+          });
+        },
+      }),
+      [collection],
   );
 
   return <ProjectStoreContext.Provider value={value}>{children}</ProjectStoreContext.Provider>;

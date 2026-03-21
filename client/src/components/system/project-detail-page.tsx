@@ -2,6 +2,8 @@ import { Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { type ProjectSummary } from "@/components/system/app-data";
+import { ProjectManageModal } from "@/components/system/project-manage-modal";
 import { NewProjectModal } from "@/components/system/new-project-modal";
 import { ProjectChatPanel } from "@/components/system/project-chat-panel";
 import { ProjectDetailViews } from "@/components/system/project-detail-views";
@@ -13,12 +15,14 @@ import { cn } from "@/lib/utils";
 export function ProjectDetailPage() {
   const { projectId = "northstar-web" } = useParams();
   const navigate = useNavigate();
-  const { createProject, getProjectDetail, projects } = useProjectStore();
+  const { createProject, deleteProject, getProjectDetail, projects, renameProject } = useProjectStore();
   const project = getProjectDetail(projectId);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(30);
   const [isDragging, setIsDragging] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [manageMode, setManageMode] = useState<"rename" | "delete" | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ProjectSummary | undefined>();
 
   function handleCreateProject(input: { title: string; description: string }) {
     const nextProjectId = createProject(input);
@@ -26,6 +30,40 @@ export function ProjectDetailPage() {
     setSidebarOpen(false);
     navigate(`/app/projects/${nextProjectId}`);
   }
+
+  function handleOpenRename(nextProject: ProjectSummary) {
+    setSelectedProject(nextProject);
+    setManageMode("rename");
+  }
+
+  function handleOpenDelete(nextProject: ProjectSummary) {
+    setSelectedProject(nextProject);
+    setManageMode("delete");
+  }
+
+  function handleManageOpenChange(open: boolean) {
+    if (open) {
+      return;
+    }
+
+    setManageMode(null);
+    setSelectedProject(undefined);
+  }
+
+  function handleDeleteProject(targetProjectId: string) {
+    deleteProject(targetProjectId);
+    setSidebarOpen(false);
+
+    if (targetProjectId === projectId) {
+      navigate("/app/projects");
+    }
+  }
+
+  useEffect(() => {
+    if (!project) {
+      navigate("/app/projects", { replace: true });
+    }
+  }, [navigate, project]);
 
   useEffect(() => {
     if (!isDragging) {
@@ -51,6 +89,10 @@ export function ProjectDetailPage() {
     };
   }, [isDragging]);
 
+  if (!project) {
+    return null;
+  }
+
   return (
     <div className="relative h-full overflow-hidden">
       <button
@@ -67,7 +109,14 @@ export function ProjectDetailPage() {
         )}
         onMouseLeave={() => setSidebarOpen(false)}
       >
-        <ProjectSidebar projects={projects} activeProjectId={project.id} compact onCreateProject={() => setModalOpen(true)} />
+        <ProjectSidebar
+          projects={projects}
+          activeProjectId={project.id}
+          compact
+          onCreateProject={() => setModalOpen(true)}
+          onRenameProject={handleOpenRename}
+          onDeleteProject={handleOpenDelete}
+        />
       </div>
 
       <div className="border-b border-border px-4 py-3 lg:hidden">
@@ -80,7 +129,14 @@ export function ProjectDetailPage() {
       <div className="lg:hidden">
         {sidebarOpen ? (
           <div className="border-b border-border">
-            <ProjectSidebar projects={projects} activeProjectId={project.id} compact onCreateProject={() => setModalOpen(true)} />
+            <ProjectSidebar
+              projects={projects}
+              activeProjectId={project.id}
+              compact
+              onCreateProject={() => setModalOpen(true)}
+              onRenameProject={handleOpenRename}
+              onDeleteProject={handleOpenDelete}
+            />
           </div>
         ) : null}
       </div>
@@ -113,6 +169,13 @@ export function ProjectDetailPage() {
       </div>
 
       <NewProjectModal open={modalOpen} onOpenChange={setModalOpen} onCreateProject={handleCreateProject} />
+      <ProjectManageModal
+        mode={manageMode}
+        project={selectedProject}
+        onOpenChange={handleManageOpenChange}
+        onRenameProject={renameProject}
+        onDeleteProject={handleDeleteProject}
+      />
     </div>
   );
 }
