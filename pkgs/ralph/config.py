@@ -18,13 +18,11 @@ from pathlib import Path
 # Ralph identity
 AGENT_NAME = "ralph"
 
-# Branch and worktree names
+# Branch names
 MAIN_BRANCH = "main"
-PROD_WORKTREE = "prod"
-DEV_WORKTREE = "dev"
 
 # Directory and file names
-RALPH_DIR_NAME = ".ralph"
+RALPHY_DIR_NAME = ".ralphy"
 HOOKS_FILENAME = "hooks.py"
 HOOKS_CLASS_NAME = "CustomHooks"
 HOOKS_MODULE_NAME = "_ralph_hooks"
@@ -36,8 +34,8 @@ DONE_TAG_PREFIX = "done"
 
 # Default project root (current working directory)
 PROJECT_ROOT = Path.cwd()
-RALPH_DIR = PROJECT_ROOT / PROD_WORKTREE / RALPH_DIR_NAME
-LOGS_DIR = RALPH_DIR / "logs"
+RALPHY_DIR = PROJECT_ROOT / RALPHY_DIR_NAME
+LOGS_DIR = RALPHY_DIR / "logs"
 
 
 @dataclass
