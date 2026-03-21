@@ -13,7 +13,7 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import LOGS_DIR, PROD_WORKTREE, RALPH_DIR, RALPH_DIR_NAME, Config
+from ..config import PROD_WORKTREE, RALPH_DIR_NAME, Config
 from ..core.agent import Agent, AgentStatus
 from ..core.events import Event, EventBus, EventType
 from ..core.exceptions import RestartRequested, StopRequested
@@ -29,26 +29,32 @@ MAX_BACKOFF_SECONDS = 300
 
 @dataclass
 class LoopConfig(Config):
-    """Configuration for the loop command."""
+    """Configuration for the loop command.
+
+    Path fields (log_file, state_file, etc.) are recomputed in
+    ``__post_init__`` to be relative to ``base_dir`` so they stay
+    correct when the loop is launched from a different working directory
+    (e.g. via the FastAPI server).
+    """
 
     log_file: Path = field(
-        default=LOGS_DIR / "main.log",
+        default=Path("placeholder"),
         metadata={"help": "Path to log file"},
     )
     logs_dir: Path = field(
-        default=LOGS_DIR,
+        default=Path("placeholder"),
         metadata={"help": "Path to logs directory"},
     )
     state_file: Path = field(
-        default=RALPH_DIR / "state.json",
+        default=Path("placeholder"),
         metadata={"help": "Path to state file for crash recovery"},
     )
     stop_file: Path = field(
-        default=RALPH_DIR / "stop.ralph",
+        default=Path("placeholder"),
         metadata={"help": "Path to stop file"},
     )
     restart_file: Path = field(
-        default=RALPH_DIR / "restart.ralph",
+        default=Path("placeholder"),
         metadata={"help": "Path to restart file"},
     )
     model: str = field(
@@ -76,6 +82,22 @@ class LoopConfig(Config):
         metadata={"help": "Max retries on failure (-1 for no limit)"},
     )
 
+    def __post_init__(self):
+        """Derive all runtime paths from base_dir so they work regardless of cwd."""
+        ralph_dir = self.base_dir / PROD_WORKTREE / RALPH_DIR_NAME
+        logs_dir = ralph_dir / "logs"
+        # Only overwrite placeholders (i.e. not explicitly set by user)
+        if self.logs_dir == Path("placeholder"):
+            self.logs_dir = logs_dir
+        if self.log_file == Path("placeholder"):
+            self.log_file = logs_dir / "main.log"
+        if self.state_file == Path("placeholder"):
+            self.state_file = ralph_dir / "state.json"
+        if self.stop_file == Path("placeholder"):
+            self.stop_file = ralph_dir / "stop.ralph"
+        if self.restart_file == Path("placeholder"):
+            self.restart_file = ralph_dir / "restart.ralph"
+
 
 class Loop(Command):
     help = "Run the main agent loop"
@@ -94,18 +116,19 @@ class Loop(Command):
 
     def run(self) -> None:
         """Verify initialization, set up state, and loop until stopped."""
-        ralph_dir = self.cfg.base_dir / RALPH_DIR_NAME
+        ralph_dir = self.cfg.base_dir / PROD_WORKTREE / RALPH_DIR_NAME
         if not ralph_dir.is_dir():
-            print(
-                f"Error: {ralph_dir} does not exist. Run 'ralph init' first.",
-                file=sys.stderr,
-            )
+            msg = f"{ralph_dir} does not exist. Run 'ralph init' first."
+            print(f"Error: {msg}", file=sys.stderr)
+            self._emit(EventType.LOOP_STOPPED, reason=msg, error=True)
             raise SystemExit(1)
 
         # Preflight: ensure required binaries are available
         for binary in ("opencode", "bd"):
             if not shutil.which(binary):
-                print(f"Error: '{binary}' not found on PATH.", file=sys.stderr)
+                msg = f"'{binary}' not found on PATH"
+                print(f"Error: {msg}", file=sys.stderr)
+                self._emit(EventType.LOOP_STOPPED, reason=msg, error=True)
                 raise SystemExit(1)
 
         file_handler = logging.FileHandler(filename=self.cfg.log_file)
