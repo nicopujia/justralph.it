@@ -13,7 +13,7 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import PROD_WORKTREE, RALPH_DIR_NAME, Config
+from ..config import LOGS_DIR, PROD_WORKTREE, PROJECT_ROOT, RALPH_DIR, RALPH_DIR_NAME, Config
 from ..core.agent import Agent, AgentStatus
 from ..core.events import Event, EventBus, EventType
 from ..core.exceptions import RestartRequested, StopRequested
@@ -31,30 +31,29 @@ MAX_BACKOFF_SECONDS = 300
 class LoopConfig(Config):
     """Configuration for the loop command.
 
-    Path fields (log_file, state_file, etc.) are recomputed in
-    ``__post_init__`` to be relative to ``base_dir`` so they stay
-    correct when the loop is launched from a different working directory
-    (e.g. via the FastAPI server).
+    When ``base_dir`` differs from the default (cwd), ``__post_init__``
+    recomputes path fields that still carry their cwd-based defaults so
+    they point to the correct session directory.
     """
 
     log_file: Path = field(
-        default=Path("placeholder"),
+        default=LOGS_DIR / "main.log",
         metadata={"help": "Path to log file"},
     )
     logs_dir: Path = field(
-        default=Path("placeholder"),
+        default=LOGS_DIR,
         metadata={"help": "Path to logs directory"},
     )
     state_file: Path = field(
-        default=Path("placeholder"),
+        default=RALPH_DIR / "state.json",
         metadata={"help": "Path to state file for crash recovery"},
     )
     stop_file: Path = field(
-        default=Path("placeholder"),
+        default=RALPH_DIR / "stop.ralph",
         metadata={"help": "Path to stop file"},
     )
     restart_file: Path = field(
-        default=Path("placeholder"),
+        default=RALPH_DIR / "restart.ralph",
         metadata={"help": "Path to restart file"},
     )
     model: str = field(
@@ -83,19 +82,21 @@ class LoopConfig(Config):
     )
 
     def __post_init__(self):
-        """Derive all runtime paths from base_dir so they work regardless of cwd."""
+        """Recompute path defaults when base_dir is not the cwd."""
+        if self.base_dir == PROJECT_ROOT:
+            return
         ralph_dir = self.base_dir / PROD_WORKTREE / RALPH_DIR_NAME
         logs_dir = ralph_dir / "logs"
-        # Only overwrite placeholders (i.e. not explicitly set by user)
-        if self.logs_dir == Path("placeholder"):
+        # Only replace values that still match the cwd-based defaults
+        if self.logs_dir == LOGS_DIR:
             self.logs_dir = logs_dir
-        if self.log_file == Path("placeholder"):
+        if self.log_file == LOGS_DIR / "main.log":
             self.log_file = logs_dir / "main.log"
-        if self.state_file == Path("placeholder"):
+        if self.state_file == RALPH_DIR / "state.json":
             self.state_file = ralph_dir / "state.json"
-        if self.stop_file == Path("placeholder"):
+        if self.stop_file == RALPH_DIR / "stop.ralph":
             self.stop_file = ralph_dir / "stop.ralph"
-        if self.restart_file == Path("placeholder"):
+        if self.restart_file == RALPH_DIR / "restart.ralph":
             self.restart_file = ralph_dir / "restart.ralph"
 
 
