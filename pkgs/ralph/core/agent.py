@@ -1,6 +1,7 @@
 """OpenCode agent wrapper for processing Beads issues."""
 
 import logging
+import shutil
 import subprocess
 import time
 from collections.abc import Generator
@@ -87,6 +88,12 @@ class Agent:
             BadAgentStatus: If status XML is missing, unparseable, or unknown
             subprocess.TimeoutExpired: If timeout is exceeded
         """
+        if not shutil.which(OPENCODE_CMD):
+            raise FileNotFoundError(
+                f"'{OPENCODE_CMD}' not found on PATH. "
+                f"Install OpenCode: https://opencode.ai/docs/installation"
+            )
+
         self.status = AgentStatus.WORKING
         try:
             args = [

@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import signal
 import shutil
 import sys
 import time
@@ -108,6 +109,14 @@ class Loop(Command):
         self._hooks = load_hooks(self.cfg)
         self._consecutive_failures = 0
 
+        def _signal_handler(signum, _frame):
+            sig_name = signal.Signals(signum).name
+            logger.warning("Received %s, writing stop file", sig_name)
+            self.cfg.stop_file.write_text(f"received {sig_name}")
+
+        signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
+
         while True:
             restart = self._iterate()
             if not restart:
@@ -190,12 +199,16 @@ class Loop(Command):
     # -- issue acquisition -------------------------------------------------
 
     def _next_issue(self) -> Issue:
-        """Return the next ready issue, blocking if none are available."""
+        """Return the next ready issue, blocking if none are available.
+
+        Raises StopRequested when all issues are done (no open/blocked remain).
+        """
         issue = bd.get_next_ready_issue()
         if issue:
             logger.info("Retrieved issue: %r", issue)
             return issue
 
+        self._check_all_done()
         logger.info("No ready issues. Waiting...")
         while True:
             self._check_signals()
@@ -203,7 +216,18 @@ class Loop(Command):
             if issue:
                 logger.info("Retrieved issue: %r", issue)
                 return issue
+            self._check_all_done()
             time.sleep(self.cfg.poll_interval)
+
+    def _check_all_done(self) -> None:
+        """Raise StopRequested if every issue is closed/done."""
+        all_issues = bd.list_issues()
+        if not all_issues:
+            return  # no issues at all -- keep waiting for new ones
+        open_issues = [i for i in all_issues if i.status != "done"]
+        if not open_issues:
+            logger.info("All %d issue(s) are done", len(all_issues))
+            raise StopRequested("all issues completed")
 
     # -- agent lifecycle ---------------------------------------------------
 
