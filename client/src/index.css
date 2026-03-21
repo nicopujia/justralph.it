@@ -5,13 +5,6 @@ html.dark {
   color-scheme: dark;
 }
 
-/* Smooth theme transitions */
-*, *::before, *::after {
-  transition-property: background-color, border-color, color;
-  transition-duration: 150ms;
-  transition-timing-function: ease;
-}
-
 @layer base {
   :root {
     @apply font-sans;
@@ -23,43 +16,34 @@ html.dark {
 }
 
 /* ------------------------------------------------------------------ */
-/* Terminal scrollbar -- dark variant (used on #0a0e14 background)     */
+/* Terminal scrollbar -- green thumb on black track                    */
 /* ------------------------------------------------------------------ */
 .terminal-scroll::-webkit-scrollbar {
   width: 5px;
 }
 
 .terminal-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: #000000;
 }
 
 .terminal-scroll::-webkit-scrollbar-thumb {
-  background: #2d3748;
-  border-radius: 3px;
+  background: #00FF4166;
+  border-radius: 0;
 }
 
 .terminal-scroll::-webkit-scrollbar-thumb:hover {
-  background: #4a5568;
-}
-
-/* Light-mode override */
-.bg-gray-50.terminal-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e0;
-}
-
-.bg-gray-50.terminal-scroll::-webkit-scrollbar-thumb:hover {
-  background: #a0aec0;
+  background: #00FF41aa;
 }
 
 /* ------------------------------------------------------------------ */
-/* Text-shadow glow -- dark mode only, applied via .terminal-glow      */
+/* Text-shadow glow -- matrix green, applied via .terminal-glow       */
 /* ------------------------------------------------------------------ */
 .terminal-glow {
-  text-shadow: 0 0 8px rgba(74, 222, 128, 0.3);
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
 }
 
 /* ------------------------------------------------------------------ */
-/* Toast slide-in animation (from right edge)                          */
+/* Toast slide-in animation (from right edge)                         */
 /* ------------------------------------------------------------------ */
 @keyframes slide-in-right {
   from {
@@ -77,22 +61,58 @@ html.dark {
 }
 
 /* ------------------------------------------------------------------ */
-/* Animated gradient border for WelcomePage card                       */
+/* Brutalist animation keyframes                                       */
 /* ------------------------------------------------------------------ */
-@keyframes gradient-spin {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
 }
 
-.animated-border {
-  background: linear-gradient(
-    270deg,
-    oklch(0.696 0.17 162.48),
-    oklch(0.488 0.243 264.376),
-    oklch(0.769 0.188 70.08),
-    oklch(0.696 0.17 162.48)
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-2px, 1px) skewX(-1deg); }
+  40% { transform: translate(1px, -1px); }
+  60% { transform: translate(-1px, 0) skewX(1deg); }
+  80% { transform: translate(2px, 1px); }
+}
+
+.animate-blink { animation: blink-cursor 1s step-end infinite; }
+.animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+.glitch-text:hover { animation: glitch 0.3s ease-in-out; }
+
+/* CRT scanline overlay -- add class to any container */
+.scanline-overlay {
+  position: relative;
+}
+.scanline-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.03) 2px,
+    rgba(0, 255, 65, 0.03) 4px
   );
-  background-size: 300% 300%;
-  animation: gradient-spin 4s ease infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Subtle grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(26, 26, 26, 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26, 26, 26, 0.5) 1px, transparent 1px);
+  background-size: 20px 20px;
 }

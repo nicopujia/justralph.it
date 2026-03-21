@@ -202,6 +202,41 @@
               ralph task update &lt;task-id&gt; --status blocked --append-notes "reason"
               ralph task close &lt;task-id&gt;
               ralph task show &lt;task-id&gt; [--json]
+
+            <AcceptanceCriteria title="Writing acceptance criteria in task body">
+                Every task body should include acceptance criteria. Format:
+
+                Acceptance:
+                - [specific, testable condition]
+                - [specific, testable condition]
+
+                Design:
+                - [implementation approach or constraint]
+
+                <Example>
+                    ralph task create "Add user login endpoint" \
+                      --body "Acceptance:
+                      - POST /api/login returns 200 with JWT on valid credentials
+                      - Returns 401 on invalid credentials
+                      - Rate-limits to 5 attempts/min per IP
+
+                      Design:
+                      - bcrypt for password hashing
+                      - JWT expires after 24h" \
+                      --priority 1 --labels auth,api
+                </Example>
+                <Example>
+                    ralph task create "Unit tests for scoring" \
+                      --body "Acceptance:
+                      - All 7 scoring functions have tests
+                      - Edge cases: zero input, max values, boundaries
+                      - Tests run in under 2s
+
+                      Design:
+                      - Pure function tests, no mocks needed" \
+                      --priority 2 --labels testing --parent task-001
+                </Example>
+            </AcceptanceCriteria>
         </TaskTracking>
         <Git>
             <CommitMessages>

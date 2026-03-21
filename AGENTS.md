@@ -10,6 +10,14 @@ justralph.it is a web platform: users describe a project idea via chatbot (Ralph
 - Task store: YAML-backed, local (`pkgs/tasks/main.py`)
 - Session isolation: each user session gets its own `/tmp/ralph-sessions/{id}/` with a git repo + ralph scaffolding
 
+## Architecture Decisions
+
+- OpenCode (`opencode run`) as AI runtime -- not beads/bd CLI
+- YAML task store over external DB (simplicity, git-friendly)
+- Session isolation via temp dirs with per-session git repos
+- No git worktrees -- each session gets a fresh `git init`
+- In-memory session store (demo scope, no distributed state)
+
 ## Project Structure
 
 ```
@@ -21,6 +29,13 @@ tests/         # pytest tests
 .ralphy/       # Ralphy config (project-specific hooks, rules, logs)
 PROMPT.xml     # system prompt for Ralph agents (symlinked into sessions)
 ```
+
+## Session Model
+
+Each session = isolated dir at `/tmp/ralph-sessions/{id}/`.
+Contains: git repo, tasks.yaml, .ralphy/, PROMPT.xml symlink, opencode.jsonc symlink.
+In-memory `_sessions` dict + SQLite for persistence across restarts.
+Running sessions have a daemon thread with RalphyRunner.
 
 ## Tooling
 

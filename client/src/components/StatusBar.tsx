@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { WSState } from "@/hooks/useWebSocket";
-import { Activity, Play, Square, RotateCcw, Wifi, WifiOff, Sun, Moon } from "lucide-react";
+import { Play, Square, RotateCcw, Sun, Moon } from "lucide-react";
 import { API_URL } from "@/lib/config";
 
 type StatusBarProps = {
@@ -19,10 +18,10 @@ type StatusBarProps = {
 };
 
 const STATUS_CONFIG = {
-  running: { color: "bg-emerald-500", label: "Running" },
-  waiting: { color: "bg-amber-500", label: "Waiting" },
-  stopped: { color: "bg-red-500", label: "Stopped" },
-  unknown: { color: "bg-zinc-500", label: "Unknown" },
+  running: { color: "bg-[#00FF41] animate-pulse-dot", label: "RUNNING" },
+  waiting: { color: "bg-[#FFaa00]", label: "WAITING" },
+  stopped: { color: "bg-[#FF0033]", label: "STOPPED" },
+  unknown: { color: "bg-[#333]", label: "UNKNOWN" },
 } as const;
 
 function formatUptime(seconds: number): string {
@@ -32,6 +31,11 @@ function formatUptime(seconds: number): string {
   if (h > 0) return `${h}h ${m}m ${s}s`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
+}
+
+/** Pad iteration count to 3 digits. */
+function fmtIter(n: number): string {
+  return String(n).padStart(3, "0");
 }
 
 async function loopAction(
@@ -77,85 +81,76 @@ export function StatusBar({
   const wsConnected = wsState === "connected";
 
   return (
-    <Card className="flex-row items-center justify-between px-4 py-3 rounded-none border-x-0 border-t-0 gap-4">
+    <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a1a1a] bg-[#0a0a0a] font-mono text-xs uppercase tracking-wider">
       {/* Left: loop status */}
       <div className="flex items-center gap-2">
-        <Activity className="size-4 text-muted-foreground" />
-        <span className={`size-2.5 rounded-full ${status.color}`} />
-        <span className="text-sm font-medium">{status.label}</span>
+        <span className={`w-2 h-2 ${status.color}`} />
+        <span className="text-white">{status.label}</span>
       </div>
 
       {/* Center: iteration + uptime */}
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-3">
         <span>
-          Iteration <span className="font-mono font-semibold text-foreground">#{iterationCount}</span>
+          <span className="text-[#333]">ITER:</span>
+          <span className="text-white">#{fmtIter(iterationCount)}</span>
         </span>
         {loopStatus === "running" && loopStartTime && (
-          <span className="font-mono">{formatUptime(uptime)}</span>
+          <>
+            <span className="text-[#333]">|</span>
+            <span className="text-[#00FF41]">{formatUptime(uptime)}</span>
+          </>
         )}
       </div>
 
       {/* Right: ws status + theme toggle + controls */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-sm">
-          {wsConnected ? (
-            <>
-              <Wifi className="size-3.5 text-emerald-500" />
-              <span className="text-emerald-600 dark:text-emerald-400">Connected</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="size-3.5 text-red-500" />
-              <span className="text-red-600 dark:text-red-400">Disconnected</span>
-            </>
-          )}
-        </div>
+        {wsConnected ? (
+          <span className="text-[#00FF41]">WS:OK</span>
+        ) : (
+          <span className="text-[#FF0033]">WS:OFF</span>
+        )}
 
-        <div className="h-5 w-px bg-border" />
+        <span className="text-[#333]">|</span>
 
         {/* Theme toggle */}
         {onThemeToggle && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
+          <button
             onClick={onThemeToggle}
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
           >
-            {theme === "dark" ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-          </Button>
+            {theme === "dark" ? <Sun className="size-3" /> : <Moon className="size-3" />}
+          </button>
         )}
 
-        <div className="h-5 w-px bg-border" />
+        <span className="text-[#333]">|</span>
 
         {/* Loop controls */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
+          <button
             onClick={() => loopAction("start", sessionId, onError)}
             title="Start loop"
+            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
           >
-            <Play className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
+            <Play className="size-3" />
+          </button>
+          <button
             onClick={() => loopAction("stop", sessionId, onError)}
             title="Stop loop"
+            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
           >
-            <Square className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
+            <Square className="size-3" />
+          </button>
+          <button
             onClick={() => loopAction("restart", sessionId, onError)}
             title="Restart loop"
+            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
           >
-            <RotateCcw className="size-3.5" />
-          </Button>
+            <RotateCcw className="size-3" />
+          </button>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

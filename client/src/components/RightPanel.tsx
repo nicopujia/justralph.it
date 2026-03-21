@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { ConfidenceMeter } from "./ConfidenceMeter";
 import { TaskList } from "./TaskList";
 import type { ChatState } from "@/hooks/useChatbot";
@@ -28,36 +26,36 @@ export function RightPanel({
   const [activeTab, setActiveTab] = useState<Tab>("confidence");
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "confidence", label: "Confidence" },
-    { id: "tasks", label: "Tasks" },
-    { id: "code", label: "Code" },
+    { id: "confidence", label: "CONFIDENCE" },
+    { id: "tasks", label: "TASKS" },
+    { id: "code", label: "CODE" },
   ];
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full">
-      <CardHeader className="pb-0 px-4 pt-3">
-        {/* Tab buttons */}
-        <div className="flex gap-1 border-b pb-2">
-          {tabs.map((tab) => (
-            <Button
-              key={tab.id}
-              variant={activeTab === tab.id ? "secondary" : "ghost"}
-              size="sm"
-              className="text-xs h-7 px-3"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-              {tab.id === "tasks" && loopStarted && tasks.size > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0 text-xs font-medium tabular-nums">
-                  {tasks.size}
-                </span>
-              )}
-            </Button>
-          ))}
-        </div>
-      </CardHeader>
+    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a] bg-[#0a0a0a]">
+      {/* Tab bar */}
+      <div className="flex border-b border-[#1a1a1a] shrink-0">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`text-xs uppercase tracking-wider px-3 py-2 font-mono transition-colors ${
+              activeTab === tab.id
+                ? "border-b-2 border-[#00FF41] text-[#00FF41]"
+                : "text-[#333] hover:text-[#00FF41]"
+            }`}
+          >
+            {tab.label}
+            {tab.id === "tasks" && loopStarted && tasks.size > 0 && (
+              <span className="ml-1.5 border border-[#333] text-[#00FF41] px-1 text-[10px]">
+                {tasks.size}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      <CardContent className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3">
         {activeTab === "confidence" && (
           <ConfidenceMeter
             confidence={chatState.confidence}
@@ -73,17 +71,21 @@ export function RightPanel({
           loopStarted ? (
             <TaskList tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} embedded />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm py-8 text-center">
-              <p className="opacity-60">Tasks will appear when Ralphy is ready.</p>
+            <div className="flex flex-col items-center justify-center h-full py-8 text-center">
+              <p className="text-[#333] font-mono text-xs uppercase tracking-wider">
+                TASKS WILL APPEAR WHEN RALPHY IS READY
+              </p>
             </div>
           )
         )}
         {activeTab === "code" && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm py-8 text-center">
-            <p className="opacity-60">Code changes will appear here when the loop starts.</p>
+          <div className="flex flex-col items-center justify-center h-full py-8 text-center">
+            <p className="text-[#333] font-mono text-xs uppercase tracking-wider">
+              CODE CHANGES WILL APPEAR WHEN LOOP STARTS
+            </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

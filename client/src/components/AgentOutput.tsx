@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ArrowDown, Terminal } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 
 type AgentOutputProps = {
   lines: string[];
@@ -21,15 +19,15 @@ function classifyLine(line: string): LineToken {
   return "default";
 }
 
-// Tailwind classes per token, using dark: variants for global theme.
+// Single terminal color set -- always dark, no dark: variants needed.
 const TOKEN_CLASSES: Record<LineToken, string> = {
-  default: "dark:text-emerald-400 text-gray-800 dark:terminal-glow",
-  filepath: "dark:text-cyan-400 text-blue-600",
-  addition: "dark:text-emerald-400 text-green-700",
-  removal: "dark:text-red-400 text-red-600",
-  status: "dark:text-amber-400 text-amber-600",
-  error: "dark:text-red-400 text-red-600",
-  commit: "dark:text-blue-400 text-blue-600",
+  default: "text-[#00FF41] terminal-glow",
+  filepath: "text-[#00ccff]",
+  addition: "text-[#00FF41]",
+  removal: "text-[#FF0033]",
+  status: "text-[#FFaa00]",
+  error: "text-[#FF0033]",
+  commit: "text-[#6699ff]",
 };
 
 export function AgentOutput({ lines }: AgentOutputProps) {
@@ -64,31 +62,27 @@ export function AgentOutput({ lines }: AgentOutputProps) {
   }, []);
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full">
+    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a] bg-black">
       {/* Header */}
-      <CardHeader className="flex-row items-center pb-0 px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <Terminal className="size-4 text-muted-foreground" />
-          <span className="text-sm font-semibold tracking-tight">Terminal</span>
+      <div className="flex items-center justify-between border-b border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-[#00FF41] text-xs uppercase tracking-wider font-mono">TERMINAL</span>
           {lines.length > 0 && (
-            <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-              {lines.length}
-            </span>
+            <span className="text-[#333] text-xs font-mono">[{lines.length}]</span>
           )}
         </div>
-      </CardHeader>
+      </div>
 
       {/* Body */}
-      <CardContent className="flex-1 overflow-hidden p-0 relative">
+      <div className="flex-1 overflow-hidden relative">
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="h-full overflow-y-auto font-mono text-sm p-4 terminal-scroll dark:bg-zinc-950 bg-white"
+          className="h-full overflow-y-auto font-mono text-sm p-4 terminal-scroll bg-black scanline-overlay grid-bg"
         >
           {lines.length === 0 ? (
-            <span className="dark:text-zinc-500 text-gray-400">
-              Waiting for agent output
-              <span className="animate-pulse">_</span>
+            <span className="text-[#333]">
+              AWAITING INPUT<span className="animate-blink">_</span>
             </span>
           ) : (
             lines.map((line, i) => {
@@ -98,6 +92,7 @@ export function AgentOutput({ lines }: AgentOutputProps) {
                   key={i}
                   className={`whitespace-pre-wrap leading-relaxed ${TOKEN_CLASSES[token]}`}
                 >
+                  <span className="text-[#333] select-none mr-3">{String(i + 1).padStart(4, " ")}</span>
                   {line || "\u00A0" /* keep blank lines visible */}
                 </div>
               );
@@ -107,17 +102,15 @@ export function AgentOutput({ lines }: AgentOutputProps) {
 
         {/* Scroll-to-bottom button, shown when user scrolled away */}
         {showScrollBtn && (
-          <Button
-            variant="secondary"
-            size="icon-sm"
+          <button
             onClick={() => scrollToBottom(true)}
             aria-label="Scroll to bottom"
-            className="absolute bottom-3 right-5 shadow-md opacity-90 hover:opacity-100 transition-opacity dark:bg-zinc-700 dark:hover:bg-zinc-600 dark:text-zinc-100"
+            className="absolute bottom-3 right-5 border border-[#00FF41] bg-black text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors p-1"
           >
             <ArrowDown className="size-4" />
-          </Button>
+          </button>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

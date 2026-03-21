@@ -1,8 +1,5 @@
 import { useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AlertTriangle, Upload, Play } from "lucide-react";
+import { Upload, Play } from "lucide-react";
 import { API_URL } from "@/lib/config";
 
 type HelpPanelProps = {
@@ -65,50 +62,49 @@ export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelPro
   };
 
   return (
-    <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
-      <CardHeader className="pb-2 px-4 py-3">
-        <CardTitle className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="size-4" />
-          Ralph needs your help
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Task <span className="font-mono font-medium">{taskId}</span> is blocked
-          and requires human input. Upload files or provide what's needed, then
-          click Resume.
+    <div className="border-2 border-[#FF0033] bg-black font-mono">
+      <div className="px-4 py-3 border-b border-[#FF0033]">
+        <h2 className="text-[#FF0033] text-xs uppercase tracking-wider">RALPH NEEDS YOUR HELP</h2>
+      </div>
+      <div className="px-4 pb-4 pt-3 space-y-3">
+        <p className="text-[#333] text-xs">
+          Task <span className="text-[#FFaa00]">{taskId}</span> is blocked and requires human input.
+          Upload files or provide what's needed, then click Resume.
         </p>
 
         {/* File upload */}
         <div className="flex gap-2">
-          <Input ref={fileRef} type="file" multiple className="flex-1 text-sm" />
-          <Button
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="flex-1 text-xs text-[#333] bg-black border border-[#333] px-2 py-1 file:bg-transparent file:text-[#333] file:border-0 file:text-xs file:uppercase file:tracking-wider file:cursor-pointer"
+          />
+          <button
             onClick={handleUpload}
             disabled={uploading}
-            variant="outline"
-            size="sm"
+            className="border border-[#00FF41] text-[#00FF41] bg-transparent text-[10px] uppercase tracking-wider px-2 py-1 hover:bg-[#00FF41] hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
           >
-            <Upload className="size-3.5 mr-1" />
-            Upload
-          </Button>
+            <Upload className="size-3" />
+            UPLOAD
+          </button>
         </div>
 
         {uploadedFiles.length > 0 && (
-          <div className="text-xs text-muted-foreground">
-            Uploaded: {uploadedFiles.join(", ")}
+          <div className="text-[#333] text-[10px]">
+            UPLOADED: {uploadedFiles.join(", ")}
           </div>
         )}
 
         {/* Resume */}
-        <Button
+        <button
           onClick={handleResume}
-          className="w-full bg-green-600 hover:bg-green-700 text-white"
-          size="sm"
+          className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs py-2 transition-colors flex items-center justify-center gap-1"
         >
-          <Play className="size-3.5 mr-1" />
-          Resume Loop
-        </Button>
-      </CardContent>
-    </Card>
+          <Play className="size-3" />
+          RESUME LOOP
+        </button>
+      </div>
+    </div>
   );
 }

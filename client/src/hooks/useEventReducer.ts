@@ -20,6 +20,7 @@ export type DashboardState = {
   tasks: Map<string, TaskInfo>;
   agentOutputLines: string[];
   resources: { cpu: number; ram: number; disk: number } | null;
+  totalTokens: number;
 };
 
 const MAX_OUTPUT_LINES = 1000;
@@ -31,6 +32,7 @@ const initialState: DashboardState = {
   tasks: new Map(),
   agentOutputLines: [],
   resources: null,
+  totalTokens: 0,
 };
 
 function reducer(state: DashboardState, event: RalphEvent): DashboardState {
@@ -120,7 +122,12 @@ function reducer(state: DashboardState, event: RalphEvent): DashboardState {
         },
       };
 
-    case "iter_completed":
+    case "iter_completed": {
+      // Accumulate tokens if provided with the event
+      const tokens = event.data.tokens ?? 0;
+      return { ...state, totalTokens: state.totalTokens + tokens };
+    }
+
     case "iter_failed":
       return state;
 

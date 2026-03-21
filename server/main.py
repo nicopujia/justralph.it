@@ -20,10 +20,11 @@ from .auth import (
     get_github_user,
     get_user_session,
 )
-from .chatbot import DIMENSIONS, chat as chatbot_chat, get_chat_state, undo_last_message
+from .chatbot import DIMENSIONS, _chat_states, chat as chatbot_chat, get_chat_state, undo_last_message
 from .sessions import (
     Session,
     create_session,
+    delete_session,
     get_session,
     list_sessions,
     load_sessions_from_db,
@@ -231,6 +232,16 @@ def api_restart_loop(session_id: str):
 def api_session_status(session_id: str):
     session = _require_session(session_id)
     return session.to_dict()
+
+
+@app.delete("/api/sessions/{session_id}")
+def api_delete_session(session_id: str):
+    """Stop loop if running, delete session dir, DB rows, and in-memory state."""
+    session = _require_session(session_id)
+    delete_session(session)
+    _chat_states.pop(session_id, None)
+    _ws_clients.pop(session_id, None)
+    return {"status": "deleted", "session_id": session_id}
 
 
 # -- Task CRUD endpoints ------------------------------------------------------

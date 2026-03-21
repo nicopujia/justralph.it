@@ -344,3 +344,36 @@ def test_save_chat_state_project_dict_roundtrip():
     db.save_chat_state("sess-proj", {}, {}, False, 0.0, None, project)
     result = db.load_chat_state("sess-proj")
     assert result["project"] == project
+
+
+# --- Edge cases (audit additions) ---
+
+
+def test_update_session_status_nonexistent():
+    # UPDATE on a nonexistent id affects 0 rows -- must not raise.
+    db.update_session_status("no-such-session", "running")
+
+
+def test_delete_chat_messages_nonexistent():
+    # DELETE on a nonexistent session_id affects 0 rows -- must not raise.
+    db.delete_chat_messages("no-such-session")
+
+
+def test_load_chat_state_empty_json():
+    # confidence/relevance stored as "{}" should deserialize to empty dict,
+    # not None or raise.
+    db.save_session("sess-empty-json", "/tmp", "", "ready", time.time())
+    db.save_chat_state("sess-empty-json", {}, {}, False, 0.0, None, None)
+    result = db.load_chat_state("sess-empty-json")
+    assert isinstance(result["confidence"], dict)
+    assert isinstance(result["relevance"], dict)
+    assert result["confidence"] == {}
+    assert result["relevance"] == {}
+
+
+def test_save_chat_message_fk_violation():
+    # Saving a message for a session that doesn't exist should raise because
+    # PRAGMA foreign_keys = ON is set in _get_conn.
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        db.save_chat_message("nonexistent-session", "user", "hello")

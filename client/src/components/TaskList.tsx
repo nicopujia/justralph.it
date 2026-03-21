@@ -1,49 +1,42 @@
 import { useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ListTodo, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import type { TaskInfo } from "@/hooks/useEventReducer";
 import { API_URL } from "@/lib/config";
 
 type TaskListProps = {
   tasks: Map<string, TaskInfo>;
   sessionId?: string;
-  /** When true, renders without outer Card (for embedding in RightPanel). */
+  /** When true, renders without outer border wrapper (for embedding in RightPanel). */
   embedded?: boolean;
   /** Callback so parent can update a task's status locally after retry. */
   onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
 };
 
-const STATUS_BADGE: Record<TaskInfo["status"], string> = {
-  open: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-  in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  blocked: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  done: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  help: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-};
-
-const STATUS_LABEL: Record<TaskInfo["status"], string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  done: "Done",
-  help: "Help",
+// Bracketed status text with terminal colors.
+const STATUS_TEXT: Record<TaskInfo["status"], { label: string; cls: string }> = {
+  open: { label: "[OPEN]", cls: "text-[#333]" },
+  in_progress: { label: "[IN_PROGRESS]", cls: "text-[#00FF41]" },
+  blocked: { label: "[BLOCKED]", cls: "text-[#FF0033]" },
+  done: { label: "[DONE]", cls: "text-[#00FF41] opacity-60" },
+  help: { label: "[HELP]", cls: "text-[#FF0033]" },
 };
 
 const RETRYABLE: Set<TaskInfo["status"]> = new Set(["blocked", "help"]);
 
 type TaskItemProps = {
   task: TaskInfo;
+  index: number;
   selected: boolean;
   onSelect: () => void;
   sessionId?: string;
   onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
 };
 
-function TaskItem({ task, selected, onSelect, sessionId, onTaskUpdate }: TaskItemProps) {
+function TaskItem({ task, index, selected, onSelect, sessionId, onTaskUpdate }: TaskItemProps) {
   const [retrying, setRetrying] = useState(false);
   const canRetry = RETRYABLE.has(task.status);
   const isBlocked = task.status === "blocked" || task.status === "help";
+  const { label, cls } = STATUS_TEXT[task.status];
 
   const handleRetry = useCallback(
     async (e: React.MouseEvent) => {
@@ -71,43 +64,38 @@ function TaskItem({ task, selected, onSelect, sessionId, onTaskUpdate }: TaskIte
 
   return (
     <li
-      className={`rounded-md border text-sm transition-colors cursor-pointer select-none
-        ${isBlocked && selected ? "border-red-400 border-l-2" : ""}
-        hover:bg-muted/50`}
+      className={`border-b border-[#1a1a1a] font-mono text-xs px-3 py-2 hover:bg-[#111] cursor-pointer select-none transition-colors ${
+        isBlocked ? "border-l-2 border-l-[#FF0033]" : ""
+      }`}
       onClick={onSelect}
     >
-      {/* Summary row */}
-      <div className="flex items-start justify-between gap-2 px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-xs text-muted-foreground truncate">{task.id}</p>
-          <p className={selected ? "mt-0.5" : "truncate mt-0.5"}>{task.title}</p>
-        </div>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status]}`}
-        >
-          {STATUS_LABEL[task.status]}
-        </span>
+      {/* Fixed-width column row: [001] [STATUS] Title */}
+      <div className="flex items-baseline gap-2">
+        <span className="text-[#333] shrink-0">[{String(index + 1).padStart(3, "0")}]</span>
+        <span className={`shrink-0 ${cls}`}>{label}</span>
+        <span className="text-white truncate">{task.title}</span>
       </div>
 
       {/* Expanded detail */}
       <div
         className={`overflow-hidden transition-all duration-200 ${selected ? "max-h-40" : "max-h-0"}`}
       >
-        <div className="px-3 pb-3 pt-0 border-t space-y-2 ml-2">
+        <div className="pt-2 pl-2 space-y-2 border-t border-[#1a1a1a] mt-1">
+          <p className="text-[#333] break-words">{task.id}</p>
           {task.error && (
-            <p className="text-red-500 text-xs break-words">{task.error}</p>
+            <p className="text-[#FF0033] break-words">{task.error}</p>
           )}
           {canRetry && sessionId && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-xs gap-1"
+            <button
+              className="border border-[#00FF41] text-[#00FF41] bg-transparent uppercase text-[10px] tracking-wider px-2 py-0.5 hover:bg-[#00FF41] hover:text-black transition-colors disabled:opacity-50"
               disabled={retrying}
               onClick={handleRetry}
             >
-              <RotateCcw className={`size-3 ${retrying ? "animate-spin" : ""}`} />
-              {retrying ? "Retrying..." : "Retry"}
-            </Button>
+              <span className="flex items-center gap-1">
+                <RotateCcw className={`size-3 ${retrying ? "animate-spin" : ""}`} />
+                {retrying ? "RETRYING" : "RETRY"}
+              </span>
+            </button>
           )}
         </div>
       </div>
@@ -129,19 +117,19 @@ function TaskItems({ tasks, sessionId, onTaskUpdate }: TaskItemsProps) {
 
   if (taskEntries.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm py-8">
-        <ListTodo className="size-8 mb-2 opacity-40" />
-        No tasks yet
+      <div className="flex flex-col items-center justify-center h-full py-8">
+        <span className="text-[#333] font-mono text-xs uppercase tracking-wider">NO TASKS YET</span>
       </div>
     );
   }
 
   return (
-    <ul className="space-y-1">
-      {taskEntries.map((task) => (
+    <ul>
+      {taskEntries.map((task, i) => (
         <TaskItem
           key={task.id}
           task={task}
+          index={i}
           selected={selectedTaskId === task.id}
           onSelect={() =>
             setSelectedTaskId((prev) => (prev === task.id ? null : task.id))
@@ -166,19 +154,14 @@ export function TaskList({ tasks, sessionId, embedded = false, onTaskUpdate }: T
   }
 
   return (
-    <Card className="flex flex-col overflow-hidden h-full">
-      <CardHeader className="pb-3 px-4 py-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <ListTodo className="size-4" />
-          Tasks
-          <span className="ml-auto inline-flex items-center justify-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums">
-            {count}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto px-2 pb-2">
+    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a]">
+      <div className="border-b border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2 shrink-0 flex items-center gap-3">
+        <span className="text-[#00FF41] text-xs uppercase tracking-wider font-mono">TASKS</span>
+        <span className="text-[#333] text-xs font-mono">[{count}]</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
         <TaskItems tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

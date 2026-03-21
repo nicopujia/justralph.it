@@ -26,9 +26,9 @@ const MAX_TOASTS = 3;
 const AUTO_DISMISS_MS = 5000;
 
 const TYPE_STYLES: Record<ToastType, string> = {
-  success: "bg-green-600 text-white",
-  error: "bg-red-600 text-white",
-  info: "bg-blue-600 text-white",
+  success: "bg-black border-2 border-[#00FF41] text-[#00FF41]",
+  error: "bg-black border-2 border-[#FF0033] text-[#FF0033]",
+  info: "bg-black border-2 border-white text-white",
 };
 
 let nextId = 0;
@@ -87,7 +87,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             className={[
-              "flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm",
+              "flex items-center gap-3 px-4 py-3 text-xs",
+              "font-mono uppercase tracking-wider",
               "min-w-[260px] max-w-[380px] pointer-events-auto",
               "animate-slide-in-right",
               TYPE_STYLES[t.type],

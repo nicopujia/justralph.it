@@ -637,3 +637,50 @@ def test_reconcile_completed_no_change_when_already_synced(tasks_dir: Path):
 
 def test_reconcile_completed_no_tasks_does_nothing(tasks_dir: Path):
     reconcile_completed(cwd=tasks_dir)  # Should not raise
+
+
+# --- Edge cases (audit additions) ---
+
+
+def test_create_task_priority_zero(tasks_dir: Path):
+    # 0 is falsy; `priority if priority is not None` must not fall back to default
+    t = create_task("t", priority=0, cwd=tasks_dir)
+    assert t.priority == 0
+
+
+def test_update_task_body_and_append_notes(tasks_dir: Path):
+    # When both body= and append_notes= are passed, body is set first then
+    # append_notes is concatenated onto it.
+    t = create_task("t", body="base", cwd=tasks_dir)
+    update_task(t.id, body="new", append_notes="extra", cwd=tasks_dir)
+    updated = get_task(t.id, cwd=tasks_dir)
+    assert updated.body == "new\nextra"
+
+
+def test_update_task_labels_empty_list(tasks_dir: Path):
+    # labels=[] must not be skipped due to falsy check; guard is `if labels is not None`
+    t = create_task("t", labels=["x", "y"], cwd=tasks_dir)
+    update_task(t.id, labels=[], cwd=tasks_dir)
+    updated = get_task(t.id, cwd=tasks_dir)
+    assert updated.labels == []
+
+
+def test_next_id_missing_id_key(tasks_dir: Path):
+    # Tasks without an "id" key: t.get("id", "") returns "" which doesn't start
+    # with "task-", so it is skipped gracefully and next id is task-001.
+    tasks = [{}, {"title": "no id here"}]
+    assert _next_id(tasks) == "task-001"
+
+
+def test_list_tasks_status_enum_vs_string(tasks_dir: Path):
+    # TaskStatus.DONE == "done" (StrEnum), so both filter forms should agree.
+    t = create_task("done task", cwd=tasks_dir)
+    close_task(t.id, cwd=tasks_dir)
+    create_task("open task", cwd=tasks_dir)
+
+    by_enum = list_tasks(status=TaskStatus.DONE, cwd=tasks_dir)
+    by_string = list_tasks(status="done", cwd=tasks_dir)
+
+    assert len(by_enum) == 1
+    assert len(by_string) == 1
+    assert by_enum[0].id == by_string[0].id

@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Rocket,
   ArrowUp,
@@ -44,24 +42,6 @@ type TaskCardProps = {
   onMoveDown: () => void;
 };
 
-// Priority badge: color by level 1-5
-const PRIORITY_COLORS: Record<number, string> = {
-  1: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  2: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-  3: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-  4: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  5: "bg-muted text-muted-foreground",
-};
-
-function PriorityBadge({ priority }: { priority: number }) {
-  const cls = PRIORITY_COLORS[priority] ?? PRIORITY_COLORS[5];
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-      P{priority}
-    </span>
-  );
-}
-
 function TaskCard({
   task,
   index,
@@ -82,32 +62,28 @@ function TaskCard({
   };
 
   return (
-    <Card className="py-0 gap-0">
-      <CardContent className="px-4 py-3 flex flex-col gap-2">
-        {/* Top row: reorder + title + badges + actions */}
+    <div className="border border-[#1a1a1a] bg-[#0a0a0a] font-mono">
+      <div className="px-4 py-3 flex flex-col gap-2">
+        {/* Top row: reorder + title + priority + delete */}
         <div className="flex items-start gap-2">
           {/* Reorder buttons */}
           <div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-5"
+            <button
+              className="size-5 flex items-center justify-center text-[#333] hover:text-[#00FF41] disabled:opacity-20 transition-colors"
               disabled={index === 0}
               onClick={onMoveUp}
               title="Move up"
             >
               <ArrowUp className="size-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-5"
+            </button>
+            <button
+              className="size-5 flex items-center justify-center text-[#333] hover:text-[#00FF41] disabled:opacity-20 transition-colors"
               disabled={index === total - 1}
               onClick={onMoveDown}
               title="Move down"
             >
               <ArrowDown className="size-3" />
-            </Button>
+            </button>
           </div>
 
           {/* Title */}
@@ -125,11 +101,11 @@ function TaskCard({
                     setEditingTitle(false);
                   }
                 }}
-                className="h-7 text-sm"
+                className="h-7 text-xs bg-black border-[#333] text-[#00FF41]"
               />
             ) : (
               <button
-                className="text-sm font-medium text-left w-full truncate flex items-center gap-1 group"
+                className="text-xs text-white text-left w-full truncate flex items-center gap-1 group"
                 onClick={() => {
                   setTitleDraft(task.title);
                   setEditingTitle(true);
@@ -142,32 +118,30 @@ function TaskCard({
             )}
           </div>
 
-          {/* Priority badge */}
-          <PriorityBadge priority={task.priority} />
+          {/* Priority [P1] format */}
+          <span className="text-[#FFaa00] text-[10px] tracking-wider shrink-0">[P{task.priority}]</span>
 
           {/* Delete */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 shrink-0 text-muted-foreground hover:text-destructive"
+          <button
+            className="size-6 shrink-0 flex items-center justify-center text-[#333] hover:text-[#FF0033] transition-colors"
             onClick={onDelete}
             title="Remove task"
           >
             <X className="size-3.5" />
-          </Button>
+          </button>
         </div>
 
         {/* Parent dependency indicator */}
         {task.parent && (
-          <p className="text-xs text-muted-foreground pl-7">
-            Depends on: <span className="font-mono">{task.parent}</span>
+          <p className="text-[#333] text-[10px] pl-7">
+            DEPENDS ON: <span className="text-[#FFaa00]">{task.parent}</span>
           </p>
         )}
 
         {/* Collapsible body / acceptance criteria */}
         <div className="pl-7">
           <button
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1 text-[10px] text-[#333] hover:text-[#00FF41] uppercase tracking-wider transition-colors"
             onClick={() => setBodyOpen((v) => !v)}
           >
             {bodyOpen ? (
@@ -175,20 +149,20 @@ function TaskCard({
             ) : (
               <ChevronRight className="size-3" />
             )}
-            {bodyOpen ? "Hide" : "Show"} acceptance criteria
+            {bodyOpen ? "HIDE" : "SHOW"} ACCEPTANCE CRITERIA
           </button>
 
           {bodyOpen && (
             <Textarea
-              className="mt-2 text-xs min-h-20 resize-y"
+              className="mt-2 text-xs min-h-20 resize-y bg-black border-[#333] text-[#00FF41] placeholder:text-[#333]"
               value={task.body}
               placeholder="No acceptance criteria yet..."
               onChange={(e) => onUpdate({ body: e.target.value })}
             />
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -223,21 +197,23 @@ export function TaskPreview({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-black font-mono">
       {/* Header */}
-      <div className="border-b px-6 py-4 shrink-0">
-        <h1 className="text-lg font-semibold">Review Tasks</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {tasks.length} task{tasks.length !== 1 ? "s" : ""} generated
-          {project ? ` for ${project.name}` : ""}. Edit before starting the loop.
+      <div className="border-b border-[#1a1a1a] px-6 py-4 shrink-0">
+        <h1 className="text-white text-sm font-bold uppercase tracking-wider">REVIEW TASKS</h1>
+        <p className="text-[#333] text-xs mt-1 tracking-wider">
+          {tasks.length} TASK{tasks.length !== 1 ? "S" : ""} GENERATED
+          {project ? ` FOR ${project.name.toUpperCase()}` : ""}. EDIT BEFORE STARTING THE LOOP.
         </p>
       </div>
 
       {/* Scrollable task list */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <p className="text-sm">All tasks removed. Go back to chat to regenerate.</p>
+          <div className="flex flex-col items-center justify-center h-full">
+            <p className="text-[#333] text-xs uppercase tracking-wider">
+              ALL TASKS REMOVED. GO BACK TO CHAT TO REGENERATE.
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3 max-w-2xl mx-auto">
@@ -258,29 +234,32 @@ export function TaskPreview({
       </div>
 
       {/* Footer */}
-      <div className="border-t px-6 py-4 flex items-center justify-between gap-3 shrink-0">
-        <Button variant="outline" onClick={onBack} disabled={loading}>
-          Back to Chat
-        </Button>
+      <div className="border-t border-[#1a1a1a] px-6 py-4 flex items-center justify-between gap-3 shrink-0">
+        <button
+          className="border border-[#333] text-[#333] hover:text-white hover:border-white uppercase tracking-wider text-xs px-4 py-2 transition-colors disabled:opacity-50"
+          onClick={onBack}
+          disabled={loading}
+        >
+          BACK TO CHAT
+        </button>
 
-        <Button
-          className="bg-green-600 hover:bg-green-700 text-white"
+        <button
+          className="border-2 border-[#00FF41] text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs px-6 py-2 transition-colors disabled:opacity-50 flex items-center gap-2"
           onClick={() => onConfirm(tasks)}
           disabled={loading || tasks.length === 0}
-          size="lg"
         >
           {loading ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              Starting...
+              STARTING...
             </>
           ) : (
             <>
               <Rocket className="size-4" />
-              Confirm &amp; Start
+              CONFIRM &amp; START
             </>
           )}
-        </Button>
+        </button>
       </div>
     </div>
   );

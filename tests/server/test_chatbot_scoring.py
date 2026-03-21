@@ -417,3 +417,44 @@ def test_extract_content_single_text_event():
     import json
     line = json.dumps({"type": "text", "part": {"text": "just this"}})
     assert _extract_content(line) == "just this"
+
+
+# --- Edge cases (audit additions) ---
+
+
+def test_clamp_score_prev_above_phase_max():
+    # prev=80 already exceeds phase_max=70. new=90 is clamped to 70 by
+    # phase_max. Then delta check: 70 <= 80 + MAX_DELTA, so no delta clamp.
+    # Score decrease is allowed (no lower-bound on prev), result is 70.
+    result = _clamp_score(90, 80, 70, 100)
+    assert result == 70
+
+
+def test_compute_readiness_partial_relevance():
+    # Relevance dict omits some dimensions entirely. Missing dims default to
+    # 1.0 via .get(d, 1.0), so they are included with full weight.
+    conf = {d: 50 for d in DIMENSIONS}
+    # Provide relevance for only one dimension
+    partial_rel = {"functional": 1.0}
+    result = _compute_readiness(conf, partial_rel)
+    # All dims at 50 with effective relevance 1.0 -> readiness should be 50.0
+    assert abs(result - 50.0) < 0.001
+
+
+def test_is_ready_at_exact_threshold():
+    # weighted_readiness == READINESS_THRESHOLD (85) and all dims at exactly
+    # MIN_DIM_SCORE (70). The guards use `< READINESS_THRESHOLD` and
+    # `< MIN_DIM_SCORE`, so exact values should pass and return True.
+    messages = []
+    for i in range(MIN_QUESTIONS):
+        messages.append({"role": "user", "content": f"msg {i}"})
+        messages.append({"role": "assistant", "content": f"resp {i}"})
+    conf = {d: MIN_DIM_SCORE for d in DIMENSIONS}
+    rel = {d: 1.0 for d in DIMENSIONS}
+    state = ChatState(
+        messages=messages,
+        confidence=conf,
+        relevance=rel,
+        weighted_readiness=float(READINESS_THRESHOLD),
+    )
+    assert _is_ready(state) is True

@@ -98,6 +98,16 @@ def update_session_status(id: str, status: str) -> None:
     conn.close()
 
 
+def delete_session(id: str) -> None:
+    """Delete session and all related data."""
+    conn = _get_conn()
+    conn.execute("DELETE FROM chat_state WHERE session_id = ?", (id,))
+    conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (id,))
+    conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
+    conn.commit()
+    conn.close()
+
+
 # -- Users ---------------------------------------------------------------------
 
 

@@ -10,7 +10,6 @@ import { StatusBar } from "./StatusBar";
 import { AgentOutput } from "./AgentOutput";
 import { HelpPanel } from "./HelpPanel";
 import { RightPanel } from "./RightPanel";
-import { Button } from "@/components/ui/button";
 import { MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Theme } from "@/hooks/useTheme";
 
@@ -112,11 +111,17 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
 
   // Phase 3: loop view with collapsible chat sidebar
   const sessionId = chatbot.state.sessionId!;
-  const sidebarWidth = sidebarOpen ? 350 : 60;
 
   return (
-    <div className="h-screen flex flex-col dark:bg-zinc-950 bg-white overflow-hidden">
-      {/* Status bar with theme toggle */}
+    <div className="h-screen flex flex-col bg-black grid-bg overflow-hidden">
+      {/* System status strip: session/model/token info */}
+      <div className="flex items-center gap-4 px-4 py-1 border-b border-[#1a1a1a] bg-black font-mono text-[10px] uppercase tracking-widest text-[#333]">
+        <span>SESSION: <span className="text-[#00FF41]">{sessionId.slice(0, 8)}</span></span>
+        <span>MODEL: <span className="text-[#00FF41]">kimi-k2.5</span></span>
+        <span>TOKENS: <span className="text-[#00FF41]">{loopState.totalTokens?.toLocaleString() ?? "0"}</span></span>
+      </div>
+
+      {/* Status bar */}
       <StatusBar
         loopStatus={loopState.loopStatus}
         iterationCount={loopState.iterationCount}
@@ -131,8 +136,8 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
       <div className="flex-1 flex overflow-hidden">
         {/* Collapsible chat sidebar */}
         <div
-          className="flex flex-col border-r dark:border-zinc-800 border-gray-200 shrink-0 overflow-hidden transition-all duration-200"
-          style={{ width: sidebarWidth }}
+          className="flex flex-col bg-[#0a0a0a] border-r border-[#1a1a1a] shrink-0 overflow-hidden transition-all duration-200"
+          style={{ width: sidebarOpen ? 350 : 60 }}
         >
           {sidebarOpen ? (
             <>
@@ -149,51 +154,45 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
                 />
               </div>
               {/* Collapse toggle at bottom */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full rounded-none border-t dark:border-zinc-800 border-gray-200 h-9 text-xs dark:text-zinc-500 text-gray-400 gap-1.5 shrink-0"
+              <button
+                className="w-full border-t border-[#1a1a1a] h-9 flex items-center justify-center gap-1.5 font-mono text-xs uppercase tracking-wider text-[#333] hover:text-[#00FF41] hover:border-[#00FF41] transition-colors shrink-0"
                 onClick={() => setSidebarOpen(false)}
               >
                 <ChevronLeft className="size-3.5" />
                 Collapse
-              </Button>
+              </button>
             </>
           ) : (
             /* Collapsed: icon-only strip */
             <div className="flex flex-col items-center py-3 gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-10"
+              <button
+                className="p-2 border border-[#333] hover:border-[#00FF41] text-[#333] hover:text-[#00FF41] transition-colors"
                 title="Open chat"
                 onClick={() => setSidebarOpen(true)}
               >
-                <MessageCircle className="size-5" />
-              </Button>
+                <MessageCircle className="size-4" />
+              </button>
               <span
-                className="text-xs dark:text-zinc-500 text-gray-400 select-none"
+                className="text-[10px] text-[#333] uppercase tracking-widest select-none"
                 style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
               >
-                Chat
+                CHAT
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 mt-auto"
+              <button
+                className="p-1 mt-auto border border-[#333] hover:border-[#00FF41] text-[#333] hover:text-[#00FF41] transition-colors"
                 title="Expand chat"
                 onClick={() => setSidebarOpen(true)}
               >
                 <ChevronRight className="size-3.5" />
-              </Button>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Main area: agent output + right panel */}
-        <div className="flex-1 grid grid-cols-[1fr_280px] gap-4 p-4 overflow-hidden min-w-0">
+        {/* Main area: agent output + right panel -- borders separate panels, no gaps */}
+        <div className="flex-1 grid grid-cols-[1fr_280px] gap-0 overflow-hidden min-w-0">
           {/* Center: agent output + optional help panel */}
-          <div className="flex flex-col gap-4 overflow-hidden">
+          <div className="flex flex-col gap-0 overflow-hidden border-r border-[#1a1a1a]">
             <AgentOutput lines={loopState.agentOutputLines} />
             {helpTaskId && (
               <HelpPanel

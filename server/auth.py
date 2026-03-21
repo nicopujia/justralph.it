@@ -3,12 +3,22 @@
 import logging
 import os
 import uuid
+from pathlib import Path
 
 import httpx
 
 import server.db as db
 
 logger = logging.getLogger(__name__)
+
+# Load .env file if it exists (FastAPI dev mode doesn't auto-load it)
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -23,7 +33,7 @@ _sessions: dict[str, dict] = {}
 
 def get_github_auth_url() -> str:
     """Return GitHub OAuth authorize URL."""
-    return f"{GITHUB_AUTHORIZE_URL}?client_id={GITHUB_CLIENT_ID}&scope=read:user"
+    return f"{GITHUB_AUTHORIZE_URL}?client_id={GITHUB_CLIENT_ID}&scope=read:user,repo"
 
 
 async def exchange_code_for_token(code: str) -> str:

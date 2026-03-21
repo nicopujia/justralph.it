@@ -218,6 +218,19 @@ def restart_loop(session: Session) -> None:
     session.runner.cfg.restart_file.write_text("restart requested via API")
 
 
+def delete_session(session: Session) -> None:
+    """Stop loop if running, remove dir, DB row, and memory."""
+    import shutil
+
+    if session.thread and session.thread.is_alive():
+        stop_loop(session)
+        session.thread.join(timeout=5)
+    if session.base_dir.exists():
+        shutil.rmtree(session.base_dir, ignore_errors=True)
+    db.delete_session(session.id)
+    _sessions.pop(session.id, None)
+
+
 def load_sessions_from_db() -> None:
     """Reload sessions from DB on startup. Mark stale 'running' as 'crashed'."""
     rows = db.list_sessions()

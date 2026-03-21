@@ -2,10 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  MessageCircle,
   Send,
-  Loader2,
-  Rocket,
   Paperclip,
   Undo2,
   Code,
@@ -53,21 +50,23 @@ function FileInput({
   size?: "default" | "sm";
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const sizeClass = size === "sm" ? "size-7 shrink-0" : "size-8 shrink-0";
   const iconClass = size === "sm" ? "size-3" : "size-4";
-  const btnClass = size === "sm" ? "size-7 shrink-0" : "";
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size={size === "sm" ? "icon" : "icon"}
-        className={btnClass}
+      <button
+        className={[
+          sizeClass,
+          "border border-[#333] text-[#333] hover:text-[#00FF41] hover:border-[#00FF41] transition-colors flex items-center justify-center bg-transparent",
+          !sessionId ? "opacity-40 cursor-not-allowed" : "",
+        ].join(" ")}
         onClick={() => fileRef.current?.click()}
         title="Attach files"
         disabled={!sessionId}
       >
         <Paperclip className={iconClass} />
-      </Button>
+      </button>
       <input
         ref={fileRef}
         type="file"
@@ -110,24 +109,24 @@ function RightTabPanel({
   const [activeTab, setActiveTab] = useState<RightTab>("confidence");
 
   const tabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
-    { id: "confidence", label: "Confidence", icon: <BarChart2 className="size-3.5" /> },
-    { id: "tasks", label: "Tasks", icon: <ListTodo className="size-3.5" /> },
-    { id: "code", label: "Code", icon: <Code className="size-3.5" /> },
+    { id: "confidence", label: "CONFIDENCE", icon: <BarChart2 className="size-3" /> },
+    { id: "tasks", label: "TASKS", icon: <ListTodo className="size-3" /> },
+    { id: "code", label: "CODE", icon: <Code className="size-3" /> },
   ];
 
   return (
-    <div className="flex flex-col h-full dark:bg-zinc-900 bg-gray-50 border-l dark:border-zinc-800 border-gray-200">
+    <div className="flex flex-col h-full bg-[#0a0a0a] border-l border-[#1a1a1a]">
       {/* Tab bar */}
-      <div className="flex border-b dark:border-zinc-800 border-gray-200 shrink-0">
+      <div className="flex border-b border-[#1a1a1a] shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={[
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors",
               activeTab === tab.id
-                ? "dark:text-zinc-100 text-gray-900 border-b-2 dark:border-emerald-500 border-emerald-600"
-                : "dark:text-zinc-500 text-gray-400 dark:hover:text-zinc-300 hover:text-gray-600",
+                ? "text-[#00FF41] border-b-2 border-[#00FF41]"
+                : "text-[#333] hover:text-[#00FF41]",
             ].join(" ")}
           >
             {tab.icon}
@@ -154,68 +153,55 @@ function RightTabPanel({
               state.tasks.map((task: any, i: number) => (
                 <div
                   key={i}
-                  className="rounded-md dark:bg-zinc-800 bg-white border dark:border-zinc-700 border-gray-200 px-3 py-2"
+                  className="border border-[#1a1a1a] px-3 py-2 bg-black"
                 >
-                  <p className="text-xs font-medium dark:text-zinc-200 text-gray-800 truncate">
-                    {task.title ?? task.name ?? `Task ${i + 1}`}
+                  <p className="text-xs font-bold text-white uppercase truncate">
+                    {task.title ?? task.name ?? `TASK ${i + 1}`}
                   </p>
                   {task.body && (
-                    <p className="text-xs dark:text-zinc-500 text-gray-400 mt-0.5 line-clamp-2">
+                    <p className="text-xs text-[#333] mt-0.5 line-clamp-2">
                       {task.body}
                     </p>
                   )}
                 </div>
               ))
             ) : (
-              <p className="text-xs dark:text-zinc-500 text-gray-400 text-center py-8">
-                Tasks will appear when Ralphy is ready.
+              <p className="text-xs text-[#333] uppercase tracking-wider text-center py-8">
+                TASKS WILL APPEAR WHEN RALPH IS READY.
               </p>
             )}
           </div>
         )}
         {activeTab === "code" && (
-          <p className="text-xs dark:text-zinc-500 text-gray-400 text-center py-8">
-            Code changes will appear here when the loop starts.
+          <p className="text-xs text-[#333] uppercase tracking-wider text-center py-8">
+            CODE CHANGES WILL APPEAR WHEN THE LOOP STARTS.
           </p>
         )}
       </div>
 
       {/* Action button */}
       {state.ready && (
-        <div className="p-4 border-t dark:border-zinc-800 border-gray-200 shrink-0 space-y-2">
+        <div className="p-4 border-t border-[#1a1a1a] shrink-0 space-y-2">
           {onReviewTasks ? (
-            <Button
+            <button
               onClick={onReviewTasks}
               disabled={busy}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-              size="lg"
+              className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Rocket className="size-4 mr-2" />
-              Review Tasks
-            </Button>
+              REVIEW TASKS
+            </button>
           ) : (
-            <Button
+            <button
               onClick={onRalphIt}
               disabled={busy}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-              size="lg"
+              className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {ralphItLoading ? (
-                <>
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                  Creating project...
-                </>
-              ) : (
-                <>
-                  <Rocket className="size-4 mr-2" />
-                  Just Ralph It
-                </>
-              )}
-            </Button>
+              {ralphItLoading ? "CREATING PROJECT..." : "JUST RALPH IT"}
+            </button>
           )}
           {slowLoad && !onReviewTasks && (
-            <p className="text-xs dark:text-zinc-500 text-gray-400 text-center">
-              This is taking a while...
+            <p className="text-xs text-[#333] uppercase tracking-wider text-center">
+              THIS IS TAKING A WHILE...
             </p>
           )}
         </div>
@@ -251,6 +237,18 @@ export function ChatPanel({
     return () => clearTimeout(t);
   }, [ralphItLoading]);
 
+  // Elapsed seconds counter while loading
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!state.loading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    setElapsedSeconds(0);
+    const interval = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [state.loading]);
+
   // Consume transient errors from hook state -> toast
   useEffect(() => {
     if (!state.error) return;
@@ -274,21 +272,19 @@ export function ChatPanel({
   // ----------------------------- sidebar mode -----------------------------
   if (mode === "sidebar") {
     return (
-      <div className="h-full flex flex-col dark:bg-zinc-900 bg-white border-r dark:border-zinc-800 border-gray-200 overflow-hidden">
+      <div className="h-full flex flex-col bg-[#0a0a0a] border-r border-[#1a1a1a] overflow-hidden">
         {/* Compact header */}
-        <div className="px-3 py-3 border-b dark:border-zinc-800 border-gray-200 shrink-0">
-          <h2 className="text-xs font-semibold flex items-center gap-1.5 dark:text-zinc-500 text-gray-400 uppercase tracking-wide">
-            <MessageCircle className="size-3.5" />
-            Chat
+        <div className="px-3 py-3 border-b border-[#1a1a1a] shrink-0">
+          <h2 className="text-xs font-bold text-[#333] uppercase tracking-wider">
+            CHAT
           </h2>
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-2">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-1">
           {state.messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full dark:text-zinc-500 text-gray-400 text-xs text-center py-6 px-2">
-              <MessageCircle className="size-6 mb-2 opacity-30" />
-              <p>No messages yet.</p>
+            <div className="flex flex-col justify-center h-full text-[#333] text-xs text-center py-6 px-2 uppercase tracking-wider">
+              <p>NO MESSAGES YET.</p>
             </div>
           )}
           {state.messages.map((msg, i) => {
@@ -301,40 +297,37 @@ export function ChatPanel({
             return (
               <div
                 key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className="border-b border-[#1a1a1a] py-2 flex items-start gap-1"
               >
-                <div
-                  className={`flex items-end gap-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
-                >
-                  {showUndo && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-5 shrink-0 dark:text-zinc-500 text-gray-400 opacity-60 hover:opacity-100"
-                      title="Undo last message"
-                      onClick={onUndo}
-                    >
-                      <Undo2 className="size-3" />
-                    </Button>
-                  )}
-                  <div
-                    className={`max-w-full rounded-md px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
+                {showUndo && (
+                  <button
+                    className="shrink-0 text-[#333] hover:text-[#00FF41] opacity-60 hover:opacity-100 mt-0.5"
+                    title="Undo last message"
+                    onClick={onUndo}
                   >
-                    {msg.content}
-                  </div>
-                </div>
+                    <Undo2 className="size-3" />
+                  </button>
+                )}
+                <p
+                  className={[
+                    "text-xs whitespace-pre-wrap break-words",
+                    msg.role === "user" ? "text-[#00FF41]" : "text-white",
+                  ].join(" ")}
+                >
+                  <span className={msg.role === "user" ? "text-[#00FF41]" : "text-white"}>
+                    {msg.role === "user" ? "> " : "$ "}
+                  </span>
+                  {msg.content}
+                </p>
               </div>
             );
           })}
           {state.loading && (
-            <div className="flex justify-start">
-              <div className="bg-muted rounded-md px-2.5 py-1.5">
-                <Loader2 className="size-3 animate-spin" />
-              </div>
+            <div className="py-2 border-b border-[#1a1a1a]">
+              <span className="text-xs text-white">
+                $ PROCESSING...<span className="animate-blink">_</span>
+                <span className="text-[#333] ml-2">{elapsedSeconds}s</span>
+              </span>
             </div>
           )}
         </div>
@@ -343,53 +336,44 @@ export function ChatPanel({
         {state.ready && (
           <div className="px-2 pb-2 shrink-0">
             {onReviewTasks ? (
-              <Button
+              <button
                 onClick={onReviewTasks}
                 disabled={busy}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
-                size="sm"
+                className="w-full border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Rocket className="size-3 mr-1" />
-                Review Tasks
-              </Button>
+                REVIEW TASKS
+              </button>
             ) : (
-              <Button
+              <button
                 onClick={onRalphIt}
                 disabled={busy}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
-                size="sm"
+                className="w-full border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {ralphItLoading ? (
-                  <Loader2 className="size-3 mr-1 animate-spin" />
-                ) : (
-                  <Rocket className="size-3 mr-1" />
-                )}
-                {ralphItLoading ? "Creating project..." : "Ralph It"}
-              </Button>
+                {ralphItLoading ? "CREATING..." : "RALPH IT"}
+              </button>
             )}
           </div>
         )}
 
         {/* Input */}
-        <div className="border-t dark:border-zinc-800 border-gray-200 p-2 shrink-0">
+        <div className="border-t border-[#1a1a1a] p-2 shrink-0">
           <div className="flex gap-1">
             <FileInput sessionId={state.sessionId} onSend={onSend} size="sm" />
-            <Input
+            <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-              placeholder="Message..."
+              placeholder="MSG..."
               disabled={busy}
-              className="flex-1 h-7 text-xs"
+              className="flex-1 h-7 text-xs bg-transparent border border-[#333] text-[#00FF41] placeholder:text-[#333] px-2 outline-none focus:border-[#00FF41] transition-colors"
             />
-            <Button
+            <button
               onClick={handleSend}
               disabled={busy || !input.trim()}
-              size="icon"
-              className="size-7 shrink-0"
+              className="size-7 shrink-0 border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="size-3" />
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -398,41 +382,37 @@ export function ChatPanel({
 
   // ----------------------------- full mode (two columns) -----------------
   return (
-    <div className="h-screen flex dark:bg-zinc-950 bg-white overflow-hidden">
+    <div className="h-screen flex bg-black overflow-hidden">
       {/* LEFT column: header + messages + input */}
-      <div className="flex-1 flex flex-col min-w-0 border-r dark:border-zinc-800 border-gray-200">
+      <div className="flex-1 flex flex-col min-w-0 border-r border-[#1a1a1a]">
         {/* Header */}
-        <div className="border-b dark:border-zinc-800 border-gray-200 px-6 py-4 shrink-0 flex items-start justify-between">
+        <div className="border-b border-[#1a1a1a] px-6 py-4 shrink-0 flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-mono font-bold dark:text-zinc-100 text-gray-900 flex items-center gap-2">
-              <MessageCircle className="size-5 text-emerald-500" />
-              justralph.it
+            <h1 className="text-xl font-bold uppercase tracking-[0.15em] text-white">
+              JUSTRALPH.IT
             </h1>
-            <p className="text-sm dark:text-zinc-500 text-gray-400 mt-1">
-              Describe your project. Ralphy will ask questions until he's confident enough to build it.
+            <p className="text-[#00FF41] text-xs uppercase tracking-widest mt-1">
+              DESCRIBE YOUR PROJECT. RALPH BUILDS IT.
             </p>
           </div>
           {onThemeToggle && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
+            <button
               onClick={onThemeToggle}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               title={theme === "dark" ? "Light mode" : "Dark mode"}
-              className="shrink-0"
+              className="shrink-0 text-[#00FF41] hover:opacity-70 transition-opacity"
             >
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </Button>
+            </button>
           )}
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-2">
           {state.messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full dark:text-zinc-500 text-gray-400">
-              <MessageCircle className="size-12 mb-4 opacity-30" />
-              <p className="text-lg font-medium">What do you want to build?</p>
-              <p className="text-sm mt-1">Describe your idea and Ralphy will take it from there.</p>
+            <div className="flex flex-col justify-center h-full text-[#333] uppercase tracking-wider text-center">
+              <p className="text-sm font-bold">WHAT DO YOU WANT TO BUILD?</p>
+              <p className="text-xs mt-1">DESCRIBE YOUR IDEA AND RALPH WILL TAKE IT FROM THERE.</p>
             </div>
           )}
           {state.messages.map((msg, i) => {
@@ -445,59 +425,61 @@ export function ChatPanel({
             return (
               <div
                 key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className="border-b border-[#1a1a1a] py-3 flex items-start gap-2"
               >
-                <div
-                  className={`flex items-end gap-1.5 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
-                >
-                  {showUndo && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6 shrink-0 dark:text-zinc-500 text-gray-400 opacity-60 hover:opacity-100"
-                      title="Undo last message"
-                      onClick={onUndo}
-                    >
-                      <Undo2 className="size-3.5" />
-                    </Button>
-                  )}
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
+                {showUndo && (
+                  <button
+                    className="shrink-0 text-[#333] hover:text-[#00FF41] opacity-60 hover:opacity-100 mt-0.5"
+                    title="Undo last message"
+                    onClick={onUndo}
                   >
-                    {msg.content}
-                  </div>
-                </div>
+                    <Undo2 className="size-3.5" />
+                  </button>
+                )}
+                <p
+                  className={[
+                    "text-sm whitespace-pre-wrap break-words w-full",
+                    msg.role === "user" ? "text-[#00FF41]" : "text-white",
+                  ].join(" ")}
+                >
+                  <span className="font-bold mr-1">
+                    {msg.role === "user" ? "> " : "$ "}
+                  </span>
+                  {msg.content}
+                </p>
               </div>
             );
           })}
           {state.loading && (
-            <div className="flex justify-start">
-              <div className="bg-muted rounded-lg px-4 py-2.5">
-                <Loader2 className="size-4 animate-spin" />
-              </div>
+            <div className="py-3 border-b border-[#1a1a1a]">
+              <span className="text-sm text-white">
+                $ PROCESSING...<span className="animate-blink">_</span>
+                <span className="text-[#333] text-xs ml-2">{elapsedSeconds}s</span>
+              </span>
             </div>
           )}
         </div>
 
         {/* Input bar */}
-        <div className="border-t dark:border-zinc-800 border-gray-200 p-4 shrink-0">
-          <div className="flex gap-2">
+        <div className="border-t border-[#1a1a1a] p-4 shrink-0">
+          <div className="flex gap-2 items-center">
             <FileInput sessionId={state.sessionId} onSend={onSend} />
-            <Input
+            <span className="text-[#00FF41] font-bold text-sm shrink-0">&gt;</span>
+            <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-              placeholder="Describe your project..."
+              placeholder="DESCRIBE YOUR PROJECT..."
               disabled={busy}
-              className="flex-1"
+              className="flex-1 bg-transparent border border-[#333] text-[#00FF41] placeholder:text-[#333] px-3 py-2 text-sm outline-none focus:border-[#00FF41] transition-colors"
             />
-            <Button onClick={handleSend} disabled={busy || !input.trim()} size="icon">
+            <button
+              onClick={handleSend}
+              disabled={busy || !input.trim()}
+              className="border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors px-3 py-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               <Send className="size-4" />
-            </Button>
+            </button>
           </div>
         </div>
       </div>
