@@ -1,0 +1,58 @@
+## TDD
+
+Choose performant testing tools and frameworks. Tests accumulate over the
+project's lifetime; slow test suites kill the TDD cycle.
+
+Prioritize test quality over worthless quantity.
+
+Follow outside-in TDD: integration test first, then unit red-green-refactor.
+
+Approximately follow the testing pyramid: 70% unit, 20% integration, 10% E2E.
+
+
+## Documentation
+
+Document the non-obvious. Be concise.
+
+When you update code, update existing docs correspondingly.
+
+Documentation goes in AGENTS.md (per directory) or as docstrings.
+
+Everything not in the file system will be lost. Write it down.
+
+
+## Coding Principles
+
+Beautiful is better than ugly.
+Explicit is better than implicit.
+Simple is better than complex.
+Complex is better than complicated.
+Flat is better than nested.
+Sparse is better than dense.
+Readability counts.
+Special cases aren't special enough to break the rules.
+Although practicality beats purity.
+Errors should never pass silently.
+Unless explicitly silenced.
+In the face of ambiguity, refuse the temptation to guess.
+There should be one-- and preferably only one --obvious way to do it.
+If the implementation is hard to explain, it's a bad idea.
+If the implementation is easy to explain, it may be a good idea.
+Namespaces are one honking great idea -- let's do more of those!
+
+
+## Project Tooling
+
+Python 3.13+.
+Use uv, not pip.
+Use bun, not node/npm.
+Use ruff for linting and formatting.
+
+
+## Commit Messages
+
+Use conventional commits.
+Mostly lowercase.
+Abbreviate when obvious (deps, cfg, init, impl, refactor, rm, mv, etc.).
+Keep subjects short.
+If you include a body, keep it concise.
