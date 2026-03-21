@@ -9,13 +9,67 @@ import { API_URL, WS_URL } from "@/lib/config";
 import { ChatPanel } from "./ChatPanel";
 import { TaskPreview, type PreviewTask } from "./TaskPreview";
 import { StatusBar } from "./StatusBar";
+import { LoopStateBar } from "./LoopStateBar";
 import { AgentOutput } from "./AgentOutput";
 import { HelpPanel } from "./HelpPanel";
 import { RightPanel } from "./RightPanel";
 import { SessionSidebar, type SessionEntry } from "./SessionSidebar";
 import { SessionTitle } from "./SessionTitle";
-import { MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Terminal, GripVertical } from "lucide-react";
 import type { Theme } from "@/hooks/useTheme";
+
+const PANEL_STORAGE_KEY = "ralph_panel_width";
+const PANEL_MIN = 200;
+const PANEL_MAX = 500;
+const PANEL_DEFAULT = 280;
+
+function useResizablePanel() {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem(PANEL_STORAGE_KEY);
+      if (stored) {
+        const val = Number(stored);
+        if (val >= PANEL_MIN && val <= PANEL_MAX) return val;
+      }
+    } catch { /* ignore */ }
+    return PANEL_DEFAULT;
+  });
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  useEffect(() => {
+    try { localStorage.setItem(PANEL_STORAGE_KEY, String(width)); } catch { /* ignore */ }
+  }, [width]);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    startX.current = e.clientX;
+    startW.current = width;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      // Dragging left increases panel width (panel is on the right)
+      const delta = startX.current - ev.clientX;
+      const next = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startW.current + delta));
+      setWidth(next);
+    };
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [width]);
+
+  return { width, onMouseDown };
+}
 
 type Phase = "chat" | "preview" | "loop";
 
@@ -40,10 +94,23 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
   // Loading state for non-main branch sends (main branch uses chatbot.state.loading).
   const [branchLoading, setBranchLoading] = useState(false);
 
-  // Derived chat state: swap in active branch messages + loading when not on main branch.
+  // Derived chat state: swap in active branch messages + snapshot state when not on main branch.
   const displayState = branching.isMainBranch
     ? chatbot.state
-    : { ...chatbot.state, messages: branching.activeMessages, loading: branchLoading };
+    : {
+        ...chatbot.state,
+        messages: branching.activeMessages,
+        loading: branchLoading,
+        // Restore the branch's snapshotted scoring state instead of showing main's
+        ...(branching.activeBranchSnapshot && {
+          confidence: branching.activeBranchSnapshot.confidence,
+          relevance: branching.activeBranchSnapshot.relevance,
+          weightedReadiness: branching.activeBranchSnapshot.weightedReadiness,
+          questionCount: branching.activeBranchSnapshot.questionCount,
+          phase: branching.activeBranchSnapshot.phase,
+          ready: branching.activeBranchSnapshot.ready,
+        }),
+      };
 
   /**
    * Send handler that is branch-aware:
@@ -74,6 +141,17 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
       const data = await resp.json();
       const assistantMsg = { role: "assistant" as const, content: data.message, timestamp: Date.now() };
       branching.setActiveBranchMessages([...withUser, assistantMsg]);
+      // Update branch snapshot with latest scoring from this response
+      if (data.confidence) {
+        branching.updateActiveBranchSnapshot({
+          confidence: data.confidence,
+          relevance: data.relevance ?? branching.activeBranchSnapshot?.relevance ?? chatbot.state.relevance,
+          weightedReadiness: data.weighted_readiness ?? 0,
+          questionCount: data.question_count ?? 0,
+          phase: data.phase ?? 1,
+          ready: data.ready ?? false,
+        });
+      }
     } catch {
       // leave branch with just user message on error
     } finally {
@@ -82,17 +160,38 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
   }, [branching, chatbot.sendMessage, chatbot.state.sessionId]);
 
   const handleBranchFrom = useCallback((msgIndex: number) => {
-    branching.branchFrom(chatbot.state.messages, msgIndex);
-  }, [branching, chatbot.state.messages]);
+    // Snapshot scoring state at fork point so it can be restored on branch switch
+    const snapshot = {
+      confidence: chatbot.state.confidence,
+      relevance: chatbot.state.relevance,
+      weightedReadiness: chatbot.state.weightedReadiness,
+      questionCount: chatbot.state.questionCount,
+      phase: chatbot.state.phase,
+      ready: chatbot.state.ready,
+    };
+    branching.branchFrom(chatbot.state.messages, msgIndex, snapshot);
+  }, [branching, chatbot.state]);
 
   const [loopState, dispatch] = useEventReducer();
   const [helpTaskId, setHelpTaskId] = useState<string | null>(null);
   // Sidebar starts collapsed in loop phase
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Terminal starts collapsed -- Code tab is primary
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  // Resizable right panel
+  const rightPanel = useResizablePanel();
+  // Mobile: which panel is visible when stacked
+  const [mobileTab, setMobileTab] = useState<"main" | "right">("main");
   // Separate loading flag for the ralph-it transition
   const [ralphItLoading, setRalphItLoading] = useState(false);
   const { toast } = useToast();
   const sound = useSoundNotification();
+
+  /** Rewind: fork a new branch from the given message index and switch to it. */
+  const handleRewind = useCallback((msgIndex: number) => {
+    branching.branchFrom(chatbot.state.messages, msgIndex);
+    toast("Rewound to message -- new branch created", "info");
+  }, [branching, chatbot.state.messages, toast]);
   // User-visible session name; updated optimistically on rename
   const [sessionName, setSessionName] = useState("");
 
@@ -192,7 +291,10 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
       testing: "testing strategy",
       edge_cases: "edge cases and error handling",
     };
-    chatbot.sendMessage(`Let's talk more about ${labels[dim] ?? dim}.`);
+    const score = (chatbot.state.confidence as Record<string, number>)[dim] ?? 0;
+    chatbot.sendMessage(
+      `What additional details can I provide about ${labels[dim] ?? dim}? Current coverage: ${score}%.`
+    );
     setSidebarOpen(true);
   }, [chatbot]);
 
@@ -229,8 +331,11 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
             activeBranchId={branching.activeBranchId}
             onBranchFrom={handleBranchFrom}
             onBranchSwitch={branching.switchBranch}
+            onRewind={handleRewind}
+            loopActive={false}
             onNewChat={chatbot.newChat}
             wsStatus={wsState}
+            onDimensionClick={handleDimensionClick}
           />
         </div>
       </div>
@@ -278,6 +383,20 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
         <span>TOKENS: <span className="text-primary">{loopState.totalTokens?.toLocaleString() ?? "0"}</span></span>
       </div>
 
+      {/* Loop state / heartbeat indicator strip */}
+      <LoopStateBar
+        loopState={loopState.loopState}
+        currentTaskId={loopState.currentTaskId}
+        currentTaskElapsed={loopState.currentTaskElapsed}
+        taskCounts={loopState.taskCounts}
+        lastHeartbeatAt={loopState.lastHeartbeatAt}
+        loopElapsedSeconds={loopState.loopElapsedSeconds}
+        loopStartTime={loopState.loopStartTime}
+        blockedTaskIds={loopState.blockedTaskIds}
+        sessionId={sessionId}
+        onError={(msg) => toast(msg, "error")}
+      />
+
       {/* Status bar */}
       <StatusBar
         loopStatus={loopState.loopStatus}
@@ -324,6 +443,8 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                   onRunTool={chatbot.runTool}
                   onClearToolResult={chatbot.clearToolResult}
                   onRetry={chatbot.retryMessage}
+                  onRewind={handleRewind}
+                  loopActive={loopState.loopStatus === "running"}
                   onNewChat={chatbot.newChat}
                   wsStatus={wsState}
                 />
@@ -364,11 +485,40 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
           )}
         </div>
 
-        {/* Main area: agent output + right panel -- borders separate panels, no gaps */}
-        <div className="flex-1 grid grid-cols-[1fr_280px] gap-0 overflow-hidden min-w-0">
-          {/* Center: agent output + optional help panel */}
-          <div className="flex flex-col gap-0 overflow-hidden border-r border-border">
-            <AgentOutput lines={loopState.agentOutputLines} />
+        {/* Main area: center content + right panel */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-w-0">
+          {/* Mobile tab switcher (visible below md) */}
+          <div className="flex md:hidden border-b border-border shrink-0">
+            <button
+              onClick={() => setMobileTab("main")}
+              className={`flex-1 py-2 text-xs font-mono uppercase tracking-wider transition-colors ${
+                mobileTab === "main"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Terminal
+            </button>
+            <button
+              onClick={() => setMobileTab("right")}
+              className={`flex-1 py-2 text-xs font-mono uppercase tracking-wider transition-colors ${
+                mobileTab === "right"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Panel
+            </button>
+          </div>
+
+          {/* Center: collapsible terminal drawer + help panel */}
+          <div className={`flex-1 flex flex-col gap-0 overflow-hidden border-r border-border ${
+            mobileTab !== "main" ? "hidden md:flex" : "flex"
+          }`}>
+            {/* Main content area (fills remaining space) */}
+            <div className="flex-1 overflow-hidden" />
+
+            {/* Help panel when a task needs help */}
             {helpTaskId && (
               <HelpPanel
                 sessionId={sessionId}
@@ -377,23 +527,60 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                 onError={(msg) => toast(msg, "error")}
               />
             )}
+
+            {/* Collapsible terminal drawer */}
+            <div className="flex flex-col shrink-0 border-t border-border">
+              <button
+                onClick={() => setTerminalOpen(!terminalOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors bg-black/50"
+              >
+                <Terminal className="size-3" />
+                <span>TERMINAL OUTPUT</span>
+                <span className="text-primary ml-1">{loopState.agentOutputLines.length}</span>
+                {terminalOpen
+                  ? <ChevronDown className="size-3 ml-auto" />
+                  : <ChevronUp className="size-3 ml-auto" />}
+              </button>
+              {terminalOpen && (
+                <div className="h-[300px] overflow-hidden">
+                  <AgentOutput lines={loopState.agentOutputLines} />
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Right: tabbed confidence + tasks + code */}
-          <RightPanel
-            chatState={chatbot.state}
-            tasks={loopState.tasks}
-            loopStarted={phase === "loop"}
-            sessionId={sessionId}
-            onDimensionClick={handleDimensionClick}
-            onRunTool={chatbot.runTool}
-            onClearToolResult={chatbot.clearToolResult}
-            onTaskUpdate={(taskId, patch) => {
-              if (patch.status === "open") {
-                dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
-              }
-            }}
-          />
+          {/* Drag handle (hidden on mobile) */}
+          <div
+            className="hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/20 active:bg-primary/30 transition-colors group"
+            onMouseDown={rightPanel.onMouseDown}
+          >
+            <GripVertical className="size-3 text-muted-foreground group-hover:text-primary transition-colors" />
+          </div>
+
+          {/* Right: tabbed confidence + tasks + code (with live diffs) */}
+          <div
+            className={`shrink-0 overflow-hidden ${
+              mobileTab !== "right" ? "hidden md:block" : "block"
+            }`}
+            style={{ width: mobileTab === "right" ? "100%" : rightPanel.width }}
+          >
+            <RightPanel
+              chatState={chatbot.state}
+              tasks={loopState.tasks}
+              taskDiffs={loopState.taskDiffs}
+              loopStarted={phase === "loop"}
+              sessionId={sessionId}
+              githubUrl={loopState.githubUrl}
+              onDimensionClick={handleDimensionClick}
+              onRunTool={chatbot.runTool}
+              onClearToolResult={chatbot.clearToolResult}
+              onTaskUpdate={(taskId, patch) => {
+                if (patch.status === "open") {
+                  dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
+                }
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>

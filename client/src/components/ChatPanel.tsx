@@ -24,6 +24,7 @@ import {
   Pin,
   PinOff,
   SquarePen,
+  History,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -97,10 +98,16 @@ type ChatPanelProps = {
   /** Called with the 0-based index of the user message to branch from. */
   onBranchFrom?: (msgIndex: number) => void;
   onBranchSwitch?: (id: string) => void;
+  /** Rewind conversation to a specific message index (forks a new branch). */
+  onRewind?: (msgIndex: number) => void;
+  /** Whether the loop is actively running (disables rewind). */
+  loopActive?: boolean;
   /** Start a fresh chat session. */
   onNewChat?: () => void;
   /** WebSocket connection status for the indicator dot. */
   wsStatus?: WSState;
+  /** Called when a confidence dimension bar is clicked. */
+  onDimensionClick?: (dimension: string) => void;
 };
 
 /**
@@ -218,6 +225,51 @@ function BranchButton({
   );
 }
 
+/** Rewind button: forks a new branch from this message point. Disabled during loop. */
+function RewindButton({
+  onClick,
+  disabled,
+  hasTasksAfter,
+  size = "default",
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  hasTasksAfter?: boolean;
+  size?: "default" | "sm";
+}) {
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+  const [confirming, setConfirming] = useState(false);
+
+  if (disabled) return null;
+
+  const handleClick = () => {
+    if (hasTasksAfter && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    setConfirming(false);
+    onClick();
+  };
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        title={confirming ? "Tasks will be discarded -- click again to confirm" : "Rewind to here"}
+        className={[
+          "shrink-0 opacity-0 group-hover:opacity-100 transition-opacity",
+          confirming
+            ? "text-destructive opacity-100 animate-pulse"
+            : "text-muted-foreground hover:text-primary",
+        ].join(" ")}
+        onBlur={() => setConfirming(false)}
+      >
+        <History className={iconClass} />
+      </button>
+    </>
+  );
+}
+
 /** Pin button: toggles pin state. Always visible when pinned; shows on hover otherwise. */
 function PinButton({
   pinned,
@@ -312,15 +364,39 @@ function PinsDropdown({
   );
 }
 
-/** Shared file upload handler used in both modes. */
+// Allowed file extensions for attachment staging.
+const ALLOWED_EXTENSIONS = new Set([
+  // images
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "ico",
+  // text / docs
+  "txt", "md", "csv", "json", "yaml", "yml", "toml", "xml", "html", "css",
+  // code
+  "js", "ts", "jsx", "tsx", "py", "rb", "go", "rs", "java", "c", "cpp", "h",
+  "sh", "bash", "zsh", "sql", "graphql", "proto", "dockerfile",
+  // config
+  "env", "ini", "cfg", "conf", "lock",
+  // archives (small)
+  "pdf",
+]);
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/** Validate a file for staging. Returns error string or null if valid. */
+function validateFile(file: File): string | null {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_EXTENSIONS.has(ext)) return `Unsupported file type: .${ext}`;
+  if (file.size > MAX_FILE_SIZE) return `File too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`;
+  return null;
+}
+
+/** Shared file picker button. Stages files instead of uploading immediately. */
 function FileInput({
-  sessionId,
-  onSend,
+  onFilesSelected,
   size = "default",
+  disabled = false,
 }: {
-  sessionId: string | null;
-  onSend: (msg: string) => void;
+  onFilesSelected: (files: File[]) => void;
   size?: "default" | "sm";
+  disabled?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const sizeClass = size === "sm" ? "size-7 shrink-0" : "size-8 shrink-0";
@@ -332,11 +408,11 @@ function FileInput({
         className={[
           sizeClass,
           "border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors flex items-center justify-center bg-transparent",
-          !sessionId ? "opacity-40 cursor-not-allowed" : "",
+          disabled ? "opacity-40 cursor-not-allowed" : "",
         ].join(" ")}
         onClick={() => fileRef.current?.click()}
-        title="Attach files"
-        disabled={!sessionId}
+        title="Attach files (images, text, code -- max 10MB)"
+        disabled={disabled}
       >
         <Paperclip className={iconClass} />
       </button>
@@ -345,17 +421,10 @@ function FileInput({
         type="file"
         multiple
         className="hidden"
-        onChange={async (e) => {
-          if (!sessionId || !e.target.files) return;
-          for (const file of Array.from(e.target.files)) {
-            const form = new FormData();
-            form.append("file", file);
-            await fetch(`${API_URL}/api/sessions/${sessionId}/uploads`, {
-              method: "POST",
-              body: form,
-            });
-          }
-          onSend(`[Attached ${e.target.files.length} file(s)]`);
+        accept={Array.from(ALLOWED_EXTENSIONS).map((e) => `.${e}`).join(",")}
+        onChange={(e) => {
+          if (!e.target.files) return;
+          onFilesSelected(Array.from(e.target.files));
           e.target.value = "";
         }}
       />
@@ -372,6 +441,7 @@ function RightTabPanel({
   slowLoad,
   busy,
   onRunTool,
+  onDimensionClick,
 }: {
   state: ChatState;
   onRalphIt: () => void;
@@ -380,6 +450,7 @@ function RightTabPanel({
   slowLoad: boolean;
   busy: boolean;
   onRunTool?: (tool: ToolName, context?: string) => void;
+  onDimensionClick?: (dimension: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<RightTab>("confidence");
 
@@ -408,7 +479,7 @@ function RightTabPanel({
             {tab.icon}
             {tab.label}
             {tab.id === "tools" && state.toolResult && (
-              <span className="size-1.5 rounded-full bg-[#FFaa00] ml-1" />
+              <span className="size-1.5 rounded-full bg-[var(--color-warning)] ml-1" />
             )}
           </button>
         ))}
@@ -424,6 +495,7 @@ function RightTabPanel({
             questionCount={state.questionCount}
             phase={state.phase}
             ready={state.ready}
+            onDimensionClick={onDimensionClick}
           />
         )}
         {activeTab === "tasks" && (
@@ -578,9 +650,12 @@ export function ChatPanel({
   activeBranchId = "main",
   onBranchFrom,
   onBranchSwitch,
+  onRewind,
+  loopActive,
   user,
   onNewChat,
   wsStatus,
+  onDimensionClick,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -663,10 +738,26 @@ export function ChatPanel({
     return () => window.removeEventListener("keydown", handler);
   }, [onNewChat]);
 
-  // Drag-and-drop state
+  // Drag-and-drop + file staging state
   const [isDragging, setIsDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const dragCounterRef = useRef(0);
+
+  /** Validate and stage files (used by both FileInput click and drag-and-drop). */
+  const stageFiles = useCallback((files: File[]) => {
+    const accepted: File[] = [];
+    for (const file of files) {
+      const err = validateFile(file);
+      if (err) {
+        toast(err, "error");
+      } else {
+        accepted.push(file);
+      }
+    }
+    if (accepted.length > 0) {
+      setPendingFiles((prev) => [...prev, ...accepted]);
+    }
+  }, [toast]);
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -681,46 +772,55 @@ export function ChatPanel({
     dragCounterRef.current -= 1;
     if (dragCounterRef.current === 0) setIsDragging(false);
   };
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current = 0;
     setIsDragging(false);
     const files = Array.from(e.dataTransfer.files);
-    if (!files.length) return;
-    if (!state.sessionId) {
-      setPendingFiles((prev) => [...prev, ...files]);
-      return;
-    }
-    const uploaded: File[] = [];
-    for (const file of files) {
-      const form = new FormData();
-      form.append("file", file);
-      try {
-        await fetch(`${API_URL}/api/sessions/${state.sessionId}/uploads`, {
-          method: "POST",
-          body: form,
-        });
-        uploaded.push(file);
-      } catch {
-        // best-effort
-      }
-    }
-    if (uploaded.length > 0) {
-      onSend(`[Attached ${uploaded.length} file(s): ${uploaded.map((f) => f.name).join(", ")}]`);
-    }
+    if (files.length > 0) stageFiles(files);
   };
   const removePendingFile = (idx: number) => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const msg = input.trim();
-    if (!msg || state.loading) return;
+    if ((!msg && pendingFiles.length === 0) || state.loading) return;
+
+    const filesToUpload = [...pendingFiles];
+    const textPart = msg;
+
     setInput("");
     resetHeight(textareaRef.current);
     resetHeight(sidebarTextareaRef.current);
     setPendingFiles([]);
-    onSend(msg);
+
+    // Upload staged files if we have a session
+    let attachmentPrefix = "";
+    if (filesToUpload.length > 0 && state.sessionId) {
+      const uploaded: string[] = [];
+      for (const file of filesToUpload) {
+        const form = new FormData();
+        form.append("file", file);
+        try {
+          await fetch(`${API_URL}/api/sessions/${state.sessionId}/uploads`, {
+            method: "POST",
+            body: form,
+          });
+          uploaded.push(file.name);
+        } catch {
+          // best-effort
+        }
+      }
+      if (uploaded.length > 0) {
+        attachmentPrefix = `[Attached ${uploaded.length} file(s): ${uploaded.join(", ")}] `;
+      }
+    }
+
+    const finalMessage = attachmentPrefix + textPart;
+    if (finalMessage.trim()) {
+      onSend(finalMessage.trim());
+    }
   };
 
   const busy = state.loading || ralphItLoading;
@@ -779,6 +879,7 @@ export function ChatPanel({
             branches={branches}
             activeBranchId={activeBranchId}
             onSwitch={onBranchSwitch}
+            mainReadiness={state.weightedReadiness}
             size="sm"
           />
         )}
@@ -853,6 +954,14 @@ export function ChatPanel({
                 {canBranch && (
                   <BranchButton onClick={() => onBranchFrom(i)} size="sm" />
                 )}
+                {onRewind && msg.role === "user" && (
+                  <RewindButton
+                    onClick={() => onRewind(i)}
+                    disabled={loopActive}
+                    hasTasksAfter={state.ready}
+                    size="sm"
+                  />
+                )}
                 <PinButton pinned={pinned} onToggle={() => togglePin(id)} size="sm" />
                 <CopyButton text={msg.content} size="sm" />
               </div>
@@ -899,7 +1008,7 @@ export function ChatPanel({
         {/* Input */}
         <div className="border-t border-border p-2 shrink-0">
           <div className="flex gap-1 items-end">
-            <FileInput sessionId={state.sessionId} onSend={onSend} size="sm" />
+            <FileInput onFilesSelected={stageFiles} size="sm" disabled={busy} />
             <textarea
               ref={sidebarTextareaRef}
               value={input}
@@ -914,7 +1023,7 @@ export function ChatPanel({
               }}
               placeholder="MSG..."
               disabled={busy}
-              className="flex-1 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 py-1 outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"
+              className="flex-1 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 py-1 outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[50vh] leading-5"
             />
             <button
               onClick={handleSend}
@@ -1009,7 +1118,28 @@ export function ChatPanel({
             branches={branches}
             activeBranchId={activeBranchId}
             onSwitch={onBranchSwitch}
+            mainReadiness={state.weightedReadiness}
           />
+        )}
+
+        {/* Conversation timeline indicator */}
+        {state.messages.length > 0 && mode === "full" && (
+          <div className="flex items-center gap-2 px-4 py-1 border-b border-border bg-background/50">
+            <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary/40 rounded-full transition-all duration-300"
+                style={{
+                  width: state.ready
+                    ? "100%"
+                    : `${Math.min(100, (state.messages.filter((m) => m.role === "user").length / 10) * 100)}%`,
+                }}
+              />
+            </div>
+            <span className="text-[9px] font-mono text-muted-foreground tabular-nums shrink-0">
+              {state.messages.filter((m) => m.role === "user").length} msgs
+              {state.weightedReadiness > 0 && ` / ${Math.round(state.weightedReadiness)}%`}
+            </span>
+          </div>
         )}
 
         {/* Messages with drag-and-drop overlay */}
@@ -1096,6 +1226,13 @@ export function ChatPanel({
                 {canBranch && (
                   <BranchButton onClick={() => onBranchFrom(i)} />
                 )}
+                {onRewind && msg.role === "user" && (
+                  <RewindButton
+                    onClick={() => onRewind(i)}
+                    disabled={loopActive}
+                    hasTasksAfter={state.ready}
+                  />
+                )}
                 <PinButton pinned={pinned} onToggle={() => togglePin(id)} />
                 <CopyButton text={msg.content} />
               </div>
@@ -1133,29 +1270,44 @@ export function ChatPanel({
 
         {/* Pending file chips (from drag-and-drop before session exists) */}
         {pendingFiles.length > 0 && (
-          <div className="px-4 pt-2 flex flex-wrap gap-1 shrink-0">
-            {pendingFiles.map((f, idx) => (
-              <span
-                key={idx}
-                className="flex items-center gap-1 text-[10px] font-mono border border-border bg-card px-2 py-0.5 text-muted-foreground"
-              >
-                {f.name}
-                <button
-                  onClick={() => removePendingFile(idx)}
-                  className="hover:text-destructive ml-0.5"
-                  title="Remove"
+          <div className="px-4 pt-2 flex flex-wrap gap-1.5 shrink-0">
+            {pendingFiles.map((f, idx) => {
+              const isImage = f.type.startsWith("image/");
+              return (
+                <span
+                  key={idx}
+                  className="flex items-center gap-1.5 text-[10px] font-mono border border-border bg-card px-2 py-1 text-muted-foreground group"
                 >
-                  &times;
-                </button>
-              </span>
-            ))}
+                  {isImage ? (
+                    <img
+                      src={URL.createObjectURL(f)}
+                      alt={f.name}
+                      className="size-5 object-cover border border-border"
+                    />
+                  ) : (
+                    <Paperclip className="size-3 text-muted-foreground" />
+                  )}
+                  <span className="max-w-[120px] truncate">{f.name}</span>
+                  <span className="text-muted-foreground/50">
+                    {f.size < 1024 ? `${f.size}B` : `${(f.size / 1024).toFixed(0)}KB`}
+                  </span>
+                  <button
+                    onClick={() => removePendingFile(idx)}
+                    className="hover:text-destructive ml-0.5 opacity-50 group-hover:opacity-100"
+                    title="Remove"
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
           </div>
         )}
 
         {/* Input bar */}
         <div className="border-t border-border p-4 shrink-0">
           <div className="flex gap-2 items-end">
-            <FileInput sessionId={state.sessionId} onSend={onSend} />
+            <FileInput onFilesSelected={stageFiles} disabled={busy} />
             <span className="text-primary font-bold text-sm shrink-0 pb-2">&gt;</span>
             <textarea
               ref={textareaRef}
@@ -1171,7 +1323,7 @@ export function ChatPanel({
               }}
               placeholder="DESCRIBE YOUR PROJECT..."
               disabled={busy}
-              className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"
+              className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[50vh] leading-5"
             />
             <button
               onClick={handleSend}
@@ -1199,6 +1351,7 @@ export function ChatPanel({
           slowLoad={slowLoad}
           busy={busy}
           onRunTool={onRunTool}
+          onDimensionClick={onDimensionClick}
         />
       </div>
     </div>
