@@ -140,6 +140,7 @@ class Loop(Command):
             dest="max_iters",
             action="store_const",
             const=1,
+            default=argparse.SUPPRESS,
             help="Run a single iteration (alias for --max-iters 1)",
         )
 
