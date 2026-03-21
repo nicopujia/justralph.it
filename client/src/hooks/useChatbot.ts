@@ -15,14 +15,28 @@ export type Confidence = {
   edge_cases: number;
 };
 
+export type Relevance = {
+  functional: number;
+  technical_stack: number;
+  data_model: number;
+  auth: number;
+  deployment: number;
+  testing: number;
+  edge_cases: number;
+};
+
 export type ChatState = {
   messages: ChatMessage[];
   confidence: Confidence;
+  relevance: Relevance;
   ready: boolean;
   loading: boolean;
   sessionId: string | null;
   tasks: any[] | null;
   project: any | null;
+  weightedReadiness: number;
+  questionCount: number;
+  phase: number;
 };
 
 import { API_URL } from "@/lib/config";
@@ -38,15 +52,29 @@ const EMPTY_CONFIDENCE: Confidence = {
   edge_cases: 0,
 };
 
+const EMPTY_RELEVANCE: Relevance = {
+  functional: 1.0,
+  technical_stack: 1.0,
+  data_model: 1.0,
+  auth: 1.0,
+  deployment: 1.0,
+  testing: 1.0,
+  edge_cases: 1.0,
+};
+
 export function useChatbot() {
   const [state, setState] = useState<ChatState>({
     messages: [],
     confidence: EMPTY_CONFIDENCE,
+    relevance: EMPTY_RELEVANCE,
     ready: false,
     loading: false,
     sessionId: null,
     tasks: null,
     project: null,
+    weightedReadiness: 0,
+    questionCount: 0,
+    phase: 1,
   });
 
   const createSession = useCallback(async () => {
@@ -94,9 +122,13 @@ export function useChatbot() {
             { role: "assistant", content: data.message },
           ],
           confidence: data.confidence ?? s.confidence,
+          relevance: data.relevance ?? s.relevance,
           ready: data.ready ?? false,
           tasks: data.tasks ?? null,
           project: data.project ?? null,
+          weightedReadiness: data.weighted_readiness ?? s.weightedReadiness,
+          questionCount: data.question_count ?? s.questionCount,
+          phase: data.phase ?? s.phase,
           loading: false,
         }));
       } catch (err) {
