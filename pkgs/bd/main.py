@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Self
 
 logger = logging.getLogger(__name__)
@@ -112,13 +113,118 @@ class Issue:
         )
 
 
-def get_next_ready_issue() -> Issue | None:
+def get_next_ready_issue(*, cwd: Path | None = None) -> Issue | None:
     """Get the next open issue with no active blockers.
 
+    Args:
+        cwd: Working directory for the bd CLI (session-scoped).
+
     Returns:
-        The first ready issue, or None if no ready issues exist
+        The first ready issue, or None if no ready issues exist.
     """
-    result = _run_bd("ready", "--json", "--limit", "1")
+    result = _run_bd("ready", "--json", "--limit", "1", cwd=cwd)
+    if result is None:
+        return
+
+    return _parse_first_issue(result.stdout)
+
+
+def create_issue(
+    title: str,
+    *,
+    description: str | None = None,
+    acceptance: str | None = None,
+    design: str | None = None,
+    notes: str | None = None,
+    assignee: str | None = None,
+    priority: int | None = None,
+    issue_type: str | None = None,
+    labels: list[str] | None = None,
+    parent: str | None = None,
+    deps: list[str] | None = None,
+    external_ref: str | None = None,
+    cwd: Path | None = None,
+) -> Issue:
+    """Create a new Beads issue.
+
+    Args:
+        title: Issue title (required).
+        cwd: Working directory for the bd CLI (session-scoped).
+        **kwargs: Optional issue fields mapped to bd create flags.
+
+    Returns:
+        The created Issue.
+
+    Raises:
+        RuntimeError: If the bd create command fails.
+    """
+    args: list[str] = ["create", title, "--json"]
+    _append_flag(args, "--description", description)
+    _append_flag(args, "--acceptance", acceptance)
+    _append_flag(args, "--design", design)
+    _append_flag(args, "--notes", notes)
+    _append_flag(args, "--assignee", assignee)
+    _append_flag(args, "--priority", priority)
+    _append_flag(args, "--type", issue_type)
+    _append_flag(args, "--external-ref", external_ref)
+    _append_flag(args, "--parent", parent)
+    if labels is not None:
+        args.extend(["--labels", ",".join(labels)])
+    if deps is not None:
+        args.extend(["--deps", ",".join(deps)])
+
+    result = _run_bd(*args, cwd=cwd)
+    if result is None:
+        raise RuntimeError(f"Failed to create issue: {title}")
+
+    data = json.loads(result.stdout.strip())
+    issue = Issue.parse(data)
+    logger.info("Created issue %s: %s", issue.id, issue.title)
+    return issue
+
+
+def list_issues(*, status: str | None = None, cwd: Path | None = None) -> list[Issue]:
+    """List all Beads issues.
+
+    Args:
+        status: Optional status filter.
+        cwd: Working directory for the bd CLI (session-scoped).
+
+    Returns:
+        List of Issues (empty list if none or on error).
+    """
+    args: list[str] = ["list", "--json"]
+    _append_flag(args, "--status", status)
+
+    result = _run_bd(*args, cwd=cwd)
+    if result is None:
+        return []
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        return []
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        logger.error("Failed to parse bd list output as JSON")
+        return []
+
+    items = data if isinstance(data, list) else [data]
+    return [Issue.parse(item) for item in items]
+
+
+def get_issue(issue_id: str, *, cwd: Path | None = None) -> Issue | None:
+    """Get a single issue by ID.
+
+    Args:
+        issue_id: The issue ID (e.g., 'bd-123').
+        cwd: Working directory for the bd CLI (session-scoped).
+
+    Returns:
+        The Issue, or None if not found.
+    """
+    result = _run_bd("show", issue_id, "--json", cwd=cwd)
     if result is None:
         return
 
@@ -129,54 +235,99 @@ def get_next_ready_issue() -> Issue | None:
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        logger.error("Failed to parse bd ready output as JSON")
+        logger.error("Failed to parse bd show output as JSON")
         return
 
-    # bd ready --json returns a list of issues
-    issues = data if isinstance(data, list) else [data]
-    if not issues:
-        return
-
-    return Issue.parse(issues[0])
+    return Issue.parse(data)
 
 
 def update_issue(
     issue_id: str,
+    *,
     status: str | None = None,
     assignee: str | None = None,
+    priority: int | None = None,
+    description: str | None = None,
+    acceptance: str | None = None,
+    design: str | None = None,
+    notes: str | None = None,
+    append_notes: str | None = None,
+    labels: list[str] | None = None,
+    external_ref: str | None = None,
+    cwd: Path | None = None,
 ) -> None:
-    args = ["update", issue_id]
-    if status is not None:
-        args.extend(["--status", status])
-    if assignee is not None:
-        args.extend(["--assignee", assignee])
-    result = _run_bd(*args)
+    """Update an existing issue's fields.
+
+    Only non-None arguments are sent to the bd CLI.
+
+    Args:
+        issue_id: The issue ID to update.
+        cwd: Working directory for the bd CLI (session-scoped).
+        **kwargs: Fields to update.
+
+    Raises:
+        RuntimeError: If the bd update command fails.
+    """
+    args: list[str] = ["update", issue_id]
+    _append_flag(args, "--status", status)
+    _append_flag(args, "--assignee", assignee)
+    _append_flag(args, "--priority", priority)
+    _append_flag(args, "--description", description)
+    _append_flag(args, "--acceptance", acceptance)
+    _append_flag(args, "--design", design)
+    _append_flag(args, "--notes", notes)
+    _append_flag(args, "--append-notes", append_notes)
+    _append_flag(args, "--external-ref", external_ref)
+    if labels is not None:
+        args.extend(["--labels", ",".join(labels)])
+
+    result = _run_bd(*args, cwd=cwd)
     if result is None:
         raise RuntimeError(f"Failed to update issue {issue_id}")
-    logger.info("Updated issue %s (status=%s, assignee=%s)", issue_id, status, assignee)
+    logger.info("Updated issue %s", issue_id)
 
 
-def close_issue(issue_id: str) -> None:
-    result = _run_bd("close", issue_id)
+def close_issue(issue_id: str, *, cwd: Path | None = None) -> None:
+    """Mark an issue as done.
+
+    Args:
+        issue_id: The issue ID to close.
+        cwd: Working directory for the bd CLI (session-scoped).
+
+    Raises:
+        RuntimeError: If the bd close command fails.
+    """
+    result = _run_bd("close", issue_id, cwd=cwd)
     if result is None:
         raise RuntimeError(f"Failed to mark issue {issue_id} as done")
     logger.info("Marked issue %s as done", issue_id)
 
 
-def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
+# -- internal helpers ---------------------------------------------------------
+
+
+def _run_bd(
+    *args: str, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str] | None:
     """Run a bd CLI command and return the result.
 
     Args:
-        *args: Arguments to pass to the bd command
+        *args: Arguments to pass to the bd command.
+        cwd: Working directory for subprocess.
 
     Returns:
-        CompletedProcess if successful, None if command fails or times out
+        CompletedProcess if successful, None if command fails or times out.
     """
     cmd = [BD_CMD, *args]
     logger.debug("Running: %s", " ".join(cmd))
     try:
         return subprocess.run(
-            cmd, capture_output=True, text=True, check=True, timeout=BD_TIMEOUT
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=BD_TIMEOUT,
+            cwd=cwd,
         )
     except FileNotFoundError:
         logger.error("bd CLI not found; is beads installed?")
@@ -187,6 +338,31 @@ def _run_bd(*args: str) -> subprocess.CompletedProcess[str] | None:
     except subprocess.CalledProcessError as e:
         logger.error("bd %s failed: %s", args[0] if args else "?", e.stderr.strip())
         return
+
+
+def _append_flag(args: list[str], flag: str, value) -> None:
+    """Append --flag value to args if value is not None."""
+    if value is not None:
+        args.extend([flag, str(value)])
+
+
+def _parse_first_issue(stdout: str) -> Issue | None:
+    """Parse the first issue from bd JSON output (list or single object)."""
+    stdout = stdout.strip()
+    if not stdout:
+        return
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        logger.error("Failed to parse bd output as JSON")
+        return
+
+    issues = data if isinstance(data, list) else [data]
+    if not issues:
+        return
+
+    return Issue.parse(issues[0])
 
 
 def _parse_dt(value: str | None) -> datetime | None:
