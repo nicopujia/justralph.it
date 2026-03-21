@@ -14,6 +14,8 @@ from ralph.core.events import EventBus, EventType
 from ralph.core.hooks import load_hooks
 from ralph.core.ralphy_runner import RalphyRunner, RunnerConfig
 
+import server.db as db
+
 logger = logging.getLogger(__name__)
 
 SESSIONS_DIR = Path("/tmp/ralph-sessions")
@@ -133,6 +135,7 @@ def create_session(
         status="ready",
     )
     _sessions[session_id] = session
+    db.save_session(session_id, str(base_dir), github_url, "ready", session.created_at)
     logger.info("Session %s ready at %s", session_id, base_dir)
     return session
 
@@ -171,6 +174,7 @@ def start_loop(session: Session) -> None:
     session.loop_start_time = time.time()
     session.iteration_count = 0
     session.status = "running"
+    db.update_session_status(session.id, "running")
 
     # Track iteration count from events
     def _track_events(event):
@@ -191,6 +195,7 @@ def start_loop(session: Session) -> None:
                 session.status = "running"
         finally:
             session.status = "done"
+            db.update_session_status(session.id, "done")
 
     t = threading.Thread(target=_run_with_restart, daemon=True)
     session.thread = t
@@ -203,6 +208,7 @@ def stop_loop(session: Session) -> None:
         raise RuntimeError("No loop running")
     session.runner.cfg.stop_file.write_text("stop requested via API")
     session.status = "stopped"
+    db.update_session_status(session.id, "stopped")
 
 
 def restart_loop(session: Session) -> None:
@@ -210,3 +216,23 @@ def restart_loop(session: Session) -> None:
     if not session.runner or not session.thread or not session.thread.is_alive():
         raise RuntimeError("No loop running")
     session.runner.cfg.restart_file.write_text("restart requested via API")
+
+
+def load_sessions_from_db() -> None:
+    """Reload sessions from DB on startup. Mark stale 'running' as 'crashed'."""
+    rows = db.list_sessions()
+    for row in rows:
+        sid = row["id"]
+        status = row["status"]
+        if status == "running":
+            status = "crashed"
+            db.update_session_status(sid, "crashed")
+        session = Session(
+            id=sid,
+            base_dir=Path(row["base_dir"]),
+            github_url=row.get("github_url", ""),
+            status=status,
+            created_at=row["created_at"],
+        )
+        _sessions[sid] = session
+    logger.info("Loaded %d sessions from DB", len(rows))

@@ -4,20 +4,52 @@ import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, Loader2, Rocket, Paperclip } from "lucide-react";
 import { API_URL } from "@/lib/config";
 import { ConfidenceMeter } from "./ConfidenceMeter";
+import { useToast } from "./Toast";
 import type { ChatState } from "@/hooks/useChatbot";
+
+const SLOW_THRESHOLD_MS = 15_000;
 
 type ChatPanelProps = {
   state: ChatState;
   onSend: (message: string) => void;
   onRalphIt: () => void;
+  onClearError?: () => void;
+  /** true while ralphIt() is in flight (distinct from message loading). */
+  ralphItLoading?: boolean;
   /** "full" = Phase 1 fullscreen; "sidebar" = Phase 2 collapsed sidebar. */
   mode?: "full" | "sidebar";
 };
 
-export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanelProps) {
+export function ChatPanel({
+  state,
+  onSend,
+  onRalphIt,
+  onClearError,
+  ralphItLoading = false,
+  mode = "full",
+}: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  // Timeout indicator: shown if ralphItLoading has been true >15s
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (!ralphItLoading) {
+      setSlowLoad(false);
+      return;
+    }
+    const t = setTimeout(() => setSlowLoad(true), SLOW_THRESHOLD_MS);
+    return () => clearTimeout(t);
+  }, [ralphItLoading]);
+
+  // Consume transient errors from hook state -> toast
+  useEffect(() => {
+    if (!state.error) return;
+    toast("Failed to send message", "error");
+    onClearError?.();
+  }, [state.error, toast, onClearError]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -29,6 +61,9 @@ export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanel
     setInput("");
     onSend(msg);
   };
+
+  // True while any loading is happening (chat or ralph-it)
+  const busy = state.loading || ralphItLoading;
 
   if (mode === "sidebar") {
     return (
@@ -79,12 +114,16 @@ export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanel
           <div className="px-2 pb-2 shrink-0">
             <Button
               onClick={onRalphIt}
-              disabled={state.loading}
+              disabled={busy}
               className="w-full bg-green-600 hover:bg-green-700 text-white text-xs h-8"
               size="sm"
             >
-              <Rocket className="size-3 mr-1" />
-              Ralph It
+              {ralphItLoading ? (
+                <Loader2 className="size-3 mr-1 animate-spin" />
+              ) : (
+                <Rocket className="size-3 mr-1" />
+              )}
+              {ralphItLoading ? "Creating project..." : "Ralph It"}
             </Button>
           </div>
         )}
@@ -126,12 +165,12 @@ export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanel
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               placeholder="Message..."
-              disabled={state.loading}
+              disabled={busy}
               className="flex-1 h-7 text-xs"
             />
             <Button
               onClick={handleSend}
-              disabled={state.loading || !input.trim()}
+              disabled={busy || !input.trim()}
               size="icon"
               className="size-7 shrink-0"
             >
@@ -229,10 +268,10 @@ export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanel
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
                 placeholder="Describe your project..."
-                disabled={state.loading}
+                disabled={busy}
                 className="flex-1"
               />
-              <Button onClick={handleSend} disabled={state.loading || !input.trim()} size="icon">
+              <Button onClick={handleSend} disabled={busy || !input.trim()} size="icon">
                 <Send className="size-4" />
               </Button>
             </div>
@@ -251,15 +290,32 @@ export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanel
           />
 
           {state.ready && (
-            <Button
-              onClick={onRalphIt}
-              disabled={state.loading}
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
-              size="lg"
-            >
-              <Rocket className="size-4 mr-2" />
-              Just Ralph It
-            </Button>
+            <div className="flex flex-col items-center gap-2">
+              <Button
+                onClick={onRalphIt}
+                disabled={busy}
+                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                size="lg"
+              >
+                {ralphItLoading ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Creating project...
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="size-4 mr-2" />
+                    Just Ralph It
+                  </>
+                )}
+              </Button>
+              {/* Shown if ralphIt has been loading for >15s */}
+              {slowLoad && (
+                <p className="text-xs text-muted-foreground text-center">
+                  This is taking a while...
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

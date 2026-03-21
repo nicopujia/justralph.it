@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 import tasks
 
+import server.db as db
+
 from .auth import (
     create_user_session,
     exchange_code_for_token,
@@ -24,6 +26,7 @@ from .sessions import (
     create_session,
     get_session,
     list_sessions,
+    load_sessions_from_db,
     restart_loop,
     start_loop,
     stop_loop,
@@ -73,6 +76,8 @@ async def _broadcast_events() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _broadcast_task
+    db.init_db()
+    load_sessions_from_db()
     _broadcast_task = asyncio.create_task(_broadcast_events())
     yield
     _broadcast_task.cancel()
@@ -351,6 +356,18 @@ def api_chat_state(session_id: str):
     _require_session(session_id)
     state = get_chat_state(session_id)
     return state.to_dict()
+
+
+@app.get("/api/sessions/{session_id}/chat/history")
+def api_chat_history(session_id: str):
+    """Return persisted chat messages + state from DB."""
+    _require_session(session_id)
+    messages = db.load_chat_messages(session_id)
+    state = db.load_chat_state(session_id)
+    return {
+        "messages": [{"role": m["role"], "content": m["content"], "created_at": m["created_at"]} for m in messages],
+        "state": state or {},
+    }
 
 
 @app.post("/api/sessions/{session_id}/ralph-it")

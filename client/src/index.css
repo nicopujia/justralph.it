@@ -45,3 +45,21 @@
 .terminal-glow {
   text-shadow: 0 0 8px rgba(74, 222, 128, 0.3);
 }
+
+/* ------------------------------------------------------------------ */
+/* Toast slide-in animation (from right edge)                          */
+/* ------------------------------------------------------------------ */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out forwards;
+}

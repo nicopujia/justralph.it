@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useEventReducer } from "@/hooks/useEventReducer";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useChatbot } from "@/hooks/useChatbot";
+import { useToast } from "./Toast";
 import { WS_URL } from "@/lib/config";
 import { ChatPanel } from "./ChatPanel";
 import { StatusBar } from "./StatusBar";
@@ -20,6 +21,9 @@ export function Dashboard() {
   const [helpTaskId, setHelpTaskId] = useState<string | null>(null);
   // Sidebar starts collapsed in loop phase
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Separate loading flag for the ralph-it transition
+  const [ralphItLoading, setRalphItLoading] = useState(false);
+  const { toast } = useToast();
 
   const wsUrl = chatbot.state.sessionId
     ? `${WS_URL}/ws/${chatbot.state.sessionId}`
@@ -33,10 +37,13 @@ export function Dashboard() {
   });
 
   const handleRalphIt = useCallback(async () => {
+    setRalphItLoading(true);
     const result = await chatbot.ralphIt();
+    setRalphItLoading(false);
     if (result?.status === "ralph_it_started") {
       setPhase("loop");
     }
+    // errors are surfaced via chatbot.state.error -> ChatPanel -> toast
   }, [chatbot]);
 
   // Phase 1: full-screen chat
@@ -46,6 +53,8 @@ export function Dashboard() {
         state={chatbot.state}
         onSend={chatbot.sendMessage}
         onRalphIt={handleRalphIt}
+        onClearError={chatbot.clearError}
+        ralphItLoading={ralphItLoading}
         mode="full"
       />
     );
@@ -63,6 +72,7 @@ export function Dashboard() {
         loopStartTime={loopState.loopStartTime}
         wsState={wsState}
         sessionId={sessionId}
+        onError={(msg) => toast(msg, "error")}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -79,6 +89,8 @@ export function Dashboard() {
                   state={chatbot.state}
                   onSend={chatbot.sendMessage}
                   onRalphIt={handleRalphIt}
+                  onClearError={chatbot.clearError}
+                  ralphItLoading={ralphItLoading}
                   mode="sidebar"
                 />
               </div>
@@ -136,6 +148,7 @@ export function Dashboard() {
                 sessionId={sessionId}
                 taskId={helpTaskId}
                 onResume={() => setHelpTaskId(null)}
+                onError={(msg) => toast(msg, "error")}
               />
             )}
           </div>
@@ -145,6 +158,13 @@ export function Dashboard() {
             chatState={chatbot.state}
             tasks={loopState.tasks}
             loopStarted={phase === "loop"}
+            sessionId={sessionId}
+            onTaskUpdate={(taskId, patch) => {
+              // Only "open" resets are issued via retry; dispatch synthetic event.
+              if (patch.status === "open") {
+                dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
+              }
+            }}
           />
         </div>
       </div>

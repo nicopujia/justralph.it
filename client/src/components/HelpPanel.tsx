@@ -9,9 +9,10 @@ type HelpPanelProps = {
   sessionId: string;
   taskId: string;
   onResume: () => void;
+  onError?: (message: string) => void;
 };
 
-export function HelpPanel({ sessionId, taskId, onResume }: HelpPanelProps) {
+export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -46,14 +47,21 @@ export function HelpPanel({ sessionId, taskId, onResume }: HelpPanelProps) {
       `${API_URL}/api/sessions/${sessionId}/tasks/${taskId}`,
       { method: "DELETE" },
     );
-    if (!closeResp.ok) return; // don't clear state if close failed
+    if (!closeResp.ok) {
+      onError?.("Resume failed");
+      return;
+    }
 
     // Restart the loop
     const restartResp = await fetch(
       `${API_URL}/api/sessions/${sessionId}/restart`,
       { method: "POST" },
     );
-    if (restartResp.ok) onResume();
+    if (restartResp.ok) {
+      onResume();
+    } else {
+      onError?.("Resume failed");
+    }
   };
 
   return (

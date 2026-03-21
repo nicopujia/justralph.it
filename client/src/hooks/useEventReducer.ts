@@ -10,6 +10,7 @@ export type TaskInfo = {
   id: string;
   title: string;
   status: "open" | "in_progress" | "blocked" | "done" | "help";
+  error?: string;
 };
 
 export type DashboardState = {
@@ -94,7 +95,17 @@ function reducer(state: DashboardState, event: RalphEvent): DashboardState {
       const tasks = new Map(state.tasks);
       const existing = tasks.get(event.data.task_id);
       if (existing) {
-        tasks.set(event.data.task_id, { ...existing, status: "help" });
+        tasks.set(event.data.task_id, { ...existing, status: "help", error: event.data.error });
+      }
+      return { ...state, tasks };
+    }
+
+    // Synthetic event dispatched after a successful retry to reset local state.
+    case "task_reset": {
+      const tasks = new Map(state.tasks);
+      const existing = tasks.get(event.data.task_id);
+      if (existing) {
+        tasks.set(event.data.task_id, { ...existing, status: "open", error: undefined });
       }
       return { ...state, tasks };
     }

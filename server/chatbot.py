@@ -12,6 +12,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import server.db as db
+
 logger = logging.getLogger(__name__)
 
 OPENCODE_CMD = shutil.which("opencode") or str(Path.home() / ".opencode" / "bin" / "opencode")
@@ -217,7 +219,22 @@ _chat_states: dict[str, ChatState] = {}
 
 def get_chat_state(session_id: str) -> ChatState:
     if session_id not in _chat_states:
-        _chat_states[session_id] = ChatState()
+        # Try loading from DB
+        db_state = db.load_chat_state(session_id)
+        db_msgs = db.load_chat_messages(session_id)
+        if db_state or db_msgs:
+            state = ChatState(
+                messages=[{"role": m["role"], "content": m["content"]} for m in db_msgs],
+                confidence=db_state["confidence"] if db_state else {d: 0 for d in DIMENSIONS},
+                relevance=db_state["relevance"] if db_state else {d: 1.0 for d in DIMENSIONS},
+                ready=db_state["ready"] if db_state else False,
+                tasks=db_state["tasks"] if db_state else None,
+                project=db_state["project"] if db_state else None,
+                weighted_readiness=db_state["weighted_readiness"] if db_state else 0.0,
+            )
+            _chat_states[session_id] = state
+        else:
+            _chat_states[session_id] = ChatState()
     return _chat_states[session_id]
 
 
@@ -234,6 +251,7 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         state.session_dir = session_dir
 
     state.messages.append({"role": "user", "content": user_message})
+    db.save_chat_message(session_id, "user", user_message)
 
     # Build the full prompt for opencode: system prompt + conversation history
     conversation = f"{SYSTEM_PROMPT}\n\n## Conversation so far\n\n"
@@ -274,6 +292,7 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     # Update state
     assistant_msg = parsed.get("message", "")
     state.messages.append({"role": "assistant", "content": json.dumps(parsed)})
+    db.save_chat_message(session_id, "assistant", json.dumps(parsed))
 
     # Validate and apply confidence
     user_msg_len = len(user_message)
@@ -297,6 +316,16 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
     state.ready = _is_ready(state)
 
+    db.save_chat_state(
+        session_id,
+        state.confidence,
+        state.relevance,
+        state.ready,
+        state.weighted_readiness,
+        state.tasks,
+        state.project,
+    )
+
     # Detect LLM-ready vs server-not-ready mismatch
     llm_said_ready = parsed.get("ready", False)
     if llm_said_ready and not state.ready:
@@ -308,6 +337,15 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     if state.ready:
         state.tasks = parsed.get("tasks")
         state.project = parsed.get("project")
+        db.save_chat_state(
+            session_id,
+            state.confidence,
+            state.relevance,
+            state.ready,
+            state.weighted_readiness,
+            state.tasks,
+            state.project,
+        )
 
     return {
         "message": assistant_msg,
