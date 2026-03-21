@@ -21,7 +21,7 @@ from pydantic import BaseModel
 import bd
 from ralph.cmds.loop import Loop, LoopConfig
 from ralph.cmds.init import Init, InitConfig
-from ralph.config import RALPH_DIR_NAME
+from ralph.config import PROD_WORKTREE, RALPH_DIR_NAME
 from ralph.core.events import Event, EventBus, EventType
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def start_session(req: StartRequest):
     base = Path(req.base_dir)
 
     # Init if not already initialized
-    ralph_dir = base / RALPH_DIR_NAME
+    ralph_dir = base / PROD_WORKTREE / RALPH_DIR_NAME
     if not ralph_dir.is_dir():
         init_cmd = Init()
         init_cmd.cfg = InitConfig(base_dir=base, remote=req.remote)
@@ -105,7 +105,7 @@ def start_session(req: StartRequest):
 @app.post("/api/sessions/stop")
 def stop_session(req: StopRequest):
     base = Path(req.base_dir)
-    stop_file = base / RALPH_DIR_NAME / "stop.ralph"
+    stop_file = base / PROD_WORKTREE / RALPH_DIR_NAME / "stop.ralph"
     stop_file.write_text("stop requested via API")
     return {"status": "stop_requested"}
 
