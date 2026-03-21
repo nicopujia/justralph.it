@@ -1,116 +1,20 @@
 import { useState, useRef, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, Loader2, Rocket, Paperclip } from "lucide-react";
 import { API_URL } from "@/lib/config";
-import type { ChatState, Confidence, Relevance } from "@/hooks/useChatbot";
+import { ConfidenceMeter } from "./ConfidenceMeter";
+import type { ChatState } from "@/hooks/useChatbot";
 
 type ChatPanelProps = {
   state: ChatState;
   onSend: (message: string) => void;
   onRalphIt: () => void;
+  /** "full" = Phase 1 fullscreen; "sidebar" = Phase 2 collapsed sidebar. */
+  mode?: "full" | "sidebar";
 };
 
-const DIMENSION_LABELS: Record<keyof Confidence, string> = {
-  functional: "Functional",
-  technical_stack: "Tech Stack",
-  data_model: "Data Model",
-  auth: "Auth",
-  deployment: "Deployment",
-  testing: "Testing",
-  edge_cases: "Edge Cases",
-};
-
-function ConfidenceMeter({
-  confidence,
-  relevance,
-  weightedReadiness,
-  questionCount,
-  phase,
-  ready,
-}: {
-  confidence: Confidence;
-  relevance: Relevance;
-  weightedReadiness: number;
-  questionCount: number;
-  phase: number;
-  ready: boolean;
-}) {
-  const dims = Object.entries(confidence) as [keyof Confidence, number][];
-
-  return (
-    <div className="space-y-3">
-      {/* Overall readiness */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium">Readiness</span>
-          {ready ? (
-            <span className="text-green-600 dark:text-green-400 font-medium">Ready</span>
-          ) : (
-            <span className="font-mono tabular-nums">{Math.round(weightedReadiness)}%</span>
-          )}
-        </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              ready
-                ? "bg-green-500"
-                : weightedReadiness >= 50
-                  ? "bg-yellow-500"
-                  : "bg-red-400"
-            }`}
-            style={{ width: `${Math.min(weightedReadiness, 100)}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Phase + question count */}
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>Phase {phase}/4</span>
-        <span>
-          Q{questionCount}
-          {questionCount < 10 && <span className="opacity-60">/10 min</span>}
-        </span>
-      </div>
-
-      <div className="h-px bg-border" />
-
-      {/* Per-dimension bars */}
-      {dims.map(([key, value]) => {
-        const rel = relevance[key as keyof Relevance] ?? 1.0;
-        const isIrrelevant = rel <= 0.3;
-        return (
-          <div key={key} className="space-y-1" style={{ opacity: isIrrelevant ? 0.35 : 1 }}>
-            <div className="flex justify-between text-xs">
-              <span>
-                {DIMENSION_LABELS[key]}
-                {isIrrelevant && (
-                  <span className="text-muted-foreground ml-1">(N/A)</span>
-                )}
-              </span>
-              <span className="font-mono tabular-nums">{value}%</span>
-            </div>
-            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  value >= 70
-                    ? "bg-green-500"
-                    : value >= 40
-                      ? "bg-yellow-500"
-                      : "bg-red-400"
-                }`}
-                style={{ width: `${Math.min(value, 100)}%` }}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export function ChatPanel({ state, onSend, onRalphIt }: ChatPanelProps) {
+export function ChatPanel({ state, onSend, onRalphIt, mode = "full" }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -126,6 +30,120 @@ export function ChatPanel({ state, onSend, onRalphIt }: ChatPanelProps) {
     onSend(msg);
   };
 
+  if (mode === "sidebar") {
+    return (
+      <div className="h-full flex flex-col bg-background border-r overflow-hidden">
+        {/* Compact header */}
+        <div className="px-3 py-3 border-b shrink-0">
+          <h2 className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground uppercase tracking-wide">
+            <MessageCircle className="size-3.5" />
+            Chat
+          </h2>
+        </div>
+
+        {/* Messages: compact bubbles */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-2">
+          {state.messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs text-center py-6 px-2">
+              <MessageCircle className="size-6 mb-2 opacity-30" />
+              <p>No messages yet.</p>
+            </div>
+          )}
+          {state.messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-full rounded-md px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted"
+                }`}
+              >
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {state.loading && (
+            <div className="flex justify-start">
+              <div className="bg-muted rounded-md px-2.5 py-1.5">
+                <Loader2 className="size-3 animate-spin" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Ralph It button (sidebar) */}
+        {state.ready && (
+          <div className="px-2 pb-2 shrink-0">
+            <Button
+              onClick={onRalphIt}
+              disabled={state.loading}
+              className="w-full bg-green-600 hover:bg-green-700 text-white text-xs h-8"
+              size="sm"
+            >
+              <Rocket className="size-3 mr-1" />
+              Ralph It
+            </Button>
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="border-t p-2 shrink-0">
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0"
+              onClick={() => fileRef.current?.click()}
+              title="Attach files"
+              disabled={!state.sessionId}
+            >
+              <Paperclip className="size-3" />
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={async (e) => {
+                if (!state.sessionId || !e.target.files) return;
+                for (const file of Array.from(e.target.files)) {
+                  const form = new FormData();
+                  form.append("file", file);
+                  await fetch(
+                    `${API_URL}/api/sessions/${state.sessionId}/uploads`,
+                    { method: "POST", body: form },
+                  );
+                }
+                onSend(`[Attached ${e.target.files.length} file(s)]`);
+                e.target.value = "";
+              }}
+            />
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+              placeholder="Message..."
+              disabled={state.loading}
+              className="flex-1 h-7 text-xs"
+            />
+            <Button
+              onClick={handleSend}
+              disabled={state.loading || !input.trim()}
+              size="icon"
+              className="size-7 shrink-0"
+            >
+              <Send className="size-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // mode === "full"
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}

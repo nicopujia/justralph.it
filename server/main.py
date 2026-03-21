@@ -2,14 +2,22 @@
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import tasks
 
+from .auth import (
+    create_user_session,
+    exchange_code_for_token,
+    get_github_auth_url,
+    get_github_user,
+    get_user_session,
+)
 from .chatbot import chat as chatbot_chat, get_chat_state
 from .sessions import (
     Session,
@@ -20,6 +28,8 @@ from .sessions import (
     start_loop,
     stop_loop,
 )
+
+logger = logging.getLogger(__name__)
 
 # -- WebSocket broadcast ------------------------------------------------------
 
@@ -116,6 +126,40 @@ async def ws_session(ws: WebSocket, session_id: str):
         pass
     finally:
         _ws_clients.get(session_id, set()).discard(ws)
+
+
+# -- Auth endpoints -----------------------------------------------------------
+
+
+@app.get("/api/auth/github")
+def api_auth_github():
+    """Return GitHub OAuth authorize URL."""
+    return {"url": get_github_auth_url()}
+
+
+@app.get("/api/auth/github/callback")
+async def api_auth_github_callback(code: str):
+    """Exchange OAuth code for token, create session, return token + user."""
+    try:
+        github_token = await exchange_code_for_token(code)
+        user = await get_github_user(github_token)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    session_token = create_user_session(github_token, user)
+    return {"token": session_token, "user": user}
+
+
+@app.get("/api/auth/me")
+def api_auth_me(request: Request):
+    """Return current user info from session token in Authorization header."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    session_token = auth.removeprefix("Bearer ").strip()
+    session = get_user_session(session_token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session token")
+    return session["github_user"]
 
 
 # -- Session endpoints --------------------------------------------------------
@@ -331,9 +375,15 @@ def api_ralph_it(session_id: str):
 
     # Create tasks from chatbot output
     created = []
+    created_ids: set[str] = set()
     for i, t in enumerate(chat_state.tasks):
         parent = t.get("parent") or ""
-        # Map parent references like "task-001" (already correct) or null
+        # Validate parent: must reference an already-created task in this batch
+        if parent and parent not in created_ids:
+            logger.warning(
+                "Task %d parent %r not yet created; clearing parent", i, parent
+            )
+            parent = ""
         task = tasks.create_task(
             t["title"],
             body=t.get("body"),
@@ -342,6 +392,7 @@ def api_ralph_it(session_id: str):
             cwd=session.base_dir,
         )
         created.append(task.to_dict())
+        created_ids.add(task.id)
 
     # Write project metadata to .ralphy/config.yaml if chatbot extracted it
     if chat_state.project:

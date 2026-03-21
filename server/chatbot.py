@@ -297,6 +297,14 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
     state.ready = _is_ready(state)
 
+    # Detect LLM-ready vs server-not-ready mismatch
+    llm_said_ready = parsed.get("ready", False)
+    if llm_said_ready and not state.ready:
+        assistant_msg = (
+            "I need a few more details to make sure everything is covered. "
+            "Let me ask another question..."
+        )
+
     if state.ready:
         state.tasks = parsed.get("tasks")
         state.project = parsed.get("project")
