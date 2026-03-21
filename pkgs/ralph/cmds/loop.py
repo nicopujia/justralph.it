@@ -28,7 +28,7 @@ from ..core.events import Event, EventBus, EventType
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
 from ..core.state import State
-from ..utils.backup import snapshot_issues
+from ..utils.backup import prune_old_snapshots, snapshot_issues
 from ..utils.git import (
     cleanup_branch,
     create_tag,
@@ -313,8 +313,9 @@ class Loop(Command):
         create_tag(tag, message=f"pre-iter: {issue.id} iter {iteration}", cwd=self._prod_dir)
         self._emit(EventType.TAG_CREATED, tag=tag)
 
-        # Snapshot bd issues for potential rollback
+        # Snapshot bd issues for potential rollback, prune old ones
         snapshot_issues(iteration, self._backup_dir, bd_cwd=self.cfg.base_dir)
+        prune_old_snapshots(self._backup_dir)
 
         # Prepare dev worktree: sync to main, clean up old issue branch
         # (can't use reset_git_state here -- it tries checkout main, which
