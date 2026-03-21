@@ -1,35 +1,25 @@
-# Ralphy Configuration
-# https://github.com/michaelshimeles/ralphy
+# justralph.it Ralphy Configuration
 
-# Project info (auto-detected, edit if needed)
 project:
   name: "justralph.it"
   language: "Python"
   framework: "FastAPI"
-  description: ""  # Add a brief description
+  description: "AI-powered project builder: chatbot extracts requirements, autonomous agent builds code"
 
-# Commands (auto-detected from package.json/pyproject.toml)
 commands:
-  test: "pytest"
-  lint: "ruff check ."
-  build: ""
+  test: "uv run pytest"
+  lint: "uv run ruff check ."
+  build: "cd client && bun run build"
 
-# Rules - instructions the AI MUST follow
-# These are injected into every prompt
 rules:
-  # Examples:
-  # - "Always use TypeScript strict mode"
-  # - "Follow the error handling pattern in src/utils/errors.ts"
-  # - "All API endpoints must have input validation with Zod"
-  # - "Use server actions instead of API routes in Next.js"
-  #
-  # Skills/playbooks (optional):
-  # - "Before coding, read and follow any relevant skill/playbook docs under .opencode/skills, .claude/skills, or .github/skills."
+  - "Use uv for all Python tasks"
+  - "Use bun for frontend tasks"
+  - "Follow conventional commits"
+  - "Keep code concise, document the non-obvious"
+  - "Do not use em-dashes in docs"
 
-# Boundaries - files/folders the AI should not modify
 boundaries:
   never_touch:
-    # Examples:
-    # - "src/legacy/**"
-    # - "migrations/**"
-    # - "*.lock"
+    - ".ralphy/"
+    - "*.lock"
+    - ".env"

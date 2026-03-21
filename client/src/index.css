@@ -1,5 +1,17 @@
 @import "../styles/globals.css";
 
+/* Color scheme hint for browsers */
+html.dark {
+  color-scheme: dark;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
 @layer base {
   :root {
     @apply font-sans;
@@ -30,7 +42,7 @@
   background: #4a5568;
 }
 
-/* Light-mode override via bg-gray-50 parent -- use a slightly visible thumb */
+/* Light-mode override */
 .bg-gray-50.terminal-scroll::-webkit-scrollbar-thumb {
   background: #cbd5e0;
 }
@@ -62,4 +74,25 @@
 
 .animate-slide-in-right {
   animation: slide-in-right 0.25s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------ */
+/* Animated gradient border for WelcomePage card                       */
+/* ------------------------------------------------------------------ */
+@keyframes gradient-spin {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animated-border {
+  background: linear-gradient(
+    270deg,
+    oklch(0.696 0.17 162.48),
+    oklch(0.488 0.243 264.376),
+    oklch(0.769 0.188 70.08),
+    oklch(0.696 0.17 162.48)
+  );
+  background-size: 300% 300%;
+  animation: gradient-spin 4s ease infinite;
 }

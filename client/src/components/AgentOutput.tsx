@@ -1,30 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ArrowDown, Moon, Sun, Terminal } from "lucide-react";
+import { ArrowDown, Terminal } from "lucide-react";
 
 type AgentOutputProps = {
   lines: string[];
 };
 
-// Terminal theme: stored in localStorage, falls back to system preference.
-function getInitialTheme(): "dark" | "light" {
-  const stored = localStorage.getItem("terminal-theme");
-  if (stored === "dark" || stored === "light") return stored;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
 // Classify a line into a semantic color token.
-type LineToken =
-  | "default"
-  | "filepath"
-  | "addition"
-  | "removal"
-  | "status"
-  | "error"
-  | "commit";
+type LineToken = "default" | "filepath" | "addition" | "removal" | "status" | "error" | "commit";
 
 function classifyLine(line: string): LineToken {
   const trimmed = line.trimStart();
@@ -37,42 +21,19 @@ function classifyLine(line: string): LineToken {
   return "default";
 }
 
-// Map token to Tailwind class set for each theme.
-const TOKEN_CLASSES: Record<LineToken, { dark: string; light: string }> = {
-  default: {
-    dark: "text-emerald-400 terminal-glow",
-    light: "text-gray-800",
-  },
-  filepath: {
-    dark: "text-cyan-400",
-    light: "text-blue-600",
-  },
-  addition: {
-    dark: "text-emerald-400 terminal-glow",
-    light: "text-green-700",
-  },
-  removal: {
-    dark: "text-red-400",
-    light: "text-red-600",
-  },
-  status: {
-    dark: "text-yellow-400",
-    light: "text-amber-600",
-  },
-  error: {
-    dark: "text-red-400",
-    light: "text-red-600",
-  },
-  commit: {
-    dark: "text-blue-400",
-    light: "text-blue-600",
-  },
+// Tailwind classes per token, using dark: variants for global theme.
+const TOKEN_CLASSES: Record<LineToken, string> = {
+  default: "dark:text-emerald-400 text-gray-800 dark:terminal-glow",
+  filepath: "dark:text-cyan-400 text-blue-600",
+  addition: "dark:text-emerald-400 text-green-700",
+  removal: "dark:text-red-400 text-red-600",
+  status: "dark:text-amber-400 text-amber-600",
+  error: "dark:text-red-400 text-red-600",
+  commit: "dark:text-blue-400 text-blue-600",
 };
 
 export function AgentOutput({ lines }: AgentOutputProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [theme, setTheme] = useState<"dark" | "light">(getInitialTheme);
-  // True while the user has manually scrolled away from the bottom.
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   // Track whether auto-scroll should fire (suppressed while user scrolls up).
   const atBottomRef = useRef(true);
@@ -102,20 +63,10 @@ export function AgentOutput({ lines }: AgentOutputProps) {
     setShowScrollBtn(!isAtBottom);
   }, []);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("terminal-theme", next);
-      return next;
-    });
-  }, []);
-
-  const isDark = theme === "dark";
-
   return (
     <Card className="flex flex-col overflow-hidden h-full">
       {/* Header */}
-      <CardHeader className="flex-row items-center justify-between pb-0 px-4 py-2 border-b border-border shrink-0">
+      <CardHeader className="flex-row items-center pb-0 px-4 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <Terminal className="size-4 text-muted-foreground" />
           <span className="text-sm font-semibold tracking-tight">Terminal</span>
@@ -125,19 +76,6 @@ export function AgentOutput({ lines }: AgentOutputProps) {
             </span>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={toggleTheme}
-          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {isDark ? (
-            <Sun className="size-4" />
-          ) : (
-            <Moon className="size-4" />
-          )}
-        </Button>
       </CardHeader>
 
       {/* Body */}
@@ -145,30 +83,20 @@ export function AgentOutput({ lines }: AgentOutputProps) {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className={[
-            "h-full overflow-y-auto font-mono text-sm p-4 terminal-scroll",
-            isDark
-              ? "bg-[#0a0e14] text-emerald-400"
-              : "bg-gray-50 text-gray-800",
-          ].join(" ")}
+          className="h-full overflow-y-auto font-mono text-sm p-4 terminal-scroll dark:bg-zinc-950 bg-white"
         >
           {lines.length === 0 ? (
-            <span
-              className={
-                isDark ? "text-zinc-500" : "text-gray-400"
-              }
-            >
+            <span className="dark:text-zinc-500 text-gray-400">
               Waiting for agent output
               <span className="animate-pulse">_</span>
             </span>
           ) : (
             lines.map((line, i) => {
               const token = classifyLine(line);
-              const classes = TOKEN_CLASSES[token][theme];
               return (
                 <div
                   key={i}
-                  className={`whitespace-pre-wrap leading-relaxed ${classes}`}
+                  className={`whitespace-pre-wrap leading-relaxed ${TOKEN_CLASSES[token]}`}
                 >
                   {line || "\u00A0" /* keep blank lines visible */}
                 </div>
@@ -184,10 +112,7 @@ export function AgentOutput({ lines }: AgentOutputProps) {
             size="icon-sm"
             onClick={() => scrollToBottom(true)}
             aria-label="Scroll to bottom"
-            className={[
-              "absolute bottom-3 right-5 shadow-md opacity-90 hover:opacity-100 transition-opacity",
-              isDark ? "bg-zinc-700 hover:bg-zinc-600 text-zinc-100" : "",
-            ].join(" ")}
+            className="absolute bottom-3 right-5 shadow-md opacity-90 hover:opacity-100 transition-opacity dark:bg-zinc-700 dark:hover:bg-zinc-600 dark:text-zinc-100"
           >
             <ArrowDown className="size-4" />
           </Button>

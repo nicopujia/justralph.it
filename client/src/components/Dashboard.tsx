@@ -12,10 +12,16 @@ import { HelpPanel } from "./HelpPanel";
 import { RightPanel } from "./RightPanel";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import type { Theme } from "@/hooks/useTheme";
 
 type Phase = "chat" | "preview" | "loop";
 
-export function Dashboard() {
+type DashboardProps = {
+  theme?: Theme;
+  onThemeToggle?: () => void;
+};
+
+export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
   const [phase, setPhase] = useState<Phase>("chat");
   const chatbot = useChatbot();
   const [loopState, dispatch] = useEventReducer();
@@ -73,7 +79,7 @@ export function Dashboard() {
     setSidebarOpen(true);
   }, [chatbot]);
 
-  // Phase 1: full-screen chat
+  // Phase 1: full-screen chat (two-column)
   if (phase === "chat") {
     return (
       <ChatPanel
@@ -102,12 +108,13 @@ export function Dashboard() {
     );
   }
 
-  // Phase 2: loop view with collapsible chat sidebar
+  // Phase 3: loop view with collapsible chat sidebar
   const sessionId = chatbot.state.sessionId!;
   const sidebarWidth = sidebarOpen ? 350 : 60;
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-screen flex flex-col dark:bg-zinc-950 bg-white overflow-hidden">
+      {/* Status bar with theme toggle */}
       <StatusBar
         loopStatus={loopState.loopStatus}
         iterationCount={loopState.iterationCount}
@@ -115,17 +122,18 @@ export function Dashboard() {
         wsState={wsState}
         sessionId={sessionId}
         onError={(msg) => toast(msg, "error")}
+        theme={theme}
+        onThemeToggle={onThemeToggle}
       />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Collapsible chat sidebar */}
         <div
-          className="flex flex-col border-r shrink-0 overflow-hidden transition-all duration-200"
+          className="flex flex-col border-r dark:border-zinc-800 border-gray-200 shrink-0 overflow-hidden transition-all duration-200"
           style={{ width: sidebarWidth }}
         >
           {sidebarOpen ? (
             <>
-              {/* Expanded: full sidebar chat */}
               <div className="flex-1 overflow-hidden">
                 <ChatPanel
                   state={chatbot.state}
@@ -142,7 +150,7 @@ export function Dashboard() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full rounded-none border-t h-9 text-xs text-muted-foreground gap-1.5 shrink-0"
+                className="w-full rounded-none border-t dark:border-zinc-800 border-gray-200 h-9 text-xs dark:text-zinc-500 text-gray-400 gap-1.5 shrink-0"
                 onClick={() => setSidebarOpen(false)}
               >
                 <ChevronLeft className="size-3.5" />
@@ -161,14 +169,12 @@ export function Dashboard() {
               >
                 <MessageCircle className="size-5" />
               </Button>
-              {/* Vertical label */}
               <span
-                className="text-xs text-muted-foreground select-none"
+                className="text-xs dark:text-zinc-500 text-gray-400 select-none"
                 style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
               >
                 Chat
               </span>
-              {/* Expand arrow at bottom */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -184,7 +190,7 @@ export function Dashboard() {
 
         {/* Main area: agent output + right panel */}
         <div className="flex-1 grid grid-cols-[1fr_280px] gap-4 p-4 overflow-hidden min-w-0">
-          {/* Left: agent output + optional help panel */}
+          {/* Center: agent output + optional help panel */}
           <div className="flex flex-col gap-4 overflow-hidden">
             <AgentOutput lines={loopState.agentOutputLines} />
             {helpTaskId && (
@@ -197,7 +203,7 @@ export function Dashboard() {
             )}
           </div>
 
-          {/* Right: tabbed confidence + tasks */}
+          {/* Right: tabbed confidence + tasks + code */}
           <RightPanel
             chatState={chatbot.state}
             tasks={loopState.tasks}
@@ -205,7 +211,6 @@ export function Dashboard() {
             sessionId={sessionId}
             onDimensionClick={handleDimensionClick}
             onTaskUpdate={(taskId, patch) => {
-              // Only "open" resets are issued via retry; dispatch synthetic event.
               if (patch.status === "open") {
                 dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
               }

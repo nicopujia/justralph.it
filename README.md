@@ -1,63 +1,75 @@
 # justralph.it
 
+A web platform where you describe your project idea to an AI chatbot (Ralphy), which extracts requirements and generates tasks, then an autonomous AI coding agent (Ralph) builds your project.
+
+## How It Works
+
+1. **Chat with Ralphy** -- describe your idea, answer questions about requirements
+2. **Review generated tasks** -- Ralphy extracts structured tasks with dependencies
+3. **Just Ralph It** -- Ralph (autonomous AI loop) executes tasks, creates code, pushes to GitHub
+
+## Architecture
+
+- **Backend**: FastAPI (Python 3.13+) with SQLite persistence (`/tmp/ralph-sessions/ralph.db`)
+- **Frontend**: React 19 + Vite + Bun + Radix UI + Tailwind CSS
+- **AI Runtime**: OpenCode (opencode.ai) running `opencode-go/kimi-k2.5` model
+- **Task Store**: YAML-backed, no external CLI needed
+- **Session isolation**: each session gets `/tmp/ralph-sessions/{id}/` with its own git repo
+
 ## Setup
 
-### 1. Clone
+### Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/)
+- [Bun](https://bun.sh/) (for frontend)
+- [OpenCode](https://opencode.ai/) (AI runtime)
+
+### Install
 
 ```sh
-git clone https://github.com/nicopujia/just-ralph-it.git justralph.it
+git clone https://github.com/nicopujia/justralph.it
 cd justralph.it
-```
-
-### 2. Install dependencies
-
-Prerequisites: Python 3.13+, [uv](https://docs.astral.sh/uv/), Node.js 18+ with npm.
-
-```sh
 uv sync
-npm install -g ralphy-cli
 ```
 
-### 3. Initialize project
+### Environment Variables
 
 ```sh
-ralph init
+# GitHub OAuth (optional, for repo creation)
+export GITHUB_CLIENT_ID="..."
+export GITHUB_CLIENT_SECRET="..."
 ```
 
-This creates `.ralphy/` (config, hooks, rules) and `tasks.yaml`.
-
-### 4. Create tasks
+### Run
 
 ```sh
-ralph task create "Implement auth endpoint" --body "JWT-based auth" --priority 1
-ralph task list
-```
-
-### 5. Run the loop
-
-```sh
-ralph run --engine claude
-```
-
-Ralphy processes each task through the configured AI engine.
-
-### 6. Run the services
-
-Server:
-
-```bash
+# Server
 fastapi dev ./server/main.py
+
+# Client (separate terminal)
+cd client && bun install && bun dev
 ```
 
-Client:
-
-```bash
-cd ./client
-bun dev
-```
-
-## Test
+### Test
 
 ```sh
 uv run pytest
+```
+
+### Lint
+
+```sh
+uv run ruff check .
+```
+
+## Project Structure
+
+```
+pkgs/ralph/     # Ralph Loop engine (config, runner, agent, events, hooks)
+pkgs/tasks/     # YAML task store (CRUD, parallel groups, reconciliation)
+server/         # FastAPI: sessions, chatbot, GitHub OAuth, SQLite
+client/         # React 19 frontend
+tests/          # pytest tests
+PROMPT.xml      # Agent system prompt
 ```

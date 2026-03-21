@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { API_URL } from "@/lib/config";
 
 type Props = {
   onLogin: () => void;
@@ -7,42 +9,60 @@ type Props = {
 };
 
 export function WelcomePage({ onLogin, onSkip }: Props) {
+  // Check if GitHub OAuth is configured by probing the auth endpoint
+  const [oauthReady, setOauthReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/auth/github`)
+      .then((res) => res.json())
+      .then((data) => setOauthReady(!!data?.url))
+      .catch(() => setOauthReady(false));
+  }, []);
+
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-8 text-center px-4">
-        {/* Logo / title */}
-        <div className="flex flex-col items-center gap-2">
-          <h1 className="text-5xl font-bold tracking-tight text-white">
-            justralph.it
-          </h1>
-          <p className="text-lg text-zinc-300 font-medium">
-            From idea to code. Automatically.
+    <div className="min-h-screen dark:bg-zinc-950 bg-white flex items-center justify-center">
+      {/* Animated gradient border wrapper */}
+      <div className="relative p-px rounded-2xl animated-border">
+        <div className="relative rounded-2xl dark:bg-zinc-900 bg-gray-50 px-10 py-12 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
+          {/* Brand */}
+          <div className="flex flex-col items-center gap-2">
+            <h1 className="text-5xl font-mono font-bold tracking-tight dark:text-zinc-100 text-gray-900">
+              justralph.it
+            </h1>
+            <p className="text-base dark:text-zinc-400 text-gray-500 font-medium">
+              From idea to code. Automatically.
+            </p>
+          </div>
+
+          {/* Tagline */}
+          <p className="dark:text-zinc-500 text-gray-400 text-sm max-w-xs">
+            Describe your project. Ralph builds it.
           </p>
-        </div>
 
-        {/* Subtitle */}
-        <p className="text-zinc-500 text-base max-w-xs">
-          Describe your project. Ralph builds it.
-        </p>
+          {/* Actions */}
+          <div className="flex flex-col gap-3 w-full">
+            {/* GitHub login button */}
+            <div title={oauthReady === false ? "GitHub OAuth not configured" : undefined}>
+              <Button
+                size="lg"
+                className="w-full dark:bg-zinc-800 dark:hover:bg-zinc-700 bg-gray-900 hover:bg-gray-800 dark:text-zinc-100 text-white dark:border-zinc-700 border-gray-700 border gap-2"
+                onClick={onLogin}
+                disabled={oauthReady === false}
+              >
+                <Github className="size-5" />
+                {oauthReady === false ? "GitHub OAuth not configured" : "Login with GitHub"}
+              </Button>
+            </div>
 
-        {/* Login button */}
-        <div className="flex flex-col gap-3">
-          <Button
-            size="lg"
-            className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 gap-2 px-6"
-            onClick={onLogin}
-          >
-            <Github className="size-5" />
-            Login with GitHub
-          </Button>
-          {onSkip && (
-            <button
-              onClick={onSkip}
-              className="text-zinc-600 hover:text-zinc-400 text-sm transition-colors"
-            >
-              Continue without login
-            </button>
-          )}
+            {onSkip && (
+              <button
+                onClick={onSkip}
+                className="dark:text-zinc-500 text-gray-400 dark:hover:text-zinc-300 hover:text-gray-600 text-sm transition-colors"
+              >
+                Continue without login
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

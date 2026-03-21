@@ -8,6 +8,7 @@
   "agent": {
     "ralph": {
       "description": "Solves one task",
+      "model": "opencode-go/kimi-k2.5",
       "temperature": 0.25,
       "variant": "max",
       "prompt": "{file:./PROMPT.xml}",

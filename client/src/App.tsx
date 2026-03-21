@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { WelcomePage } from "./components/WelcomePage";
 import { useAuth } from "./hooks/useAuth";
+import { useTheme } from "./hooks/useTheme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
 
 function AppInner() {
   const { user, loading, loginWithGithub, handleCallback } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [skipped, setSkipped] = useState(false);
 
   // Handle GitHub OAuth callback: ?code=XXXX
@@ -25,8 +27,8 @@ function AppInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <span className="text-zinc-500 text-sm">Loading...</span>
+      <div className="min-h-screen dark:bg-zinc-950 bg-white flex items-center justify-center">
+        <span className="dark:text-zinc-500 text-gray-400 text-sm">Loading...</span>
       </div>
     );
   }
@@ -40,7 +42,7 @@ function AppInner() {
     );
   }
 
-  return <Dashboard />;
+  return <Dashboard theme={theme} onThemeToggle={toggleTheme} />;
 }
 
 export function App() {
