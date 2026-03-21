@@ -22,8 +22,6 @@ from .state import State
 
 logger = logging.getLogger(__name__)
 
-MAX_BACKOFF_SECONDS = 300
-
 
 @dataclass
 class RunnerConfig(Config):
@@ -287,26 +285,33 @@ class RalphyRunner:
     # -- failure handling ------------------------------------------------------
 
     def _handle_failure(self, exc: Exception) -> None:
-        """Log, clean up, apply backoff."""
-        self._consecutive_failures += 1
-        logger.exception(
-            "Iteration failed (consecutive: %s)", self._consecutive_failures
-        )
-        self._state.cleanup_failed_iteration()
-        self._emit(EventType.ITER_FAILED, error=str(exc))
+        """Mark failed task as BLOCKED, emit TASK_HELP, and move on.
 
-        if (
-            self.cfg.max_retries >= 0
-            and self._consecutive_failures > self.cfg.max_retries
-        ):
-            self.cfg.stop_file.write_text(
-                f"exceeded max retries ({self.cfg.max_retries})"
-            )
-            logger.error("Max retries exceeded; stopping")
-        else:
-            backoff = min(2**self._consecutive_failures, MAX_BACKOFF_SECONDS)
-            logger.info("Backing off %ss", backoff)
-            time.sleep(backoff)
+        Instead of retrying with backoff, the task is blocked so the user
+        can inspect the error and PATCH it back to OPEN via the REST API.
+        """
+        task_id = self._state.task_id
+        logger.exception("Iteration failed for task %s", task_id)
+
+        # Reset git state and mark task BLOCKED (clears assignee too)
+        self._state.cleanup_failed_iteration(status=tasks.TaskStatus.BLOCKED)
+
+        # Append error details to the task notes
+        if task_id:
+            try:
+                tasks.update_task(
+                    task_id,
+                    append_notes=str(exc),
+                    cwd=self.cfg.project_dir,
+                )
+            except RuntimeError:
+                logger.error("Failed to append error notes to task %s", task_id)
+
+        self._emit(EventType.ITER_FAILED, error=str(exc))
+        self._emit(EventType.TASK_HELP, task_id=task_id, error=str(exc))
+
+        # Reset counter -- we're moving to the next task, not retrying
+        self._consecutive_failures = 0
 
     # -- signals ---------------------------------------------------------------
 

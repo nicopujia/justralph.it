@@ -1,33 +1,39 @@
 import { Github } from "lucide-react";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
-import { API_URL } from "@/lib/config";
+import { Button } from "@/components/ui/button";
 
-export function WelcomePage() {
+type Props = {
+  onLogin: () => void;
+};
+
+export function WelcomePage({ onLogin }: Props) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold tracking-tight">
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-8 text-center px-4">
+        {/* Logo / title */}
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-5xl font-bold tracking-tight text-white">
             justralph.it
-          </CardTitle>
-          <CardDescription className="text-base">
-            Your AI-powered development partner
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center">
-          <Button
-            size="lg"
-            className="gap-2"
-            onClick={() => {
-              window.location.href = `${API_URL}/api/auth/github`;
-            }}
-          >
-            <Github className="size-5" />
-            Sign in with GitHub
-          </Button>
-        </CardContent>
-      </Card>
+          </h1>
+          <p className="text-lg text-zinc-300 font-medium">
+            From idea to code. Automatically.
+          </p>
+        </div>
+
+        {/* Subtitle */}
+        <p className="text-zinc-500 text-base max-w-xs">
+          Describe your project. Ralph builds it.
+        </p>
+
+        {/* Login button */}
+        <Button
+          size="lg"
+          className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 gap-2 px-6"
+          onClick={onLogin}
+        >
+          <Github className="size-5" />
+          Login with GitHub
+        </Button>
+      </div>
     </div>
   );
 }

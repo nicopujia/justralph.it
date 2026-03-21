@@ -1,58 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { WelcomePage } from "./components/WelcomePage";
-import { API_URL } from "./lib/config";
+import { useAuth } from "./hooks/useAuth";
 import "./index.css";
 
-type AuthState = "loading" | "unauthenticated" | "authenticated";
-
 export function App() {
-  const [authState, setAuthState] = useState<AuthState>("loading");
+  const { user, loading, loginWithGithub, handleCallback } = useAuth();
 
+  // Handle GitHub OAuth callback: ?code=XXXX
   useEffect(() => {
-    // Grab token from OAuth callback URL if present
     const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-    if (urlToken) {
-      localStorage.setItem("github_token", urlToken);
-      // Clean token from URL without reload
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+    const code = params.get("code");
+    if (!code) return;
 
-    const token = urlToken || localStorage.getItem("github_token");
-    if (!token) {
-      setAuthState("unauthenticated");
-      return;
-    }
+    // Remove code from URL immediately to avoid re-processing on refresh
+    const clean = window.location.pathname;
+    window.history.replaceState({}, "", clean);
 
-    // Verify token against GitHub via our backend
-    fetch(`${API_URL}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (res.ok) {
-          setAuthState("authenticated");
-        } else {
-          localStorage.removeItem("github_token");
-          setAuthState("unauthenticated");
-        }
-      })
-      .catch(() => {
-        localStorage.removeItem("github_token");
-        setAuthState("unauthenticated");
-      });
-  }, []);
+    handleCallback(code).catch((err) => {
+      console.error("OAuth callback error:", err);
+    });
+  }, [handleCallback]);
 
-  if (authState === "loading") {
+  if (loading) {
+    // Minimal loading state -- avoids flash of wrong page
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
-        Loading...
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <span className="text-zinc-500 text-sm">Loading...</span>
       </div>
     );
   }
 
-  if (authState === "unauthenticated") {
-    return <WelcomePage />;
+  if (!user) {
+    return <WelcomePage onLogin={loginWithGithub} />;
   }
 
   return <Dashboard />;
