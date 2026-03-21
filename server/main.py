@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -20,7 +21,7 @@ from .auth import (
     get_github_user,
     get_user_session,
 )
-from .chatbot import DIMENSIONS, _chat_states, chat as chatbot_chat, get_chat_state, undo_last_message
+from .chatbot import DIMENSIONS, ChatState, _chat_states, chat as chatbot_chat, get_chat_state, run_tool as chatbot_run_tool, undo_last_message
 from .sessions import (
     Session,
     create_session,
@@ -28,6 +29,7 @@ from .sessions import (
     get_session,
     list_sessions,
     load_sessions_from_db,
+    rename_session,
     restart_loop,
     start_loop,
     stop_loop,
@@ -192,6 +194,18 @@ def api_list_sessions():
 @app.get("/api/sessions/{session_id}")
 def api_get_session(session_id: str):
     session = _require_session(session_id)
+    return session.to_dict()
+
+
+class PatchSessionRequest(BaseModel):
+    name: str
+
+
+@app.patch("/api/sessions/{session_id}")
+def api_patch_session(session_id: str, req: PatchSessionRequest):
+    """Update session metadata (currently: name only)."""
+    session = _require_session(session_id)
+    rename_session(session, req.name.strip())
     return session.to_dict()
 
 
@@ -411,6 +425,16 @@ def api_chat_summary(session_id: str):
     }
 
 
+@app.post("/api/sessions/{session_id}/chat/clear")
+def api_chat_clear(session_id: str):
+    """Delete all chat messages for a session and reset in-memory chatbot state."""
+    _require_session(session_id)
+    db.delete_chat_messages(session_id)
+    # Reset in-memory state but keep the session alive
+    _chat_states[session_id] = ChatState()
+    return {"status": "cleared"}
+
+
 @app.post("/api/sessions/{session_id}/chat/undo")
 def api_chat_undo(session_id: str):
     """Undo last user+assistant message pair, recalculate confidence from history."""
@@ -418,6 +442,24 @@ def api_chat_undo(session_id: str):
     try:
         result = undo_last_message(session_id)
     except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+class ToolRequest(BaseModel):
+    tool: str  # brainstorm, expand, refine, architect
+    context: str = ""  # optional freeform input (for refine tool)
+
+
+@app.post("/api/sessions/{session_id}/chat/tool")
+async def api_run_tool(session_id: str, req: ToolRequest):
+    """Run a chatbot tool (brainstorm, expand, refine, architect)."""
+    session = _require_session(session_id)
+    try:
+        result = await chatbot_run_tool(
+            session_id, req.tool, req.context, session_dir=session.base_dir
+        )
+    except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
 
@@ -514,6 +556,52 @@ def _write_project_config(session: Session, project: dict) -> None:
         "boundaries": {"never_touch": [".ralphy/"]},
     }
     config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+
+# -- Session sharing -----------------------------------------------------------
+
+
+@app.post("/api/sessions/{session_id}/share")
+def api_share_session(session_id: str, request: Request):
+    """Generate (or return existing) a share token for a session.
+
+    Returns the shareable URL so the caller can copy it to clipboard.
+    """
+    session = _require_session(session_id)
+    if not session.share_token:
+        token = secrets.token_urlsafe(16)
+        session.share_token = token
+        db.set_share_token(session_id, token)
+    base = str(request.base_url).rstrip("/")
+    return {"share_token": session.share_token, "url": f"{base}/shared/{session.share_token}"}
+
+
+@app.get("/api/shared/{share_token}")
+def api_get_shared(share_token: str):
+    """Public read-only view of a shared session (no auth required).
+
+    Returns session metadata + chat history.
+    """
+    row = db.get_session_by_share_token(share_token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared session not found")
+    session_id = row["id"]
+    messages = db.load_chat_messages(session_id)
+    state = db.load_chat_state(session_id)
+    return {
+        "session": {
+            "id": session_id,
+            "name": row.get("name", ""),
+            "github_url": row.get("github_url", ""),
+            "status": row.get("status", ""),
+            "created_at": row.get("created_at"),
+        },
+        "messages": [
+            {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+            for m in messages
+        ],
+        "state": state or {},
+    }
 
 
 # -- Helpers -------------------------------------------------------------------

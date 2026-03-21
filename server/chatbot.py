@@ -103,6 +103,192 @@ def _is_ready(state: "ChatState") -> bool:
     return True
 
 
+# -- Tool helpers -----------------------------------------------------------
+
+
+def _total_user_chars(state: "ChatState") -> int:
+    return sum(len(m["content"]) for m in state.messages if m["role"] == "user")
+
+
+def _weak_dimensions(state: "ChatState", n: int = 3) -> str:
+    """Format the N weakest relevant dimensions for tool prompts."""
+    relevant = [
+        (d, state.confidence.get(d, 0))
+        for d in DIMENSIONS
+        if state.relevance.get(d, 1.0) > RELEVANCE_CUTOFF
+    ]
+    weakest = sorted(relevant, key=lambda x: x[1])[:n]
+    return ", ".join(f"{d} ({v}%)" for d, v in weakest)
+
+
+def _conversation_summary(state: "ChatState") -> str:
+    """Build conversation context string for tool prompts."""
+    lines = []
+    for msg in state.messages:
+        role = "User" if msg["role"] == "user" else "Ralphy"
+        lines.append(f"**{role}:** {msg['content']}")
+    return "\n\n".join(lines)
+
+
+TOOL_CONFIGS: dict[str, dict] = {
+    "brainstorm": {
+        "mode": "inject",
+        "gate": lambda s: _total_user_chars(s) >= 120,
+        "gate_reason": "Need 120+ characters of conversation first",
+        "system": """\
+You are a brainstorming assistant for a software project.
+
+## Context
+{conversation}
+
+## Current weak dimensions
+{weak_dims}
+
+## Task
+Generate 3-5 creative feature ideas or angles the user hasn't explored yet.
+Each idea should help clarify the weak dimensions listed above.
+Format as a numbered list. Be specific to THIS project. No preamble.""",
+    },
+    "expand": {
+        "mode": "inject",
+        "gate": lambda s: _total_user_chars(s) >= 120,
+        "gate_reason": "Need 120+ characters of conversation first",
+        "system": """\
+You are an idea expansion specialist for software projects.
+
+## Context
+{conversation}
+
+## Current weak dimensions
+{weak_dims}
+
+## Task
+Expand the project concept with:
+- Specific use cases (2-3)
+- User personas (1-2)
+- Data flow descriptions
+- Integration points
+
+Focus on the weak dimensions listed. Format as a structured list. Be specific.""",
+    },
+    "refine": {
+        "mode": "edit",
+        "gate": lambda s: s.user_msg_count >= 1,
+        "gate_reason": "Need at least 1 message to refine",
+        "system": """\
+You are a prompt refinement specialist.
+
+## Original text
+{original}
+
+## Project context (for reference)
+{conversation}
+
+## Task
+Rewrite the original text to be:
+- More specific and detailed
+- Clearer about requirements and constraints
+- Better structured for an AI requirements extractor
+
+Return ONLY the improved text. No preamble, no explanation, no quotes.""",
+    },
+    "architect": {
+        "mode": "inject",
+        "gate": lambda s: _get_phase(s.user_msg_count) >= 2,
+        "gate_reason": "Need Phase 2+ (4+ messages) for architecture suggestions",
+        "system": """\
+You are a system design advisor.
+
+## Context
+{conversation}
+
+## Current confidence scores
+{confidence_summary}
+
+## Current weak dimensions
+{weak_dims}
+
+## Task
+Based on the requirements gathered, suggest:
+1. Architecture pattern (monolith, microservices, serverless, etc.) with rationale
+2. Database choice and schema approach
+3. Auth strategy (or note if not needed)
+4. Deployment recommendation
+5. Key technical decisions
+
+Be specific to THIS project. Format as a numbered list with brief rationale for each.""",
+    },
+}
+
+
+async def run_tool(
+    session_id: str,
+    tool: str,
+    context: str = "",
+    *,
+    session_dir: Path | None = None,
+) -> dict:
+    """Run a toolset tool. Returns {result, mode, tool}. Does NOT modify chat state."""
+    if tool not in TOOL_CONFIGS:
+        raise ValueError(f"Unknown tool: {tool}")
+
+    state = get_chat_state(session_id)
+    config = TOOL_CONFIGS[tool]
+
+    # Rate limit (shared with chat)
+    now = time.time()
+    if now - state.last_message_time < 3.0:
+        raise RuntimeError("Rate limited. Wait a moment.")
+    state.last_message_time = now
+
+    # Gate check
+    if not config["gate"](state):
+        raise RuntimeError(config["gate_reason"])
+
+    # Build prompt
+    conversation = _conversation_summary(state)
+    weak_dims = _weak_dimensions(state)
+    confidence_summary = ", ".join(
+        f"{d}: {state.confidence.get(d, 0)}%" for d in DIMENSIONS
+    )
+
+    # For refine: use provided context or last user message
+    original = context
+    if tool == "refine" and not original:
+        user_msgs = [m for m in state.messages if m["role"] == "user"]
+        original = user_msgs[-1]["content"] if user_msgs else ""
+
+    system_prompt = config["system"].format(
+        conversation=conversation,
+        weak_dims=weak_dims,
+        confidence_summary=confidence_summary,
+        original=original,
+    )
+
+    # Call opencode
+    cwd = str(session_dir or state.session_dir) if (session_dir or state.session_dir) else None
+    try:
+        result = subprocess.run(
+            [OPENCODE_CMD, "run", system_prompt, "--format", "json"],
+            capture_output=True, text=True, timeout=120, cwd=cwd,
+        )
+        output = result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Tool timed out (120s)")
+    except FileNotFoundError:
+        raise RuntimeError("OpenCode not found on PATH")
+
+    if not output:
+        output = result.stderr.strip() or ""
+        if not output:
+            raise RuntimeError("Tool returned no output")
+
+    content = _extract_content(output)
+    content = _strip_code_fences(content)
+
+    return {"result": content, "mode": config["mode"], "tool": tool}
+
+
 SYSTEM_PROMPT = """\
 You are Ralphy, an expert software architect and requirement extractor.
 
@@ -127,6 +313,14 @@ Match question depth to conversation phase:
 - Questions 11+ (finalize): Fill gaps, verify consistency, resolve contradictions.
 
 Do NOT jump ahead. You MUST ask at least 10 substantive questions before setting ready=true.
+
+## Tool-generated messages
+
+Messages prefixed with [Tool: Name] are generated by the user's brainstorming tools.
+Treat them as additional context from the user, not as answers to your questions.
+Acknowledge the ideas briefly, then continue with your next focused question
+targeting the weakest dimension. Do not ask the user to elaborate on every
+tool-generated point -- pick the most impactful one.
 
 ## Confidence dimensions (0-100 each)
 

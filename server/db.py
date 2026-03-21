@@ -35,7 +35,9 @@ def init_db() -> None:
             base_dir TEXT NOT NULL,
             github_url TEXT DEFAULT '',
             status TEXT DEFAULT 'ready',
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            name TEXT DEFAULT '',
+            share_token TEXT DEFAULT NULL
         );
 
         CREATE TABLE IF NOT EXISTS chat_messages (
@@ -58,6 +60,16 @@ def init_db() -> None:
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
     """)
+    # Migrate existing DBs: add columns if absent.
+    for ddl in [
+        "ALTER TABLE sessions ADD COLUMN name TEXT DEFAULT ''",
+        "ALTER TABLE sessions ADD COLUMN share_token TEXT DEFAULT NULL",
+    ]:
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.close()
 
 
@@ -65,13 +77,13 @@ def init_db() -> None:
 
 
 def save_session(
-    id: str, base_dir: str, github_url: str, status: str, created_at: float
+    id: str, base_dir: str, github_url: str, status: str, created_at: float, name: str = ""
 ) -> None:
     conn = _get_conn()
     conn.execute(
-        "INSERT OR REPLACE INTO sessions (id, base_dir, github_url, status, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (id, base_dir, github_url, status, created_at),
+        "INSERT OR REPLACE INTO sessions (id, base_dir, github_url, status, created_at, name) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (id, base_dir, github_url, status, created_at, name),
     )
     conn.commit()
     conn.close()
@@ -94,6 +106,13 @@ def list_sessions() -> list[dict]:
 def update_session_status(id: str, status: str) -> None:
     conn = _get_conn()
     conn.execute("UPDATE sessions SET status = ? WHERE id = ?", (status, id))
+    conn.commit()
+    conn.close()
+
+
+def update_session_name(id: str, name: str) -> None:
+    conn = _get_conn()
+    conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, id))
     conn.commit()
     conn.close()
 
@@ -212,3 +231,26 @@ def load_chat_state(session_id: str) -> dict | None:
     d["tasks"] = json.loads(d["tasks"]) if d["tasks"] else None
     d["project"] = json.loads(d["project"]) if d["project"] else None
     return d
+
+
+# -- Share tokens --------------------------------------------------------------
+
+
+def set_share_token(session_id: str, token: str) -> None:
+    """Persist share token for a session."""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE sessions SET share_token = ? WHERE id = ?", (token, session_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_session_by_share_token(token: str) -> dict | None:
+    """Return the session row matching share_token, or None."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE share_token = ?", (token,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None

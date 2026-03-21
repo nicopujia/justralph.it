@@ -28,6 +28,7 @@ class Session:
     id: str
     base_dir: Path
     github_url: str = ""
+    name: str = ""  # user-visible label, e.g. "Todo App"
     status: str = "initializing"  # initializing | ready | running | stopped | done | needs_help
     created_at: float = field(default_factory=time.time)
     runner: RalphyRunner | None = field(default=None, repr=False)
@@ -35,6 +36,7 @@ class Session:
     event_bus: EventBus = field(default_factory=EventBus, repr=False)
     loop_start_time: float | None = None
     iteration_count: int = 0
+    share_token: str | None = None
 
     def to_dict(self) -> dict:
         running = self.thread is not None and self.thread.is_alive()
@@ -45,11 +47,13 @@ class Session:
             "id": self.id,
             "base_dir": str(self.base_dir),
             "github_url": self.github_url,
+            "name": self.name,
             "status": self.status,
             "created_at": self.created_at,
             "running": running,
             "iteration_count": self.iteration_count,
             "uptime_seconds": uptime,
+            "share_token": self.share_token,
         }
 
 
@@ -148,6 +152,12 @@ def list_sessions() -> list[Session]:
     return list(_sessions.values())
 
 
+def rename_session(session: Session, name: str) -> None:
+    """Update the user-visible name of a session."""
+    session.name = name
+    db.update_session_name(session.id, name)
+
+
 def start_loop(session: Session) -> None:
     """Start the Ralph Loop for a session in a daemon thread."""
     if session.thread and session.thread.is_alive():
@@ -244,8 +254,10 @@ def load_sessions_from_db() -> None:
             id=sid,
             base_dir=Path(row["base_dir"]),
             github_url=row.get("github_url", ""),
+            name=row.get("name", ""),
             status=status,
             created_at=row["created_at"],
+            share_token=row.get("share_token"),
         )
         _sessions[sid] = session
     logger.info("Loaded %d sessions from DB", len(rows))
