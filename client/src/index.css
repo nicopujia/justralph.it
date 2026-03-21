@@ -120,7 +120,7 @@ html.dark {
     rgba(0, 255, 65, 0.03) 4px
   );
   pointer-events: none;
-  z-index: 1;
+  z-index: 50;
 }
 
 /* Subtle grid background */
