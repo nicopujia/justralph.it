@@ -160,8 +160,11 @@ class Agent:
                     yield line
 
                 process.wait()
+
+            self._parse_status(lines)
         finally:
-            self.status = AgentStatus.IDLE
+            if self.status == AgentStatus.WORKING:
+                self.status = AgentStatus.IDLE
 
     @staticmethod
     def _read_stdout(stdout, q: "queue_mod.Queue[str | None]") -> None:
@@ -170,6 +173,8 @@ class Agent:
             q.put(line)
         q.put(None)
 
+    def _parse_status(self, lines: list[str]) -> None:
+        """Parse the agent's final status from the last non-empty line of output."""
         status_xml = ""
         for line in reversed(lines):
             if line.strip():

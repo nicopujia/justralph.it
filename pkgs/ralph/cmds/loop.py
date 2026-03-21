@@ -30,6 +30,7 @@ from ..core.hooks import load_hooks
 from ..core.state import State
 from ..utils.backup import snapshot_issues
 from ..utils.git import (
+    cleanup_branch,
     create_tag,
     done_tag,
     ensure_on_main,
@@ -39,7 +40,6 @@ from ..utils.git import (
     is_worktree_clean,
     merge_from,
     pre_iter_tag,
-    reset_git_state,
     rollback_to_tag,
     sync_to_branch,
 )
@@ -316,9 +316,11 @@ class Loop(Command):
         # Snapshot bd issues for potential rollback
         snapshot_issues(iteration, self._backup_dir, bd_cwd=self.cfg.base_dir)
 
-        # Prepare dev worktree: sync to main, clean up old branches
+        # Prepare dev worktree: sync to main, clean up old issue branch
+        # (can't use reset_git_state here -- it tries checkout main, which
+        # is already owned by the prod worktree)
         sync_to_branch("main", cwd=self._dev_dir)
-        reset_git_state(issue.id, cwd=self._dev_dir)
+        cleanup_branch(issue.id, cwd=self._dev_dir)
 
         # Create agent with cwd=base_dir (where opencode.jsonc + PROMPT.xml live)
         extra_args, extra_kwargs = self._hooks.extra_args_kwargs(self.cfg, issue)
