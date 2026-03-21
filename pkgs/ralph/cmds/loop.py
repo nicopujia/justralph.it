@@ -209,6 +209,7 @@ class Loop(Command):
     def _create_agent(self, issue: Issue, iteration: int) -> Agent:
         """Build an Agent, claim the issue, and prepare git state."""
         extra_args, extra_kwargs = self._hooks.extra_args_kwargs(self.cfg, issue)
+        extra_kwargs.setdefault("cwd", str(self.cfg.base_dir))
         agent = Agent(issue, self.cfg.model, iteration, *extra_args, **extra_kwargs)
         agent.claim_issue()
         reset_git_state(issue.id)
