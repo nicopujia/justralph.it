@@ -2,29 +2,18 @@
 
 import logging
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import ralph as ralph_module
 
 from ..config import (
-    DEV_WORKTREE,
     HOOKS_FILENAME,
-    MAIN_BRANCH,
-    PROD_WORKTREE,
-    RALPH_DIR_NAME,
+    RALPHY_DIR_NAME,
     Config,
 )
-from ..utils.git import (
-    add_remote,
-    add_worktree,
-    convert_to_bare,
-    has_worktree,
-    init_bare,
-    is_bare,
-    is_repo,
-    push,
-)
+from ..utils.git import is_repo
 from . import Command
 
 logger = logging.getLogger(__name__)
@@ -33,7 +22,25 @@ logger = logging.getLogger(__name__)
 PACKAGE_ROOT = Path(ralph_module.__file__).parent
 TEMPLATES = PACKAGE_ROOT / "templates"
 
-RALPH_GITIGNORE_CONTENT = "logs/\nstate.json\n*.ralph\nbackups/\n"
+RALPHY_GITIGNORE_CONTENT = "logs/\nstate.json\n*.ralph\nbackups/\n"
+
+DEFAULT_CONFIG_YAML = """\
+project:
+  name: ""
+  language: ""
+  framework: ""
+  description: ""
+
+commands:
+  test: ""
+  lint: ""
+
+boundaries:
+  never_touch:
+    - .ralphy/
+"""
+
+EMPTY_TASKS_YAML = "tasks: []\n"
 
 
 @dataclass
@@ -51,30 +58,25 @@ class InitConfig(Config):
 
 
 class Init(Command):
-    help = "Scaffold a Ralph project with worktrees"
+    help = "Scaffold a Ralph project"
     config = InitConfig
     cfg: InitConfig
 
     def run(self) -> None:
-        """Scaffold or reorganize a project into the Ralph worktree layout.
+        """Scaffold a project for use with Ralph + ralphy.
 
         Target structure::
 
             base_dir/
-                .git/            # bare repo
-                opencode.jsonc -> /path/to/ralph/opencode.jsonc
-                PROMPT.xml -> /path/to/ralph/PROMPT.xml
-                prod/            # worktree on main
-                ├── .ralph/      # ralph config, state, and logs
-                │   ├── hooks.py
-                │   ├── .gitignore
-                │   ├── logs/
-                │   └── state.json
-                └── ...          # other project files
-                dev/             # worktree on dev
-
-        opencode.jsonc and PROMPT.xml are Ralph's own config files, symlinked
-        from the installed package so projects always use the latest version.
+                .git/              # standard git repo
+                .ralphy/           # ralphy config directory
+                |-- config.yaml    # project config
+                |-- rules.txt      # coding rules for AI
+                |-- hooks.py       # lifecycle hooks
+                |-- .gitignore
+                |-- logs/
+                tasks.yaml         # task store
+                PROMPT.xml -> ...  # symlink to ralph package
         """
         root = self.cfg.base_dir
 
@@ -84,60 +86,78 @@ class Init(Command):
 
         root.mkdir(parents=True, exist_ok=True)
 
-        if is_repo(root):
-            self._init_existing(root)
-        else:
-            self._init_fresh(root)
+        # Initialize git repo if needed (standard, not bare)
+        if not is_repo(root):
+            subprocess.run(
+                ["git", "init"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            logger.info("Initialized git repo at %s", root)
 
-        self._scaffold_ralph_dir(root)
+        # Run ralphy --init if ralphy is available (creates .ralphy/ scaffold)
+        if shutil.which("ralphy"):
+            result = subprocess.run(
+                ["ralphy", "--init"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                logger.info("Ran ralphy --init")
+            else:
+                logger.warning("ralphy --init failed: %s", result.stderr.strip())
 
-        # Symlink Ralph's config files (auto-updates with Ralph)
-        self._symlink_config(root, "opencode.jsonc")
+        # Scaffold .ralphy/ (fill in anything ralphy --init may have missed)
+        self._scaffold_ralphy_dir(root)
+
+        # Create tasks.yaml if missing
+        tasks_file = root / "tasks.yaml"
+        if not tasks_file.exists():
+            tasks_file.write_text(EMPTY_TASKS_YAML)
+            logger.info("Created %s", tasks_file)
+
+        # Symlink PROMPT.xml
         self._symlink_config(root, "PROMPT.xml")
 
         if self.cfg.remote:
-            add_remote(root, "origin", self.cfg.remote)
-            push(cwd=root)
+            subprocess.run(
+                ["git", "remote", "add", "origin", self.cfg.remote],
+                cwd=root, capture_output=True,
+            )
 
         logger.info("Initialized %s", root)
 
-    # -- repo setup --------------------------------------------------------
+    def _scaffold_ralphy_dir(self, root: Path) -> None:
+        """Create .ralphy/ with config, hooks, rules, .gitignore, logs dir."""
+        ralphy_dir = root / RALPHY_DIR_NAME
+        ralphy_dir.mkdir(parents=True, exist_ok=True)
+        (ralphy_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-    def _init_fresh(self, root: Path) -> None:
-        """Create a bare repo with prod and dev worktrees."""
-        init_bare(root)
-        add_worktree(root, PROD_WORKTREE, branch=MAIN_BRANCH)
-        add_worktree(root, DEV_WORKTREE, branch=DEV_WORKTREE, new_branch=True)
+        # config.yaml
+        config_path = ralphy_dir / "config.yaml"
+        if not config_path.exists():
+            config_path.write_text(DEFAULT_CONFIG_YAML)
+            logger.info("Created %s", config_path)
 
-    def _init_existing(self, root: Path) -> None:
-        """Convert an existing repo to bare and add missing worktrees."""
-        if not is_bare(root):
-            convert_to_bare(root)
-        if not has_worktree(root, PROD_WORKTREE):
-            add_worktree(root, PROD_WORKTREE, branch=MAIN_BRANCH)
-        if not has_worktree(root, DEV_WORKTREE):
-            add_worktree(root, DEV_WORKTREE, branch=DEV_WORKTREE, new_branch=True)
+        # rules.txt
+        rules_path = ralphy_dir / "rules.txt"
+        if not rules_path.exists():
+            rules_path.write_text("")
+            logger.info("Created %s", rules_path)
 
-    # -- ralph config files ------------------------------------------------
-
-    def _scaffold_ralph_dir(self, root: Path) -> None:
-        """Create prod/.ralph/ with hooks, .gitignore, logs dir, and runtime files."""
-        ralph_dir = root / PROD_WORKTREE / RALPH_DIR_NAME
-        ralph_dir.mkdir(parents=True, exist_ok=True)
-        (ralph_dir / "logs").mkdir(parents=True, exist_ok=True)
-        
-        # Write template files to prod/.ralph/
-        hooks_path = ralph_dir / HOOKS_FILENAME
+        # hooks.py
+        hooks_path = ralphy_dir / HOOKS_FILENAME
         if not hooks_path.exists():
             hooks_path.write_text(self._read_template(HOOKS_FILENAME))
             logger.info("Created %s", hooks_path)
-        
-        gitignore_path = ralph_dir / ".gitignore"
-        if not gitignore_path.exists():
-            gitignore_path.write_text(RALPH_GITIGNORE_CONTENT)
-            logger.info("Created %s", gitignore_path)
 
-    # -- helpers -----------------------------------------------------------
+        # .gitignore
+        gitignore_path = ralphy_dir / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text(RALPHY_GITIGNORE_CONTENT)
+            logger.info("Created %s", gitignore_path)
 
     @staticmethod
     def _read_template(name: str) -> str:
@@ -146,16 +166,10 @@ class Init(Command):
 
     @staticmethod
     def _symlink_config(root: Path, filename: str) -> None:
-        """Create symlink from project root to Ralph's installed config file.
-        
-        Args:
-            root: Project root directory
-            filename: Config file name (e.g., "opencode.jsonc")
-        """
+        """Create symlink from project root to Ralph's installed config file."""
         symlink_path = root / filename
         config_path = PACKAGE_ROOT / filename
-        
-        # Create or update symlink at root
+
         if symlink_path.exists() or symlink_path.is_symlink():
             symlink_path.unlink()
         symlink_path.symlink_to(config_path)
