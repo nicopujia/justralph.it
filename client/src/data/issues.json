@@ -1,0 +1,106 @@
+[
+  {
+    "id": "#99",
+    "type": "Task",
+    "title": "Confirm analytics account owner and event naming",
+    "status": "Open",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#98",
+    "type": "Task",
+    "title": "Package the cutover checklist for launch day",
+    "status": "Open",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#96",
+    "type": "Feature",
+    "title": "Define the case study content model and slug strategy",
+    "status": "Open",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#95",
+    "type": "Feature",
+    "title": "Prepare contact flow ownership and notification routing",
+    "status": "In progress",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#94",
+    "type": "Epic",
+    "title": "Add one stable CMS collection for public case studies",
+    "status": "Open",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#89",
+    "type": "Bug",
+    "title": "Clarify bilingual fallback behavior before schema lock",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#86",
+    "type": "Bug",
+    "title": "Resolve preview deployment ownership after environment review",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#85",
+    "type": "Bug",
+    "title": "Audit navigation structure against the reduced page count",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#79",
+    "type": "Bug",
+    "title": "Remove unsupported integration language from the brief",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "High"
+  },
+  {
+    "id": "#62",
+    "type": "Feature",
+    "title": "Prepare launch-day rollback note for the client",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "Medium"
+  },
+  {
+    "id": "#61",
+    "type": "Task",
+    "title": "Write hosting assumptions into the agent brief",
+    "status": "Closed",
+    "assignee": "Unassigned",
+    "priority": "Medium"
+  },
+  {
+    "id": "#58",
+    "type": "Epic",
+    "title": "Sequence launch validation and rollback instructions",
+    "status": "In progress",
+    "assignee": "Tomy",
+    "priority": "Medium"
+  },
+  {
+    "id": "#53",
+    "type": "Task",
+    "title": "Map final contact recipients for each incoming form path",
+    "status": "Open",
+    "assignee": "Operations",
+    "priority": "Low"
+  }
+]

@@ -1,38 +1,29 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { APITester } from "./APITester";
-import "./index.css";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
+import { AppShell } from "@/components/system/app-shell";
+import { LandingPage } from "@/components/system/landing-page";
+import { PricingPage } from "@/components/system/pricing-page";
+import { ProjectDetailPage } from "@/components/system/project-detail-page";
+import { ProjectsPage } from "@/components/system/projects-page";
+import { ProjectStoreProvider } from "@/components/system/project-store";
+import { SettingsPage } from "@/components/system/settings-page";
+import "./index.css";
 
 export function App() {
   return (
-    <div className="container mx-auto p-8 text-center relative z-10">
-      <div className="flex justify-center items-center gap-8 mb-8">
-        <img
-          src={logo}
-          alt="Bun Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa] scale-120"
-        />
-        <img
-          src={reactLogo}
-          alt="React Logo"
-          className="h-36 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa] [animation:spin_20s_linear_infinite]"
-        />
-      </div>
-      <Card>
-        <CardHeader className="gap-4">
-          <CardTitle className="text-3xl font-bold">Bun + React</CardTitle>
-          <CardDescription>
-            Edit <code className="rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono">src/App.tsx</code> and save to
-            test HMR
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <APITester />
-        </CardContent>
-      </Card>
-    </div>
+    <ProjectStoreProvider>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/app" element={<AppShell />}>
+          <Route index element={<Navigate to="projects" replace />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/:projectId" element={<ProjectDetailPage />} />
+          <Route path="pricing" element={<PricingPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ProjectStoreProvider>
   );
 }
 
