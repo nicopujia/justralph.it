@@ -37,6 +37,10 @@ const initialState: DashboardState = {
 
 function reducer(state: DashboardState, event: RalphEvent): DashboardState {
   switch (event.type) {
+    // Synthetic: reset all loop state when switching sessions.
+    case "reset":
+      return { ...initialState };
+
     case "loop_started":
       return {
         ...state,

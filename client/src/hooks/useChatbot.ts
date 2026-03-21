@@ -1,8 +1,36 @@
 import { useState, useCallback, useEffect } from "react";
 
+export type TokenUsage = {
+  /** Estimated output tokens (chars / 4). Always present for assistant messages. */
+  outputTokens: number;
+  /** Input token count from API -- absent when only estimated. */
+  inputTokens?: number;
+  /** Whether counts are estimated (true) or from API (false). */
+  estimated: boolean;
+};
+
+/** Per-message metadata snapshot captured from the API response. Only set on assistant messages. */
+export type MessageMetadata = {
+  confidence: Confidence;
+  relevance: Relevance;
+  phase: number;
+  questionCount: number;
+  weightedReadiness: number;
+  /** Full raw API response, for power-user inspection. */
+  rawResponse: Record<string, unknown>;
+};
+
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  /** Unix ms timestamp when the message was created. May be absent for history-restored messages. */
+  timestamp?: number;
+  /** Send status -- only set on user messages. 'error' means the request failed. */
+  status?: "pending" | "sent" | "error";
+  /** Token usage -- only set on assistant messages. */
+  tokenUsage?: TokenUsage;
+  /** Snapshot of API metadata at the time this assistant message was received. */
+  metadata?: MessageMetadata;
 };
 
 export type Confidence = {
@@ -25,6 +53,9 @@ export type Relevance = {
   edge_cases: number;
 };
 
+export type ToolName = "brainstorm" | "expand" | "refine" | "architect";
+export type ToolResult = { text: string; mode: "edit" | "inject"; tool: string };
+
 export type ChatState = {
   messages: ChatMessage[];
   confidence: Confidence;
@@ -39,6 +70,8 @@ export type ChatState = {
   weightedReadiness: number;
   questionCount: number;
   phase: number;
+  toolLoading: boolean;
+  toolResult: ToolResult | null;
 };
 
 import { API_URL } from "@/lib/config";
@@ -80,6 +113,8 @@ export function useChatbot() {
     weightedReadiness: 0,
     questionCount: 0,
     phase: 1,
+    toolLoading: false,
+    toolResult: null,
   });
 
   // Restore session from localStorage on mount.
@@ -148,19 +183,25 @@ export function useChatbot() {
   }, []);
 
   const sendMessage = useCallback(
-    async (message: string) => {
+    async (message: string, replaceTimestamp?: number) => {
       let sid = state.sessionId;
       if (!sid) {
         sid = await createSession();
       }
 
-      setState((s) => ({
-        ...s,
-        sessionId: sid,
-        messages: [...s.messages, { role: "user", content: message }],
-        loading: true,
-        error: null,
-      }));
+      const msgTimestamp = replaceTimestamp ?? Date.now();
+
+      setState((s) => {
+        // If retrying, replace the errored message in-place; otherwise append.
+        const next = replaceTimestamp
+          ? s.messages.map((m) =>
+              m.timestamp === replaceTimestamp
+                ? { role: "user" as const, content: message, timestamp: msgTimestamp, status: "pending" as const }
+                : m,
+            )
+          : [...s.messages, { role: "user" as const, content: message, timestamp: msgTimestamp, status: "pending" as const }];
+        return { ...s, sessionId: sid, messages: next, loading: true, error: null };
+      });
 
       try {
         const resp = await fetch(`${API}/api/sessions/${sid}/chat`, {
@@ -175,11 +216,27 @@ export function useChatbot() {
         }
 
         const data = await resp.json();
+        // Estimate output tokens: ~4 chars per token (no API token data available)
+        const assistantTokenUsage: TokenUsage = data.token_usage
+          ? { outputTokens: data.token_usage.output_tokens, inputTokens: data.token_usage.input_tokens, estimated: false }
+          : { outputTokens: Math.round((data.message?.length ?? 0) / 4), estimated: true };
+        // Snapshot metadata at message creation time so each message carries its own state
+        const assistantMetadata: MessageMetadata = {
+          confidence: data.confidence ?? EMPTY_CONFIDENCE,
+          relevance: data.relevance ?? EMPTY_RELEVANCE,
+          phase: data.phase ?? 1,
+          questionCount: data.question_count ?? 0,
+          weightedReadiness: data.weighted_readiness ?? 0,
+          rawResponse: data as Record<string, unknown>,
+        };
         setState((s) => ({
           ...s,
           messages: [
-            ...s.messages,
-            { role: "assistant", content: data.message },
+            // Mark the pending user message as sent
+            ...s.messages.map((m) =>
+              m.timestamp === msgTimestamp ? { ...m, status: "sent" as const } : m,
+            ),
+            { role: "assistant", content: data.message, timestamp: Date.now(), tokenUsage: assistantTokenUsage, metadata: assistantMetadata },
           ],
           confidence: data.confidence ?? s.confidence,
           relevance: data.relevance ?? s.relevance,
@@ -192,14 +249,23 @@ export function useChatbot() {
           loading: false,
         }));
       } catch (err) {
+        // Mark the pending user message with error status; keep it visible for retry.
         setState((s) => ({
           ...s,
-          error: err instanceof Error ? err.message : "Unknown error",
+          messages: s.messages.map((m) =>
+            m.timestamp === msgTimestamp ? { ...m, status: "error" as const } : m,
+          ),
           loading: false,
         }));
       }
     },
     [state.sessionId, createSession],
+  );
+
+  /** Retry a failed user message identified by its timestamp. */
+  const retryMessage = useCallback(
+    (content: string, timestamp: number) => sendMessage(content, timestamp),
+    [sendMessage],
   );
 
   // tasksOverride: if provided, sent in the request body so the server
@@ -259,5 +325,146 @@ export function useChatbot() {
     }));
   }, [state.sessionId]);
 
-  return { state, sendMessage, ralphIt, createSession, clearError, undoLastMessage };
+  /**
+   * Delete a session by ID (defaults to current). Clears localStorage and
+   * resets state so the user starts fresh.
+   */
+  const deleteSession = useCallback(async (id?: string) => {
+    const target = id ?? state.sessionId;
+    if (!target) return;
+    await fetch(`${API}/api/sessions/${target}`, { method: "DELETE" });
+    // Only reset local state when deleting the active session
+    if (target === state.sessionId) {
+      localStorage.removeItem(LS_KEY);
+      setState({
+        messages: [],
+        confidence: EMPTY_CONFIDENCE,
+        relevance: EMPTY_RELEVANCE,
+        ready: false,
+        loading: false,
+        error: null,
+        sessionId: null,
+        tasks: null,
+        project: null,
+        weightedReadiness: 0,
+        questionCount: 0,
+        phase: 1,
+        toolLoading: false,
+        toolResult: null,
+      });
+    }
+  }, [state.sessionId]);
+
+  /** Clear all messages for the current session without destroying the session. */
+  const clearChat = useCallback(async () => {
+    if (!state.sessionId) return;
+    const resp = await fetch(`${API}/api/sessions/${state.sessionId}/chat/clear`, {
+      method: "POST",
+    });
+    if (!resp.ok) return;
+    setState((s) => ({
+      ...s,
+      messages: [],
+      confidence: EMPTY_CONFIDENCE,
+      relevance: EMPTY_RELEVANCE,
+      ready: false,
+      tasks: null,
+      project: null,
+      weightedReadiness: 0,
+      questionCount: 0,
+      phase: 1,
+    }));
+  }, [state.sessionId]);
+
+  /**
+   * Switch to an existing session by ID: fetch its history and restore state.
+   * Updates localStorage so the next page load resumes the same session.
+   */
+  const loadSession = useCallback(async (sessionId: string) => {
+    try {
+      const [sessionResp, histResp] = await Promise.all([
+        fetch(`${API}/api/sessions/${sessionId}`),
+        fetch(`${API}/api/sessions/${sessionId}/chat/history`),
+      ]);
+      if (!sessionResp.ok) return;
+      const session = await sessionResp.json();
+      const hist = histResp.ok ? await histResp.json() : {};
+
+      localStorage.setItem(LS_KEY, sessionId);
+      setState((s) => ({
+        ...s,
+        sessionId,
+        messages: hist.messages ?? [],
+        confidence: hist.confidence ?? session.confidence ?? EMPTY_CONFIDENCE,
+        relevance: hist.relevance ?? session.relevance ?? EMPTY_RELEVANCE,
+        ready: hist.ready ?? session.ready ?? false,
+        tasks: null,
+        project: null,
+        weightedReadiness: hist.weighted_readiness ?? session.weighted_readiness ?? 0,
+        questionCount: hist.question_count ?? session.question_count ?? 0,
+        phase: hist.phase ?? session.phase ?? 1,
+        loading: false,
+        error: null,
+        toolLoading: false,
+        toolResult: null,
+      }));
+    } catch {
+      // silently ignore -- leave state unchanged
+    }
+  }, []);
+
+  const runTool = useCallback(
+    async (tool: ToolName, context?: string) => {
+      if (!state.sessionId) return;
+      setState((s) => ({ ...s, toolLoading: true, error: null }));
+      try {
+        const resp = await fetch(
+          `${API}/api/sessions/${state.sessionId}/chat/tool`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool, context: context ?? "" }),
+          },
+        );
+        if (!resp.ok) {
+          const err = await resp
+            .json()
+            .catch(() => ({ detail: "Tool failed" }));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        setState((s) => ({
+          ...s,
+          toolLoading: false,
+          toolResult: { text: data.result, mode: data.mode, tool: data.tool },
+        }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          toolLoading: false,
+          error: err instanceof Error ? err.message : "Tool failed",
+        }));
+      }
+    },
+    [state.sessionId],
+  );
+
+  const clearToolResult = useCallback(() => {
+    setState((s) => ({ ...s, toolResult: null }));
+  }, []);
+
+  return {
+    state,
+    sendMessage,
+    ralphIt,
+    createSession,
+    clearError,
+    clearChat,
+    deleteSession,
+    loadSession,
+    undoLastMessage,
+    retryMessage,
+    runTool,
+    clearToolResult,
+  };
 }
