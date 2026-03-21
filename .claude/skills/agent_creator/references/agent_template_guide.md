@@ -8,7 +8,7 @@ Explains each section of a justralph.it agent file -- what it is, how to fill it
 
 ### `name`
 The snake_case identifier. Used in logs and cross-agent references.
-- Good: `loop_orchestrator`, `bd_wrapper`, `state_recovery`
+- Good: `loop_orchestrator`, `task_store`, `state_recovery`
 - Bad: `LoopOrchestrator`, `loop-orchestrator`, `my agent`
 
 ### `description`
@@ -49,7 +49,7 @@ One declarative sentence after the frontmatter. Not a paragraph -- one sentence.
 
 ## Core Identity
 2-4 sentences. Personality + approach + the quality the agent embodies.
-- Good: Mentions the domain (Ralph loop, bd issues, git worktrees), a concrete work style (systematic, conservative), and one thing the agent cares about above all else.
+- Good: Mentions the domain (Ralph loop, tasks, git worktrees), a concrete work style (systematic, conservative), and one thing the agent cares about above all else.
 - Bad: Generic statements like "You are detail-oriented and strive for excellence."
 
 ---
@@ -79,7 +79,7 @@ Domain-specific files come after. Common ones for this project:
 - `pkgs/ralph/core/hooks.py` -- Hooks lifecycle interface
 - `pkgs/ralph/cmds/loop.py` -- main loop orchestration
 - `pkgs/ralph/utils/git.py` -- git operations
-- `pkgs/bd/main.py` -- Issue dataclass and bd CLI wrapper
+- `pkgs/tasks/main.py` -- Task dataclass and task store
 
 ---
 

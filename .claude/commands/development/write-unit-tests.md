@@ -21,7 +21,7 @@ Create comprehensive unit tests for the current code and generate the test file 
     - Edge cases and boundary conditions
     - Error handling and exception cases
     - Mock external dependencies appropriately
-    - For subprocess-based code (bd wrapper, Agent, git ops): mock `subprocess.run`, not the actual CLI
+    - For subprocess-based code (task store, Agent, git ops): mock `subprocess.run`, not the actual CLI
     - For EventBus tests: test thread safety with concurrent emit/drain
 4. **Test Quality**
     - Make tests independent and isolated

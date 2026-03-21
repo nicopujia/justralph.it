@@ -58,7 +58,7 @@ performance implications, and provide actionable suggestions for improvement.
 
 - **Crash recovery**: verify state persistence bracket (save before iter, clear after)
 - **Event emission**: verify EventBus events are emitted at correct lifecycle points
-- **bd error handling**: verify None-on-failure pattern (functions return None, never raise)
+- **Task store error handling**: verify None-on-failure pattern (functions return None, never raise)
 - **Git operations**: verify `cwd` is passed explicitly to all git commands via `_run()`
 - **Subprocess cleanup**: verify Agent subprocess is killed on timeout (no orphaned processes)
 - **Status sync**: verify PROMPT.xml status strings match AgentStatus enum values
