@@ -6,6 +6,8 @@ import uuid
 
 import httpx
 
+import server.db as db
+
 logger = logging.getLogger(__name__)
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
@@ -67,9 +69,32 @@ def create_user_session(github_token: str, github_user: dict) -> str:
         "github_token": github_token,
         "github_user": github_user,
     }
+    db.save_user(
+        session_token,
+        github_token,
+        github_user.get("login", ""),
+        github_user.get("name"),
+        github_user.get("avatar_url"),
+    )
     return session_token
 
 
 def get_user_session(session_token: str) -> dict | None:
     """Look up session by token. Returns {github_token, github_user} or None."""
-    return _sessions.get(session_token)
+    cached = _sessions.get(session_token)
+    if cached:
+        return cached
+    # Fall back to DB
+    row = db.load_user(session_token)
+    if not row:
+        return None
+    session_data = {
+        "github_token": row["github_token"],
+        "github_user": {
+            "login": row["login"],
+            "name": row["name"],
+            "avatar_url": row["avatar_url"],
+        },
+    }
+    _sessions[session_token] = session_data
+    return session_data

@@ -10,6 +10,7 @@ type StatusBarProps = {
   loopStartTime: number | null;
   wsState: WSState;
   sessionId?: string;
+  onError?: (message: string) => void;
 };
 
 const STATUS_CONFIG = {
@@ -30,13 +31,18 @@ function formatUptime(seconds: number): string {
 
 import { API_URL } from "@/lib/config";
 
-async function loopAction(action: "start" | "stop" | "restart", sessionId?: string) {
-  if (!sessionId) return; // no session, no action
+async function loopAction(
+  action: "start" | "stop" | "restart",
+  sessionId?: string,
+  onError?: (msg: string) => void,
+) {
+  if (!sessionId) return;
   const base = `${API_URL}/api/sessions/${sessionId}`;
   try {
-    await fetch(`${base}/${action}`, { method: "POST" });
+    const resp = await fetch(`${base}/${action}`, { method: "POST" });
+    if (!resp.ok) onError?.("Action failed");
   } catch {
-    // silently ignore network errors
+    onError?.("Action failed");
   }
 }
 
@@ -46,6 +52,7 @@ export function StatusBar({
   loopStartTime,
   wsState,
   sessionId,
+  onError,
 }: StatusBarProps) {
   const [uptime, setUptime] = useState(0);
 
@@ -106,7 +113,7 @@ export function StatusBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => loopAction("start", sessionId)}
+            onClick={() => loopAction("start", sessionId, onError)}
             title="Start loop"
           >
             <Play className="size-3.5" />
@@ -114,7 +121,7 @@ export function StatusBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => loopAction("stop", sessionId)}
+            onClick={() => loopAction("stop", sessionId, onError)}
             title="Stop loop"
           >
             <Square className="size-3.5" />
@@ -122,7 +129,7 @@ export function StatusBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => loopAction("restart", sessionId)}
+            onClick={() => loopAction("restart", sessionId, onError)}
             title="Restart loop"
           >
             <RotateCcw className="size-3.5" />

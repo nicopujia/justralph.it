@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { WelcomePage } from "./components/WelcomePage";
 import { useAuth } from "./hooks/useAuth";
+import { ToastProvider } from "./components/Toast";
 import "./index.css";
 
-export function App() {
+function AppInner() {
   const { user, loading, loginWithGithub, handleCallback } = useAuth();
+  const [skipped, setSkipped] = useState(false);
 
   // Handle GitHub OAuth callback: ?code=XXXX
   useEffect(() => {
@@ -13,7 +15,6 @@ export function App() {
     const code = params.get("code");
     if (!code) return;
 
-    // Remove code from URL immediately to avoid re-processing on refresh
     const clean = window.location.pathname;
     window.history.replaceState({}, "", clean);
 
@@ -23,7 +24,6 @@ export function App() {
   }, [handleCallback]);
 
   if (loading) {
-    // Minimal loading state -- avoids flash of wrong page
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <span className="text-zinc-500 text-sm">Loading...</span>
@@ -31,11 +31,24 @@ export function App() {
     );
   }
 
-  if (!user) {
-    return <WelcomePage onLogin={loginWithGithub} />;
+  if (!user && !skipped) {
+    return (
+      <WelcomePage
+        onLogin={loginWithGithub}
+        onSkip={() => setSkipped(true)}
+      />
+    );
   }
 
   return <Dashboard />;
+}
+
+export function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
+  );
 }
 
 export default App;

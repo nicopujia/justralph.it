@@ -12,9 +12,11 @@ type RightPanelProps = {
   chatState: ChatState;
   tasks: Map<string, TaskInfo>;
   loopStarted: boolean;
+  sessionId?: string;
+  onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
 };
 
-export function RightPanel({ chatState, tasks, loopStarted }: RightPanelProps) {
+export function RightPanel({ chatState, tasks, loopStarted, sessionId, onTaskUpdate }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("confidence");
 
   return (
@@ -59,7 +61,7 @@ export function RightPanel({ chatState, tasks, loopStarted }: RightPanelProps) {
         )}
         {activeTab === "tasks" && (
           loopStarted ? (
-            <TaskList tasks={tasks} embedded />
+            <TaskList tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} embedded />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm py-8 text-center">
               <p className="opacity-60">Tasks appear once the loop starts.</p>

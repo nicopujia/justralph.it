@@ -1,11 +1,17 @@
+import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ListTodo } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ListTodo, RotateCcw } from "lucide-react";
 import type { TaskInfo } from "@/hooks/useEventReducer";
+import { API_URL } from "@/lib/config";
 
 type TaskListProps = {
   tasks: Map<string, TaskInfo>;
+  sessionId?: string;
   /** When true, renders without outer Card (for embedding in RightPanel). */
   embedded?: boolean;
+  /** Callback so parent can update a task's status locally after retry. */
+  onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
 };
 
 const STATUS_BADGE: Record<TaskInfo["status"], string> = {
@@ -24,7 +30,100 @@ const STATUS_LABEL: Record<TaskInfo["status"], string> = {
   help: "Help",
 };
 
-function TaskItems({ tasks }: { tasks: Map<string, TaskInfo> }) {
+const RETRYABLE: Set<TaskInfo["status"]> = new Set(["blocked", "help"]);
+
+type TaskItemProps = {
+  task: TaskInfo;
+  selected: boolean;
+  onSelect: () => void;
+  sessionId?: string;
+  onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
+};
+
+function TaskItem({ task, selected, onSelect, sessionId, onTaskUpdate }: TaskItemProps) {
+  const [retrying, setRetrying] = useState(false);
+  const canRetry = RETRYABLE.has(task.status);
+  const isBlocked = task.status === "blocked" || task.status === "help";
+
+  const handleRetry = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!sessionId) return;
+      setRetrying(true);
+      try {
+        // Reset task to open
+        await fetch(`${API_URL}/api/sessions/${sessionId}/tasks/${task.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "open" }),
+        });
+        // Restart the loop so it picks up the task
+        await fetch(`${API_URL}/api/sessions/${sessionId}/restart`, {
+          method: "POST",
+        });
+        onTaskUpdate?.(task.id, { status: "open", error: undefined });
+      } finally {
+        setRetrying(false);
+      }
+    },
+    [sessionId, task.id, onTaskUpdate],
+  );
+
+  return (
+    <li
+      className={`rounded-md border text-sm transition-colors cursor-pointer select-none
+        ${isBlocked && selected ? "border-red-400 border-l-2" : ""}
+        hover:bg-muted/50`}
+      onClick={onSelect}
+    >
+      {/* Summary row */}
+      <div className="flex items-start justify-between gap-2 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-xs text-muted-foreground truncate">{task.id}</p>
+          <p className={selected ? "mt-0.5" : "truncate mt-0.5"}>{task.title}</p>
+        </div>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status]}`}
+        >
+          {STATUS_LABEL[task.status]}
+        </span>
+      </div>
+
+      {/* Expanded detail */}
+      <div
+        className={`overflow-hidden transition-all duration-200 ${selected ? "max-h-40" : "max-h-0"}`}
+      >
+        <div className="px-3 pb-3 pt-0 border-t space-y-2 ml-2">
+          {task.error && (
+            <p className="text-red-500 text-xs break-words">{task.error}</p>
+          )}
+          {canRetry && sessionId && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs gap-1"
+              disabled={retrying}
+              onClick={handleRetry}
+            >
+              <RotateCcw className={`size-3 ${retrying ? "animate-spin" : ""}`} />
+              {retrying ? "Retrying..." : "Retry"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+type TaskItemsProps = {
+  tasks: Map<string, TaskInfo>;
+  sessionId?: string;
+  onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
+};
+
+function TaskItems({ tasks, sessionId, onTaskUpdate }: TaskItemsProps) {
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
   // Most-recently-claimed task at the top (reverse insertion order)
   const taskEntries = Array.from(tasks.values()).reverse();
 
@@ -40,36 +139,28 @@ function TaskItems({ tasks }: { tasks: Map<string, TaskInfo> }) {
   return (
     <ul className="space-y-1">
       {taskEntries.map((task) => (
-        <li
+        <TaskItem
           key={task.id}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="font-mono text-xs text-muted-foreground truncate">
-                {task.id}
-              </p>
-              <p className="truncate mt-0.5">{task.title}</p>
-            </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status]}`}
-            >
-              {STATUS_LABEL[task.status]}
-            </span>
-          </div>
-        </li>
+          task={task}
+          selected={selectedTaskId === task.id}
+          onSelect={() =>
+            setSelectedTaskId((prev) => (prev === task.id ? null : task.id))
+          }
+          sessionId={sessionId}
+          onTaskUpdate={onTaskUpdate}
+        />
       ))}
     </ul>
   );
 }
 
-export function TaskList({ tasks, embedded = false }: TaskListProps) {
+export function TaskList({ tasks, sessionId, embedded = false, onTaskUpdate }: TaskListProps) {
   const count = tasks.size;
 
   if (embedded) {
     return (
       <div className="h-full overflow-y-auto">
-        <TaskItems tasks={tasks} />
+        <TaskItems tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} />
       </div>
     );
   }
@@ -86,7 +177,7 @@ export function TaskList({ tasks, embedded = false }: TaskListProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto px-2 pb-2">
-        <TaskItems tasks={tasks} />
+        <TaskItems tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} />
       </CardContent>
     </Card>
   );
