@@ -28,6 +28,9 @@ class EventType(StrEnum):
     ISSUE_BLOCKED = "issue_blocked"
     ISSUE_HELP = "issue_help"
     RESOURCE_CHECK = "resource_check"
+    TAG_CREATED = "tag_created"
+    ROLLBACK = "rollback"
+    VALIDATION_FAILED = "validation_failed"
 
 
 @dataclass

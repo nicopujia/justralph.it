@@ -30,6 +30,11 @@ HOOKS_CLASS_NAME = "CustomHooks"
 HOOKS_MODULE_NAME = "_ralph_hooks"
 BRANCH_PREFIX = "ralph/"
 
+# Tag prefixes
+PRE_ITER_TAG_PREFIX = "pre-iter"
+DONE_TAG_PREFIX = "done"
+PRE_MERGE_TAG_PREFIX = "pre-merge"
+
 # Default project root (current working directory)
 PROJECT_ROOT = Path.cwd()
 RALPH_DIR = PROJECT_ROOT / PROD_WORKTREE / RALPH_DIR_NAME

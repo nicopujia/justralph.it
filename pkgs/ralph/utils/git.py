@@ -215,3 +215,117 @@ def reset_git_state(issue_id: str, cwd: Path | None = None) -> None:
     """
     ensure_on_main(cwd=cwd)
     cleanup_branch(issue_id, cwd=cwd)
+
+
+# -- tagging ---------------------------------------------------------------
+
+
+def pre_iter_tag(issue_id: str, iteration: int) -> str:
+    """Tag name for a pre-iteration checkpoint."""
+    return f"pre-iter/{issue_id}/{iteration}"
+
+
+def done_tag(issue_id: str) -> str:
+    """Tag name for a completed issue."""
+    return f"done/{issue_id}"
+
+
+def create_tag(name: str, message: str = "", cwd: Path | None = None) -> None:
+    """Create an annotated git tag.
+
+    Args:
+        name: Tag name (e.g. 'pre-iter/bd-123/0').
+        message: Annotation message. Defaults to tag name.
+        cwd: Directory to run from (should be a worktree).
+    """
+    _run("tag", "-a", name, "-m", message or name, cwd=cwd)
+    logger.info("Created tag %s", name)
+
+
+def tag_exists(name: str, cwd: Path | None = None) -> bool:
+    """Return True if a tag with the given name exists."""
+    result = _run("rev-parse", "--verify", f"refs/tags/{name}", cwd=cwd, check=False)
+    return result.returncode == 0
+
+
+def rollback_to_tag(tag_name: str, cwd: Path | None = None) -> None:
+    """Hard-reset HEAD to the given tag.
+
+    Ensures on main first, then resets to the tag's commit.
+
+    Args:
+        tag_name: Tag to reset to.
+        cwd: Directory to run from (should be a worktree).
+    """
+    ensure_on_main(cwd=cwd)
+    _run("reset", "--hard", tag_name, cwd=cwd)
+    logger.info("Rolled back to tag %s in %s", tag_name, cwd or "cwd")
+
+
+def get_latest_tag(pattern: str, cwd: Path | None = None) -> str | None:
+    """Return the most recent tag matching a glob pattern, or None.
+
+    Args:
+        pattern: Glob pattern (e.g. 'done/*').
+        cwd: Directory to run from.
+    """
+    result = _run("tag", "-l", pattern, "--sort=-creatordate", cwd=cwd, check=False)
+    tags = result.stdout.strip().splitlines()
+    return tags[0] if tags else None
+
+
+# -- worktree health -------------------------------------------------------
+
+
+def has_changes_since(ref: str, cwd: Path | None = None) -> bool:
+    """Return True if HEAD has changes compared to the given ref.
+
+    Args:
+        ref: Git ref to compare against (tag, commit, branch).
+        cwd: Directory to run from.
+    """
+    result = _run("diff", f"{ref}..HEAD", "--stat", cwd=cwd, check=False)
+    return bool(result.stdout.strip())
+
+
+def is_worktree_clean(cwd: Path | None = None) -> bool:
+    """Return True if worktree has no uncommitted changes and is on main."""
+    status = _run("status", "--porcelain", cwd=cwd, check=False)
+    if status.stdout.strip():
+        return False
+    branch = _run("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd, check=False)
+    return branch.stdout.strip() == MAIN_BRANCH
+
+
+# -- dev/prod promotion ----------------------------------------------------
+
+
+def sync_to_branch(target_branch: str, cwd: Path | None = None) -> None:
+    """Reset current worktree to match a branch (e.g. sync dev to main).
+
+    Args:
+        target_branch: Branch to sync to.
+        cwd: Worktree directory.
+    """
+    _run("reset", "--hard", target_branch, cwd=cwd)
+    logger.info("Synced worktree to %s in %s", target_branch, cwd or "cwd")
+
+
+def merge_from(source_branch: str, cwd: Path | None = None) -> bool:
+    """Merge source_branch into the current branch.
+
+    Args:
+        source_branch: Branch to merge (e.g. 'ralph/bd-123').
+        cwd: Worktree directory (should be on main).
+
+    Returns:
+        True if merge succeeded, False on conflict.
+    """
+    result = _run("merge", source_branch, "--no-edit", cwd=cwd, check=False)
+    if result.returncode != 0:
+        logger.error("Merge of %s failed: %s", source_branch, result.stderr.strip())
+        # Abort the failed merge to leave worktree clean
+        _run("merge", "--abort", cwd=cwd, check=False)
+        return False
+    logger.info("Merged %s in %s", source_branch, cwd or "cwd")
+    return True
