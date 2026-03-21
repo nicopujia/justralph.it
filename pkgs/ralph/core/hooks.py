@@ -12,14 +12,13 @@ from abc import ABC, abstractmethod
 from types import ModuleType
 from typing import Any
 
-from bd import Issue
+from tasks import Task
 
 from ..config import (
     HOOKS_CLASS_NAME,
     HOOKS_FILENAME,
     HOOKS_MODULE_NAME,
-    PROD_WORKTREE,
-    RALPH_DIR_NAME,
+    RALPHY_DIR_NAME,
     Config,
 )
 from .agent import AgentStatus
@@ -43,12 +42,12 @@ class Hooks(ABC):
         """
 
     @abstractmethod
-    def pre_iter(self, cfg: Config, issue: Issue, iteration: int) -> None:
+    def pre_iter(self, cfg: Config, task: Task, iteration: int) -> None:
         """Run before each iteration.
 
         Args:
             cfg: Runtime configuration
-            issue: The issue about to be processed
+            task: The task about to be processed
             iteration: Current iteration index
         """
 
@@ -56,7 +55,7 @@ class Hooks(ABC):
     def post_iter(
         self,
         cfg: Config,
-        issue: Issue,
+        task: Task,
         iteration: int,
         status: AgentStatus,
         error: Exception | None,
@@ -65,7 +64,7 @@ class Hooks(ABC):
 
         Args:
             cfg: Runtime configuration
-            issue: The issue that was processed
+            task: The task that was processed
             iteration: Current iteration index
             status: Final AgentStatus from the run
             error: Exception if one occurred, otherwise None
@@ -82,13 +81,13 @@ class Hooks(ABC):
 
     @abstractmethod
     def extra_args_kwargs(
-        self, cfg: Config, issue: Issue
+        self, cfg: Config, task: Task
     ) -> tuple[tuple, dict[str, Any]]:
         """Return extra arguments to pass to the Agent constructor.
 
         Args:
             cfg: Runtime configuration
-            issue: The issue about to be processed
+            task: The task about to be processed
 
         Returns:
             Tuple of (positional_args, keyword_args) forwarded to Agent
@@ -112,7 +111,7 @@ def load_hooks(cfg: Config) -> Hooks:
         AttributeError: If CustomHooks class is not defined
         TypeError: If CustomHooks does not subclass Hooks
     """
-    hooks_file = cfg.base_dir / PROD_WORKTREE / RALPH_DIR_NAME / HOOKS_FILENAME
+    hooks_file = cfg.base_dir / RALPHY_DIR_NAME / HOOKS_FILENAME
     if not hooks_file.exists():
         raise FileNotFoundError(f"{hooks_file} not found. Run `ralph init` first.")
 

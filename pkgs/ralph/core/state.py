@@ -4,50 +4,50 @@ import json
 import logging
 from pathlib import Path
 
-import bd
+import tasks
 
 from ..utils.git import hard_reset, reset_git_state
 
 logger = logging.getLogger(__name__)
 
-_KEY_ISSUE_ID = "issue_id"
+_KEY_TASK_ID = "task_id"
 _KEY_ITERATION = "iteration"
 
 
 class State:
     """Manages loop state on disk for crash recovery.
 
-    Tracks the current issue_id and iteration. Write state before each
+    Tracks the current task_id and iteration. Write state before each
     iteration; clear it after. If the file exists on startup, the
     previous run crashed mid-iteration.
     """
 
     def __init__(
-        self, file: Path, prod_dir: Path | None = None, dev_dir: Path | None = None, bd_cwd: Path | None = None
+        self, file: Path, prod_dir: Path | None = None, dev_dir: Path | None = None, tasks_cwd: Path | None = None
     ) -> None:
         self._file = file
         self._prod_dir = prod_dir
         self._dev_dir = dev_dir
-        self._bd_cwd = bd_cwd
-        self.issue_id: str | None = None
+        self._tasks_cwd = tasks_cwd
+        self.task_id: str | None = None
 
-    def save(self, issue_id: str, iteration: int) -> None:
-        """Persist the current issue and iteration index."""
-        self.issue_id = issue_id
+    def save(self, task_id: str, iteration: int) -> None:
+        """Persist the current task and iteration index."""
+        self.task_id = task_id
         self._file.write_text(
-            json.dumps({_KEY_ISSUE_ID: issue_id, _KEY_ITERATION: iteration})
+            json.dumps({_KEY_TASK_ID: task_id, _KEY_ITERATION: iteration})
         )
 
     def clear(self) -> None:
-        """Remove the state file and reset issue_id."""
-        self.issue_id = None
+        """Remove the state file and reset task_id."""
+        self.task_id = None
         self._file.unlink(missing_ok=True)
 
     def check_crash_recovery(self) -> int:
         """Recover from a mid-iteration crash if a state file exists.
 
         Runs ``git reset --hard`` to discard partial changes, sets the
-        interrupted issue back to open status and clears its assignee,
+        interrupted task back to open status and clears its assignee,
         then returns the saved iteration index so the loop can resume.
 
         Returns 0 if no crash was detected.
@@ -58,7 +58,8 @@ class State:
         iteration = 0
         try:
             data = json.loads(self._file.read_text())
-            self.issue_id = data.get(_KEY_ISSUE_ID)
+            # Support both old "issue_id" and new "task_id" keys
+            self.task_id = data.get(_KEY_TASK_ID) or data.get("issue_id")
             iteration = data.get(_KEY_ITERATION, 0)
         except (json.JSONDecodeError, OSError):
             logger.warning("Found corrupt state file; removing it")
@@ -66,8 +67,8 @@ class State:
             return 0
 
         logger.warning(
-            "Detected incomplete previous run (issue=%s, iteration=%s). Recovering...",
-            self.issue_id or "?",
+            "Detected incomplete previous run (task=%s, iteration=%s). Recovering...",
+            self.task_id or "?",
             iteration,
         )
 
@@ -81,28 +82,28 @@ class State:
             except Exception as e:
                 logger.error("git reset --hard (dev) failed: %s", e)
 
-        if self.issue_id:
+        if self.task_id:
             self.cleanup_failed_iteration()
 
         self.clear()
         return iteration
 
-    def cleanup_failed_iteration(self, status: str = bd.IssueStatus.OPEN) -> None:
-        """Reset git state and update the issue after a failed iteration.
+    def cleanup_failed_iteration(self, status: str = tasks.TaskStatus.OPEN) -> None:
+        """Reset git state and update the task after a failed iteration.
 
-        Uses ``self.issue_id``. No-op if issue_id is not set.
+        Uses ``self.task_id``. No-op if task_id is not set.
 
         Args:
-            status: Status to set on the issue (default: 'open')
+            status: Status to set on the task (default: 'open')
         """
-        if not self.issue_id:
+        if not self.task_id:
             return
-        logger.info("Cleaning up failed iteration for issue %s", self.issue_id)
-        reset_git_state(self.issue_id, cwd=self._prod_dir)
+        logger.info("Cleaning up failed iteration for task %s", self.task_id)
+        reset_git_state(self.task_id, cwd=self._prod_dir)
         try:
-            bd.update_issue(self.issue_id, status=status, assignee="", cwd=self._bd_cwd)
+            tasks.update_task(self.task_id, status=status, assignee="", cwd=self._tasks_cwd)
             logger.info(
-                "Set issue %s to %s and cleared assignee", self.issue_id, status
+                "Set task %s to %s and cleared assignee", self.task_id, status
             )
         except RuntimeError:
-            logger.error("Failed to update issue %s", self.issue_id)
+            logger.error("Failed to update task %s", self.task_id)

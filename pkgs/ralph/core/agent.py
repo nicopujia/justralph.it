@@ -1,4 +1,4 @@
-"""OpenCode agent wrapper for processing Beads issues."""
+"""OpenCode agent wrapper for processing tasks."""
 
 import logging
 import queue as queue_mod
@@ -11,7 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from xml.etree import ElementTree
 
-import bd
+import tasks
 
 from ..config import AGENT_NAME
 from .exceptions import BadAgentStatus
@@ -25,7 +25,7 @@ class AgentStatus(StrEnum):
     """Agent execution result values.
 
     These values are output by Ralph (the OpenCode agent) as XML status
-    messages to indicate the result of processing an issue.
+    messages to indicate the result of processing a task.
     """
 
     IDLE = "HAVEN'T STARTED YET"
@@ -36,53 +36,53 @@ class AgentStatus(StrEnum):
 
 
 class Agent:
-    """Wraps OpenCode to process a Beads issue and track completion status.
+    """Wraps OpenCode to process a task and track completion status.
 
     The agent runs OpenCode as a subprocess, streams its output, and parses
-    the final status XML to determine if the issue was completed, needs help,
-    or discovered a blocking issue.
+    the final status XML to determine if the task was completed, needs help,
+    or discovered a blocking task.
     """
 
     def __init__(
         self,
-        issue: bd.Issue,
+        task: tasks.Task,
         model: str,
         i: int = 0,
         *args,
-        bd_cwd: Path | None = None,
+        tasks_cwd: Path | None = None,
         **kwargs,
     ) -> None:
-        """Initialize the agent with an issue to process.
+        """Initialize the agent with a task to process.
 
         Args:
-            issue: The Beads issue to process
+            task: The task to process
             model: OpenCode model to use (e.g., 'opencode/kimi-k2.5')
             i: Iteration index for logging
             *args: Additional arguments passed to OpenCode
-            bd_cwd: Working directory for bd CLI calls (session-scoped)
+            tasks_cwd: Working directory for task CRUD calls
             **kwargs: Additional keyword arguments passed to subprocess.Popen
         """
         self.status = AgentStatus.IDLE
-        self.issue = issue
+        self.task = task
         self.i = i
         self._model = model
         self._args = args
-        self._bd_cwd = bd_cwd
+        self._tasks_cwd = tasks_cwd
         self._kwargs = kwargs
 
-    def claim_issue(self) -> None:
-        """Set issue status to in_progress and assignee to ralph."""
-        bd.update_issue(
-            self.issue.id,
-            status=bd.IssueStatus.IN_PROGRESS,
+    def claim_task(self) -> None:
+        """Set task status to in_progress and assignee to ralph."""
+        tasks.update_task(
+            self.task.id,
+            status=tasks.TaskStatus.IN_PROGRESS,
             assignee=AGENT_NAME,
-            cwd=self._bd_cwd,
+            cwd=self._tasks_cwd,
         )
 
     def run(
         self, timeout: float | None = None, progress_timeout: float = 120.0
     ) -> Generator[str, None, None]:
-        """Run OpenCode to process the issue and stream output.
+        """Run OpenCode to process the task and stream output.
 
         Uses a threaded reader so we can detect both total timeout and
         progress stalls (no output for ``progress_timeout`` seconds).
@@ -109,13 +109,13 @@ class Agent:
             args = [
                 OPENCODE_CMD,
                 "run",
-                self.issue.as_xml(),
+                self.task.as_xml(),
                 "--model",
                 self._model,
                 "--agent",
                 AGENT_NAME,
                 "--title",
-                self.issue.title,
+                self.task.title,
                 *self._args,
             ]
             logger.debug("Agent args: %s", args)
@@ -128,7 +128,7 @@ class Agent:
                 **self._kwargs,
             ) as process:
                 if not process.stdout:
-                    raise Exception("No stdout from OpenCode, aborting")
+                    raise RuntimeError("No stdout from OpenCode, aborting")
 
                 lines: list[str] = []
                 start_time = time.monotonic()
@@ -195,4 +195,3 @@ class Agent:
             self.status = AgentStatus(status_msg)
         except ValueError:
             raise BadAgentStatus(f"Unknown status value: {status_msg!r}")
-
