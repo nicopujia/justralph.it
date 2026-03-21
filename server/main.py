@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import secrets
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -27,7 +28,9 @@ from .sessions import (
     Session,
     create_session,
     delete_session,
+    force_stop_loop,
     get_session,
+    kill_current_task,
     list_sessions,
     load_sessions_from_db,
     rename_session,
@@ -212,23 +215,56 @@ def api_patch_session(session_id: str, req: PatchSessionRequest):
 
 @app.post("/api/sessions/{session_id}/start")
 def api_start_loop(session_id: str):
-    """Start the Ralph Loop for a session."""
+    """Start the Ralph Loop for a session.
+
+    Contextually aware: auto-recovers dead threads, allows restart from
+    crashed/stopped state.
+    """
     session = _require_session(session_id)
+
+    # Auto-recover: thread is dead but status still says "running"
+    if session.thread and not session.thread.is_alive():
+        session.thread = None
+        session.runner = None
+        if session.status == "running":
+            session.status = "crashed"
+            db.update_session_status(session.id, "crashed")
+
     try:
         start_loop(session)
     except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail={
+            "error": str(e),
+            "current_status": session.status,
+            "suggestion": "Stop the running loop first, or use force=true on the stop endpoint.",
+        })
     return {"status": "started", "session_id": session_id}
 
 
 @app.post("/api/sessions/{session_id}/stop")
-def api_stop_loop(session_id: str):
-    """Stop the running loop."""
+def api_stop_loop(session_id: str, force: bool = False):
+    """Stop the running loop. Use ?force=true to kill subprocess immediately."""
     session = _require_session(session_id)
+
+    if force:
+        try:
+            force_stop_loop(session)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail={
+                "error": str(e),
+                "current_status": session.status,
+                "suggestion": "The loop may have already stopped.",
+            })
+        return {"status": "force_stopped", "session_id": session_id}
+
     try:
         stop_loop(session)
     except RuntimeError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail={
+            "error": str(e),
+            "current_status": session.status,
+            "suggestion": "No loop is currently running. Use /start to begin.",
+        })
     return {"status": "stop signal sent"}
 
 
@@ -239,14 +275,189 @@ def api_restart_loop(session_id: str):
     try:
         restart_loop(session)
     except RuntimeError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail={
+            "error": str(e),
+            "current_status": session.status,
+            "suggestion": "No loop is running. Use /start instead.",
+        })
     return {"status": "restart signal sent"}
+
+
+@app.post("/api/sessions/{session_id}/kill-task")
+def api_kill_task(session_id: str):
+    """Kill the current agent subprocess and skip to next task.
+
+    The loop continues running -- only the current task is killed and marked BLOCKED.
+    """
+    session = _require_session(session_id)
+    try:
+        task_id = kill_current_task(session)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail={
+            "error": str(e),
+            "current_status": session.status,
+            "suggestion": "No task is currently being processed.",
+        })
+    return {"status": "task_killed", "task_id": task_id}
 
 
 @app.get("/api/sessions/{session_id}/status")
 def api_session_status(session_id: str):
     session = _require_session(session_id)
     return session.to_dict()
+
+
+@app.get("/api/sessions/{session_id}/loop/state")
+def api_loop_state(session_id: str):
+    """Detailed loop observability: state, current task, heartbeat, thread liveness."""
+    session = _require_session(session_id)
+    thread_alive = session.thread is not None and session.thread.is_alive()
+    elapsed: float | None = None
+    if thread_alive and session.loop_start_time:
+        elapsed = round(time.time() - session.loop_start_time, 2)
+    return {
+        "loop_state": session.loop_state,
+        "current_task_id": session.current_task_id,
+        "loop_elapsed_seconds": elapsed,
+        "last_heartbeat_at": session.last_heartbeat_at,
+        "thread_alive": thread_alive,
+    }
+
+
+@app.get("/api/sessions/{session_id}/git/status")
+def api_git_status(session_id: str):
+    """Git repository status: remote URL, branch, last push, unpushed commits."""
+    import subprocess as sp
+
+    session = _require_session(session_id)
+    cwd = session.base_dir
+
+    # Remote URL
+    remote_url = ""
+    try:
+        r = sp.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=cwd)
+        if r.returncode == 0:
+            remote_url = r.stdout.strip()
+    except Exception:
+        pass
+
+    # Current branch
+    branch = ""
+    try:
+        r = sp.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, cwd=cwd)
+        if r.returncode == 0:
+            branch = r.stdout.strip()
+    except Exception:
+        pass
+
+    # Unpushed commit count
+    unpushed = 0
+    if remote_url:
+        try:
+            r = sp.run(
+                ["git", "rev-list", "--count", f"origin/{branch}..HEAD"],
+                capture_output=True, text=True, cwd=cwd,
+            )
+            if r.returncode == 0:
+                unpushed = int(r.stdout.strip())
+        except Exception:
+            pass
+
+    # Last commit SHA + message
+    last_commit = None
+    try:
+        r = sp.run(
+            ["git", "log", "-1", "--format=%H|%s|%aI"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            parts = r.stdout.strip().split("|", 2)
+            if len(parts) == 3:
+                last_commit = {"sha": parts[0][:8], "message": parts[1], "date": parts[2]}
+    except Exception:
+        pass
+
+    return {
+        "remote_url": remote_url,
+        "branch": branch,
+        "unpushed_commits": unpushed,
+        "last_commit": last_commit,
+        "has_remote": bool(remote_url),
+    }
+
+
+@app.get("/api/sessions/{session_id}/tasks/{task_id}/diff")
+def api_task_diff(session_id: str, task_id: str):
+    """Get the git diff for a specific completed task."""
+    import subprocess as sp
+
+    session = _require_session(session_id)
+    cwd = session.base_dir
+
+    # Find the commit for this task by searching commit messages
+    try:
+        r = sp.run(
+            ["git", "log", "--all", "--oneline", "--grep", task_id],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            raise HTTPException(status_code=404, detail=f"No commit found for task {task_id}")
+
+        # Take the first (most recent) match
+        commit_sha = r.stdout.strip().split("\n")[0].split()[0]
+
+        # Get the diff for that commit
+        diff_result = sp.run(
+            ["git", "diff", f"{commit_sha}~1", commit_sha],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        diff_text = diff_result.stdout.strip() if diff_result.returncode == 0 else ""
+
+        return {"task_id": task_id, "commit": commit_sha, "diff": diff_text}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get diff: {e}")
+
+
+@app.get("/api/sessions/{session_id}/diff")
+def api_cumulative_diff(session_id: str):
+    """Get the cumulative diff (all changes from initial commit to HEAD)."""
+    import subprocess as sp
+
+    session = _require_session(session_id)
+    cwd = session.base_dir
+
+    try:
+        # Get the first commit (root)
+        r = sp.run(
+            ["git", "rev-list", "--max-parents=0", "HEAD"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            return {"diff": "", "commit_count": 0}
+
+        root_sha = r.stdout.strip().split("\n")[0]
+
+        # Count commits
+        count_r = sp.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        commit_count = int(count_r.stdout.strip()) if count_r.returncode == 0 else 0
+
+        # Get cumulative diff
+        diff_r = sp.run(
+            ["git", "diff", root_sha, "HEAD"],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        diff_text = diff_r.stdout.strip() if diff_r.returncode == 0 else ""
+
+        return {"diff": diff_text, "commit_count": commit_count}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get diff: {e}")
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -291,6 +502,12 @@ def api_create_task(session_id: str, req: CreateTaskRequest):
         parent=req.parent or None,
         cwd=session.base_dir,
     )
+    if session.event_bus:
+        from pkgs.ralph.core.events import Event, EventType
+        session.event_bus.emit(Event(type=EventType.TASK_CREATED, data={
+            "task_id": task.id, "title": task.title, "status": str(task.status),
+            "priority": task.priority, "body": task.body,
+        }))
     return task.to_dict()
 
 
@@ -327,17 +544,44 @@ def api_update_task(session_id: str, task_id: str, req: UpdateTaskRequest):
         )
     except RuntimeError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    if session.event_bus:
+        from pkgs.ralph.core.events import Event, EventType
+        session.event_bus.emit(Event(type=EventType.TASK_UPDATED, data={
+            "task_id": task_id,
+            "status": req.status, "body": req.body, "priority": req.priority,
+        }))
     return {"status": "updated"}
 
 
 @app.delete("/api/sessions/{session_id}/tasks/{task_id}")
-def api_close_task(session_id: str, task_id: str):
+def api_delete_task(session_id: str, task_id: str):
+    """Delete a task entirely from tasks.yaml. Refuses to delete IN_PROGRESS tasks."""
     session = _require_session(session_id)
     try:
-        tasks.close_task(task_id, cwd=session.base_dir)
+        tasks.delete_task(task_id, cwd=session.base_dir)
     except RuntimeError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return {"status": "closed"}
+        code = 400 if "in progress" in str(e).lower() else 404
+        raise HTTPException(status_code=code, detail=str(e))
+    # Emit event so frontend updates in real-time
+    if session.event_bus:
+        from pkgs.ralph.core.events import Event, EventType
+        session.event_bus.emit(Event(type=EventType.TASK_DELETED, data={"task_id": task_id}))
+    return {"status": "deleted", "task_id": task_id}
+
+
+class ReorderRequest(BaseModel):
+    task_ids: list[str]
+
+
+@app.post("/api/sessions/{session_id}/tasks/reorder")
+def api_reorder_tasks(session_id: str, req: ReorderRequest):
+    """Reassign task priorities based on array order (index 0 = priority 1)."""
+    session = _require_session(session_id)
+    try:
+        tasks.reorder_tasks(req.task_ids, cwd=session.base_dir)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "reordered", "count": len(req.task_ids)}
 
 
 # -- File uploads (HELP flow) -------------------------------------------------
@@ -386,14 +630,40 @@ def api_chat_state(session_id: str):
 
 @app.get("/api/sessions/{session_id}/chat/history")
 def api_chat_history(session_id: str):
-    """Return persisted chat messages + state from DB."""
+    """Return persisted chat messages + state from DB.
+
+    Assistant messages are stored as JSON strings internally.
+    This endpoint parses them and returns the human-readable `.message`
+    as `content`, with the full parsed object in `metadata`.
+    State fields are flattened to the top level for easy frontend consumption.
+    """
     _require_session(session_id)
     messages = db.load_chat_messages(session_id)
     state = db.load_chat_state(session_id)
-    return {
-        "messages": [{"role": m["role"], "content": m["content"], "created_at": m["created_at"]} for m in messages],
-        "state": state or {},
-    }
+
+    parsed_messages = []
+    for m in messages:
+        entry: dict = {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+        if m["role"] == "assistant":
+            try:
+                parsed = json.loads(m["content"])
+                entry["content"] = parsed.get("message", m["content"])
+                entry["metadata"] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        parsed_messages.append(entry)
+
+    # Flatten state to top level so frontend can read confidence, readiness, etc. directly
+    flat: dict = {"messages": parsed_messages}
+    if state:
+        flat["confidence"] = state.get("confidence", {})
+        flat["relevance"] = state.get("relevance", {})
+        flat["ready"] = state.get("ready", False)
+        flat["weighted_readiness"] = state.get("weighted_readiness", 0)
+        flat["tasks"] = state.get("tasks")
+        flat["project"] = state.get("project")
+    flat["state"] = state or {}
+    return flat
 
 
 @app.get("/api/sessions/{session_id}/chat/summary")
@@ -606,6 +876,19 @@ def api_get_shared(share_token: str):
     session_id = row["id"]
     messages = db.load_chat_messages(session_id)
     state = db.load_chat_state(session_id)
+
+    parsed_messages = []
+    for m in messages:
+        entry: dict = {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+        if m["role"] == "assistant":
+            try:
+                parsed = json.loads(m["content"])
+                entry["content"] = parsed.get("message", m["content"])
+                entry["metadata"] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        parsed_messages.append(entry)
+
     return {
         "session": {
             "id": session_id,
@@ -614,10 +897,7 @@ def api_get_shared(share_token: str):
             "status": row.get("status", ""),
             "created_at": row.get("created_at"),
         },
-        "messages": [
-            {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
-            for m in messages
-        ],
+        "messages": parsed_messages,
         "state": state or {},
     }
 

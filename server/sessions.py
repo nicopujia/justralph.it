@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from ralph.core.events import EventBus, EventType
+from ralph.core.events import EventBus, Event, EventType
 from ralph.core.hooks import load_hooks
 from ralph.core.ralphy_runner import RalphyRunner, RunnerConfig
 
@@ -37,6 +37,20 @@ class Session:
     loop_start_time: float | None = None
     iteration_count: int = 0
     share_token: str | None = None
+    last_heartbeat_at: float | None = None
+    current_task_id: str | None = None
+
+    @property
+    def loop_state(self) -> str:
+        """Derived loop state for observability endpoint."""
+        alive = self.thread is not None and self.thread.is_alive()
+        if not alive:
+            return "idle"
+        if self.status == "needs_help":
+            return "stalled"
+        if self.current_task_id:
+            return "processing_task"
+        return "waiting_for_tasks"
 
     def to_dict(self) -> dict:
         running = self.thread is not None and self.thread.is_alive()
@@ -54,6 +68,9 @@ class Session:
             "iteration_count": self.iteration_count,
             "uptime_seconds": uptime,
             "share_token": self.share_token,
+            "loop_state": self.loop_state,
+            "current_task_id": self.current_task_id,
+            "loop_elapsed_seconds": uptime,
         }
 
 
@@ -186,12 +203,23 @@ def start_loop(session: Session) -> None:
     session.status = "running"
     db.update_session_status(session.id, "running")
 
-    # Track iteration count from events
-    def _track_events(event):
+    # Track iteration count + loop observability from events
+    def _track_events(event: Event) -> None:
         if event.type == EventType.ITER_STARTED:
             session.iteration_count += 1
         elif event.type == EventType.TASK_HELP:
             session.status = "needs_help"
+        elif event.type == EventType.TASK_CLAIMED:
+            session.current_task_id = event.data.get("task_id")
+        elif event.type == EventType.TASK_DONE:
+            session.current_task_id = None
+        elif event.type == EventType.LOOP_HEARTBEAT:
+            session.last_heartbeat_at = event.timestamp
+            session.current_task_id = event.data.get("task_id")
+        elif event.type == EventType.LOOP_STALLED:
+            session.status = "needs_help"
+            session.current_task_id = None
+            db.update_session_status(session.id, "needs_help")
 
     session.event_bus.on(_track_events)
 
@@ -226,6 +254,55 @@ def restart_loop(session: Session) -> None:
     if not session.runner or not session.thread or not session.thread.is_alive():
         raise RuntimeError("No loop running")
     session.runner.cfg.restart_file.write_text("restart requested via API")
+
+
+def force_stop_loop(session: Session) -> None:
+    """Kill the agent subprocess, join the thread, clean up state.
+
+    Used when the graceful stop signal is not working (e.g. stuck subprocess).
+    """
+    if not session.thread or not session.thread.is_alive():
+        raise RuntimeError("No loop running to force stop")
+
+    # Write stop signal so the runner exits on next check
+    if session.runner:
+        session.runner.cfg.stop_file.write_text("force stop requested via API")
+
+    # Join with timeout -- the stop signal + process kill should unblock
+    session.thread.join(timeout=10)
+
+    # If thread is still alive after join, it's truly stuck
+    if session.thread.is_alive():
+        logger.warning("Session %s: thread still alive after force stop", session.id)
+
+    session.status = "stopped"
+    session.current_task_id = None
+    session.runner = None
+    db.update_session_status(session.id, "stopped")
+    logger.info("Session %s: force stopped", session.id)
+
+
+def kill_current_task(session: Session) -> str | None:
+    """Kill the current agent subprocess without stopping the loop.
+
+    The runner will catch the killed process, mark the task BLOCKED,
+    and move to the next task.
+    Returns the task_id that was killed, or None if nothing was running.
+    """
+    if not session.runner or not session.thread or not session.thread.is_alive():
+        raise RuntimeError("No loop running")
+
+    task_id = session.current_task_id
+    if not task_id:
+        raise RuntimeError("No task currently being processed")
+
+    # Write a restart signal -- this causes the runner to exit the current
+    # iteration (via _check_signals raising _RestartRequested), which kills
+    # the subprocess and moves to the next task on re-entry.
+    session.runner.cfg.restart_file.write_text(
+        f"kill-task requested via API for {task_id}"
+    )
+    return task_id
 
 
 def delete_session(session: Session) -> None:

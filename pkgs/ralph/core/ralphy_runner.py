@@ -43,13 +43,13 @@ class RunnerConfig(Config):
         default=30.0,
         metadata={"help": "Seconds between polling for ready tasks"},
     )
-    subprocess_timeout: float = field(
-        default=600.0,
-        metadata={"help": "Total timeout for OpenCode subprocess in seconds"},
-    )
     progress_timeout: float = field(
         default=120.0,
         metadata={"help": "Kill agent if no output for this many seconds"},
+    )
+    max_task_duration: float = field(
+        default=900.0,
+        metadata={"help": "Hard cap per task regardless of output activity (seconds)"},
     )
     max_iters: int = field(
         default=-1,
@@ -101,6 +101,7 @@ class RalphyRunner:
         )
         self._consecutive_failures = 0
         self._current_iteration = 0
+        self._loop_start_time: float = time.monotonic()
 
     def run(self) -> bool:
         """Main entry: recover state, run loop, clean up.
@@ -109,6 +110,7 @@ class RalphyRunner:
         """
         i = self._state.check_crash_recovery()
         restart = False
+        self._loop_start_time = time.monotonic()
 
         if self._hooks:
             self._hooks.pre_loop(self.cfg)
@@ -155,18 +157,23 @@ class RalphyRunner:
         """Return the next ready task, waiting if none available.
 
         Returns None when all tasks are done (triggers loop exit).
+        Emits LOOP_HEARTBEAT each poll cycle and LOOP_STALLED if all
+        remaining open tasks are blocked (no progress possible).
         """
         task = tasks.get_next_ready_task(cwd=self.cfg.project_dir)
         if task:
             return task
 
-        # Check if all done
         if self._check_all_done():
             return None
 
-        # Wait for new tasks
+        # Stall check before first wait
+        if self._check_all_stalled():
+            return None
+
         logger.info("No ready tasks. Waiting...")
         self._emit(EventType.LOOP_WAITING)
+        loop_start = self._loop_start_time
         while True:
             self._check_signals()
             task = tasks.get_next_ready_task(cwd=self.cfg.project_dir)
@@ -174,6 +181,18 @@ class RalphyRunner:
                 return task
             if self._check_all_done():
                 return None
+            if self._check_all_stalled():
+                return None
+            elapsed = time.monotonic() - loop_start
+            counts = self._task_counts()
+            ready_count = self._ready_task_count()
+            self._emit(
+                EventType.LOOP_HEARTBEAT,
+                loop_state="waiting_for_tasks",
+                task_counts=counts,
+                elapsed_seconds=round(elapsed, 1),
+                ready_task_count=ready_count,
+            )
             time.sleep(self.cfg.poll_interval)
 
     def _check_all_done(self) -> bool:
@@ -186,6 +205,70 @@ class RalphyRunner:
             logger.info("All %d task(s) done", len(all_tasks))
             return True
         return False
+
+    def _check_all_stalled(self) -> bool:
+        """Return True (and emit LOOP_STALLED) if no task can ever become ready.
+
+        Detects two stall conditions:
+        1. All non-done tasks are BLOCKED (no OPEN, no IN_PROGRESS).
+        2. Only IN_PROGRESS tasks remain but none are being processed by this
+           runner (orphaned from a crash). These are reset to OPEN so the loop
+           can pick them up again.
+        """
+        all_tasks = tasks.list_tasks(cwd=self.cfg.project_dir)
+        if not all_tasks:
+            return False
+        non_done = [t for t in all_tasks if t.status != tasks.TaskStatus.DONE]
+        if not non_done:
+            return False  # _check_all_done will catch this
+        open_tasks = [t for t in non_done if t.status == tasks.TaskStatus.OPEN]
+        in_progress = [t for t in non_done if t.status == tasks.TaskStatus.IN_PROGRESS]
+
+        if open_tasks:
+            return False  # tasks available
+
+        # Self-heal: orphaned IN_PROGRESS tasks (not being processed by us)
+        if in_progress and not open_tasks:
+            for t in in_progress:
+                logger.warning(
+                    "Resetting orphaned IN_PROGRESS task %s to OPEN", t.id,
+                )
+                tasks.update_task(
+                    t.id,
+                    status=tasks.TaskStatus.OPEN,
+                    assignee="",
+                    append_notes="Auto-reset: orphaned IN_PROGRESS task detected by loop",
+                    cwd=self.cfg.project_dir,
+                )
+            return False  # retry -- tasks are now OPEN
+
+        # All remaining tasks are BLOCKED -- no forward progress possible
+        blocked_ids = [t.id for t in non_done]
+        logger.warning("Loop stalled: all remaining tasks are blocked: %s", blocked_ids)
+        self._emit(
+            EventType.LOOP_STALLED,
+            blocked_task_ids=blocked_ids,
+            reason="all_tasks_blocked",
+        )
+        return True
+
+    def _task_counts(self) -> dict[str, int]:
+        """Return a status -> count dict for all tasks."""
+        all_tasks = tasks.list_tasks(cwd=self.cfg.project_dir)
+        counts: dict[str, int] = {}
+        for t in all_tasks:
+            counts[str(t.status)] = counts.get(str(t.status), 0) + 1
+        return counts
+
+    def _ready_task_count(self) -> int:
+        """Return how many OPEN tasks have no blocking parent."""
+        all_tasks = tasks.list_tasks(cwd=self.cfg.project_dir)
+        done_ids = {t.id for t in all_tasks if t.status == tasks.TaskStatus.DONE}
+        return sum(
+            1 for t in all_tasks
+            if t.status == tasks.TaskStatus.OPEN
+            and (not t.parent or t.parent in done_ids)
+        )
 
     # -- task processing -------------------------------------------------------
 
@@ -211,16 +294,26 @@ class RalphyRunner:
 
         # Run agent
         error: Exception | None = None
+        task_start = time.monotonic()
+        output_line_count = 0
         try:
             for line in agent.run(
-                timeout=self.cfg.subprocess_timeout,
+                timeout=self.cfg.max_task_duration,
                 progress_timeout=self.cfg.progress_timeout,
             ):
                 stripped = line.rstrip()
+                output_line_count += 1
                 logger.info("[agent] %s", stripped)
                 if self._hooks:
                     self._hooks.on_agent_output(stripped)
                 self._emit(EventType.AGENT_OUTPUT, line=stripped, task_id=task.id)
+                self._emit(
+                    EventType.TASK_PROGRESS,
+                    task_id=task.id,
+                    elapsed_seconds=round(time.monotonic() - task_start, 1),
+                    output_line_count=output_line_count,
+                    loop_state="processing_task",
+                )
 
             logger.info("Agent finished: %s", agent.status)
             self._emit(EventType.AGENT_STATUS, status=str(agent.status), task_id=task.id)
@@ -238,9 +331,12 @@ class RalphyRunner:
         match agent.status:
             case AgentStatus.DONE:
                 tasks.close_task(task.id, cwd=self.cfg.project_dir)
-                self._push_to_remote()
-                self._emit(EventType.TASK_DONE, task_id=task.id)
-                logger.info("Task %s completed", task.id)
+                diff = self._capture_diff()
+                if diff:
+                    self._emit(EventType.TASK_DIFF, task_id=task.id, diff=diff)
+                pushed = self._push_to_remote(task.id)
+                self._emit(EventType.TASK_DONE, task_id=task.id, pushed=pushed)
+                logger.info("Task %s completed (pushed=%s)", task.id, pushed)
 
             case AgentStatus.HELP:
                 logger.warning("Agent needs help on task %s", task.id)
@@ -265,22 +361,76 @@ class RalphyRunner:
             case _:
                 raise BadAgentStatus(f"Unexpected status: {agent.status}")
 
-    def _push_to_remote(self) -> None:
-        """Push current branch to origin (best-effort, no-op if no remote)."""
+    def _capture_diff(self) -> str:
+        """Capture git diff for the last commit (task just completed)."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "HEAD~1", "HEAD"],
+                capture_output=True, text=True, cwd=self.cfg.project_dir,
+            )
+            return result.stdout.strip()
+        except Exception as e:
+            logger.warning("Failed to capture diff: %s", e)
+            return ""
+
+    def _push_to_remote(self, task_id: str = "") -> bool:
+        """Push current branch to origin, emit success/failure events.
+
+        Returns True if push succeeded, False otherwise.
+        """
         try:
             result = subprocess.run(
                 ["git", "remote"], capture_output=True, text=True,
                 cwd=self.cfg.project_dir,
             )
             if "origin" not in result.stdout:
-                return
-            subprocess.run(
+                return False
+
+            # Get remote URL for event data
+            url_result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True, text=True, cwd=self.cfg.project_dir,
+            )
+            remote_url = url_result.stdout.strip()
+
+            # Get current commit SHA
+            sha_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, cwd=self.cfg.project_dir,
+            )
+            commit_sha = sha_result.stdout.strip()[:8]
+
+            push_result = subprocess.run(
                 ["git", "push", "origin", "HEAD"],
                 capture_output=True, text=True, cwd=self.cfg.project_dir,
             )
-            logger.info("Pushed to origin")
+            if push_result.returncode == 0:
+                logger.info("Pushed to origin (%s)", remote_url)
+                self._emit(
+                    EventType.GIT_PUSH_SUCCESS,
+                    task_id=task_id,
+                    remote_url=remote_url,
+                    commit_sha=commit_sha,
+                )
+                return True
+            else:
+                error_msg = push_result.stderr.strip() or "unknown push error"
+                logger.warning("Git push failed: %s", error_msg)
+                self._emit(
+                    EventType.GIT_PUSH_FAILED,
+                    task_id=task_id,
+                    remote_url=remote_url,
+                    error=error_msg,
+                )
+                return False
         except Exception as e:
             logger.warning("Git push failed (non-fatal): %s", e)
+            self._emit(
+                EventType.GIT_PUSH_FAILED,
+                task_id=task_id,
+                error=str(e),
+            )
+            return False
 
     # -- failure handling ------------------------------------------------------
 

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import server.db as db
+from pkgs.tasks.main import list_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ def _weak_dimensions(state: "ChatState", n: int = 3) -> str:
     return ", ".join(f"{d} ({v}%)" for d, v in weakest)
 
 
-def _conversation_summary(state: "ChatState", max_messages: int = 10) -> str:
+def _conversation_summary(state: "ChatState", max_messages: int = 30) -> str:
     """Build conversation context string for tool prompts."""
     msgs = state.messages[-max_messages:] if max_messages else state.messages
     lines = []
@@ -231,6 +232,35 @@ Based on the requirements gathered, suggest:
 
 Be specific to THIS project. Format as a numbered list with brief rationale for each.""",
     },
+    "modify": {
+        "mode": "inject",
+        "model": None,
+        "gate": lambda s: s.user_msg_count >= 1,
+        "gate_reason": "Need at least 1 message",
+        "system": """\
+You are a task modification advisor for a software project.
+
+## Context
+{conversation}
+
+## Current confidence scores
+{confidence_summary}
+
+## User request
+{original}
+
+## Task
+Based on the user's request, suggest specific task modifications:
+- Which tasks to add, remove, or update
+- Priority changes
+- Dependency adjustments
+- Scope refinements
+
+Format each suggestion as:
+- ACTION: [ADD/REMOVE/UPDATE] task-title -- reason
+
+Be specific and actionable. Only suggest changes relevant to the user's request.""",
+    },
 }
 
 
@@ -288,6 +318,19 @@ async def run_tool(
         confidence_summary=confidence_summary,
         original=original,
     )
+
+    # Inject task status context when tasks exist (loop phase)
+    try:
+        cwd_path = session_dir or state.session_dir
+        if cwd_path:
+            all_tasks = list_tasks(cwd=str(cwd_path))
+            if all_tasks:
+                task_lines = [f"- [{t.status.upper()}] {t.title}" for t in all_tasks]
+                system_prompt += (
+                    "\n\n## Current task statuses\n" + "\n".join(task_lines)
+                )
+    except Exception:
+        pass  # best-effort; skip if task file doesn't exist yet
 
     # Conditionally remove auth section for architect if auth is irrelevant
     if tool == "architect":

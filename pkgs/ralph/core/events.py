@@ -31,6 +31,19 @@ class EventType(StrEnum):
     TAG_CREATED = "tag_created"
     ROLLBACK = "rollback"
     VALIDATION_FAILED = "validation_failed"
+    # loop observability
+    LOOP_HEARTBEAT = "loop_heartbeat"
+    LOOP_STALLED = "loop_stalled"
+    TASK_PROGRESS = "task_progress"
+    # git push
+    GIT_PUSH_SUCCESS = "git_push_success"
+    GIT_PUSH_FAILED = "git_push_failed"
+    # diff
+    TASK_DIFF = "task_diff"
+    # task CRUD (emitted from API endpoints)
+    TASK_CREATED = "task_created"
+    TASK_UPDATED = "task_updated"
+    TASK_DELETED = "task_deleted"
 
 
 @dataclass

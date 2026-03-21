@@ -225,6 +225,53 @@ def close_task(task_id: str, *, cwd: Path | None = None) -> None:
     logger.info("Marked task %s as done", task_id)
 
 
+def delete_task(task_id: str, *, cwd: Path | None = None) -> None:
+    """Remove a task from tasks.yaml entirely.
+
+    Clears parent references on any child tasks that pointed to the deleted task.
+    Raises RuntimeError if the task is not found or is currently IN_PROGRESS.
+    """
+    data = _load_tasks(cwd)
+    items = data.get("tasks", [])
+    target = None
+    for item in items:
+        if item.get("id") == task_id:
+            target = item
+            break
+    if target is None:
+        raise RuntimeError(f"Task {task_id} not found")
+    if target.get("status") == TaskStatus.IN_PROGRESS:
+        raise RuntimeError(f"Cannot delete task {task_id}: currently in progress")
+    items.remove(target)
+    # Clear parent refs on children that pointed to the deleted task
+    for item in items:
+        if item.get("parent") == task_id:
+            item["parent"] = ""
+    data["tasks"] = items
+    _save_tasks(data, cwd)
+    logger.info("Deleted task %s", task_id)
+
+
+def reorder_tasks(task_ids: list[str], *, cwd: Path | None = None) -> None:
+    """Reassign priority values based on the given order.
+
+    task_ids[0] gets priority 1, task_ids[1] gets priority 2, etc.
+    Tasks not in the list keep their current priority.
+    Raises RuntimeError if any task_id is not found.
+    """
+    data = _load_tasks(cwd)
+    items = data.get("tasks", [])
+    by_id = {item["id"]: item for item in items if "id" in item}
+    for tid in task_ids:
+        if tid not in by_id:
+            raise RuntimeError(f"Task {tid} not found")
+    for i, tid in enumerate(task_ids, start=1):
+        by_id[tid]["priority"] = i
+        by_id[tid]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_tasks(data, cwd)
+    logger.info("Reordered %d tasks", len(task_ids))
+
+
 def get_next_ready_task(*, cwd: Path | None = None) -> Task | None:
     """Return the highest-priority OPEN task whose parent (if any) is DONE.
 
