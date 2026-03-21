@@ -22,9 +22,10 @@ class State:
     previous run crashed mid-iteration.
     """
 
-    def __init__(self, file: Path, prod_dir: Path | None = None) -> None:
+    def __init__(self, file: Path, prod_dir: Path | None = None, bd_cwd: Path | None = None) -> None:
         self._file = file
         self._prod_dir = prod_dir
+        self._bd_cwd = bd_cwd
         self.issue_id: str | None = None
 
     def save(self, issue_id: str, iteration: int) -> None:
@@ -91,7 +92,7 @@ class State:
         logger.info("Cleaning up failed iteration for issue %s", self.issue_id)
         reset_git_state(self.issue_id, cwd=self._prod_dir)
         try:
-            bd.update_issue(self.issue_id, status=status, assignee="")
+            bd.update_issue(self.issue_id, status=status, assignee="", cwd=self._bd_cwd)
             logger.info(
                 "Set issue %s to %s and cleared assignee", self.issue_id, status
             )

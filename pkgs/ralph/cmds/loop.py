@@ -137,7 +137,7 @@ class Loop(Command):
         logging.getLogger().addHandler(file_handler)
 
         prod_dir = self.cfg.base_dir / PROD_WORKTREE
-        self._state = State(self.cfg.state_file, prod_dir=prod_dir)
+        self._state = State(self.cfg.state_file, prod_dir=prod_dir, bd_cwd=self.cfg.base_dir)
         self._hooks = load_hooks(self.cfg)
         self._consecutive_failures = 0
 
@@ -238,7 +238,7 @@ class Loop(Command):
 
         Raises StopRequested when all issues are done (no open/blocked remain).
         """
-        issue = bd.get_next_ready_issue()
+        issue = bd.get_next_ready_issue(cwd=self.cfg.base_dir)
         if issue:
             logger.info("Retrieved issue: %r", issue)
             return issue
@@ -248,7 +248,7 @@ class Loop(Command):
         self._emit(EventType.LOOP_WAITING)
         while True:
             self._check_signals()
-            issue = bd.get_next_ready_issue()
+            issue = bd.get_next_ready_issue(cwd=self.cfg.base_dir)
             if issue:
                 logger.info("Retrieved issue: %r", issue)
                 return issue
@@ -257,7 +257,7 @@ class Loop(Command):
 
     def _check_all_done(self) -> None:
         """Raise StopRequested if every issue is closed/done."""
-        all_issues = bd.list_issues()
+        all_issues = bd.list_issues(cwd=self.cfg.base_dir)
         if not all_issues:
             return  # no issues at all -- keep waiting for new ones
         open_issues = [i for i in all_issues if i.status != "done"]
@@ -271,7 +271,7 @@ class Loop(Command):
         """Build an Agent, claim the issue, and prepare git state."""
         extra_args, extra_kwargs = self._hooks.extra_args_kwargs(self.cfg, issue)
         extra_kwargs.setdefault("cwd", str(self.cfg.base_dir))
-        agent = Agent(issue, self.cfg.model, iteration, *extra_args, **extra_kwargs)
+        agent = Agent(issue, self.cfg.model, iteration, *extra_args, bd_cwd=self.cfg.base_dir, **extra_kwargs)
         agent.claim_issue()
         self._emit(EventType.ISSUE_CLAIMED, issue_id=issue.id, title=issue.title)
         reset_git_state(issue.id, cwd=self.cfg.base_dir / PROD_WORKTREE)
@@ -311,7 +311,7 @@ class Loop(Command):
         match agent.status:
             case AgentStatus.DONE:
                 logger.info("Marking issue %s as done", issue.id)
-                bd.close_issue(issue.id)
+                bd.close_issue(issue.id, cwd=self.cfg.base_dir)
                 self._emit(EventType.ISSUE_DONE, issue_id=issue.id)
             case AgentStatus.HELP:
                 logger.warning("Ralph needs help on issue %s", issue.id)

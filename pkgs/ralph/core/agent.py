@@ -6,6 +6,7 @@ import subprocess
 import time
 from collections.abc import Generator
 from enum import StrEnum
+from pathlib import Path
 from xml.etree import ElementTree
 
 import bd
@@ -46,6 +47,7 @@ class Agent:
         model: str,
         i: int = 0,
         *args,
+        bd_cwd: Path | None = None,
         **kwargs,
     ) -> None:
         """Initialize the agent with an issue to process.
@@ -55,6 +57,7 @@ class Agent:
             model: OpenCode model to use (e.g., 'opencode/kimi-k2.5')
             i: Iteration index for logging
             *args: Additional arguments passed to OpenCode
+            bd_cwd: Working directory for bd CLI calls (session-scoped)
             **kwargs: Additional keyword arguments passed to subprocess.Popen
         """
         self.status = AgentStatus.IDLE
@@ -62,6 +65,7 @@ class Agent:
         self.i = i
         self._model = model
         self._args = args
+        self._bd_cwd = bd_cwd
         self._kwargs = kwargs
 
     def claim_issue(self) -> None:
@@ -70,6 +74,7 @@ class Agent:
             self.issue.id,
             status=bd.IssueStatus.IN_PROGRESS,
             assignee=AGENT_NAME,
+            cwd=self._bd_cwd,
         )
 
     def run(self, timeout: float | None = None) -> Generator[str, None, None]:
