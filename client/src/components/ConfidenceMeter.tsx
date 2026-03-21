@@ -14,13 +14,13 @@ const DIMENSION_LABELS: Record<keyof Confidence, string> = {
 
 // Human-readable descriptions shown in tooltips per dimension.
 const DIMENSION_DESCRIPTIONS: Record<keyof Confidence, string> = {
-  functional: "What the software does -- features, user stories, core behavior",
-  technical_stack: "Languages, frameworks, infrastructure choices",
-  data_model: "Database schema, entities, relationships",
-  auth: "Authentication and authorization approach",
-  deployment: "Hosting, CI/CD, environment setup",
-  testing: "Testing strategy, coverage expectations",
-  edge_cases: "Error handling, validation, boundary conditions",
+  functional: "Features, user stories, core behavior. Describe what users can do.",
+  technical_stack: "Languages, frameworks, infra. Specify your preferred stack.",
+  data_model: "Entities, relationships, storage. Describe your data and how it relates.",
+  auth: "Login, roles, permissions. Explain who accesses what and how.",
+  deployment: "Hosting, CI/CD, environments. Where and how will this run?",
+  testing: "Test strategy, coverage. What level of testing do you expect?",
+  edge_cases: "Error handling, validation, limits. What can go wrong?",
 };
 
 type ConfidenceMeterProps = {
@@ -34,11 +34,11 @@ type ConfidenceMeterProps = {
 };
 
 // Render 10 VU meter blocks based on a 0-100 score.
-// Fill colors are terminal-semantic and intentionally keep explicit hex.
+// Colors use semantic design tokens: success / warning / error.
 function VuBlocks({ score }: { score: number }) {
   const filled = Math.round(score / 10);
   const fillColor =
-    score >= 80 ? "bg-[#00FF41]" : score >= 50 ? "bg-[#FFaa00]" : "bg-[#FF0033]";
+    score >= 80 ? "bg-[var(--color-success)]" : score >= 50 ? "bg-[var(--color-warning)]" : "bg-[var(--color-error)]";
 
   return (
     <div className="flex gap-0.5">
@@ -98,12 +98,17 @@ export function ConfidenceMeter({
           const isHovered = hoveredDim === key;
           const clickable = !!onDimensionClick;
 
+          // Only flag dimensions as weak once the user has meaningful progress (>=30% readiness)
+          const isWeak = !isIrrelevant && value < 50 && !ready && weightedReadiness >= 30;
+
           return (
             <div
               key={key}
               className={`space-y-1 px-1 -mx-1 transition-colors ${
                 clickable ? "cursor-crosshair" : ""
-              } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""}`}
+              } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""} ${
+                isWeak && clickable ? "animate-pulse" : ""
+              }`}
               style={{ opacity: isIrrelevant ? 0.35 : 1 }}
               onClick={() => clickable && onDimensionClick(key)}
               onMouseEnter={() => clickable && setHoveredDim(key)}
@@ -115,8 +120,12 @@ export function ConfidenceMeter({
                   {isIrrelevant && (
                     <span className="text-muted-foreground ml-1">(N/A)</span>
                   )}
+                  {/* Weak dimension indicator */}
+                  {isWeak && clickable && (
+                    <span className="text-[var(--color-error)] text-[9px] tracking-widest">NEEDS ATTENTION</span>
+                  )}
                   {/* "Ask about this" hint -- only visible on hover */}
-                  {isHovered && clickable && !isIrrelevant && (
+                  {isHovered && clickable && !isIrrelevant && !isWeak && (
                     <span className="text-primary text-[10px]">ASK</span>
                   )}
                   {/* Info tooltip -- explains what this dimension measures */}

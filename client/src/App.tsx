@@ -41,7 +41,7 @@ function AppInner() {
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <span className="text-[#00FF41] text-sm font-mono uppercase tracking-widest">
+        <span className="text-[var(--color-terminal-text)] text-sm font-mono uppercase tracking-widest">
           INITIALIZING...<span className="animate-blink">_</span>
         </span>
       </div>

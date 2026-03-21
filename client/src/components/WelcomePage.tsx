@@ -3,6 +3,7 @@ import { Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/config";
 import type { Theme } from "@/hooks/useTheme";
+import { BouncingLogo } from "./BouncingLogo";
 
 type Props = {
   onLogin: () => void;
@@ -22,12 +23,15 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background grid-bg scanline-overlay flex items-center justify-center relative">
+    <div className="min-h-screen bg-background grid-bg scanline-overlay flex items-center justify-center relative overflow-hidden">
+      {/* Bouncing logo -- between grid bg (z-auto) and card (z-10) */}
+      <BouncingLogo />
+
       {/* Theme toggle */}
       {onThemeToggle && (
         <button
           onClick={onThemeToggle}
-          className="absolute top-4 right-4 text-primary hover:opacity-70 transition-opacity"
+          className="absolute top-4 right-4 z-20 text-primary hover:opacity-70 transition-opacity"
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           title={theme === "dark" ? "Light mode" : "Dark mode"}
         >
@@ -36,9 +40,9 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
       )}
 
       {/* Centered container */}
-      <div className="relative border-2 border-primary bg-card p-10 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
+      <div className="relative z-10 border-2 border-primary bg-card p-10 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
         {/* Red accent square -- always red, intentional brand color */}
-        <span className="absolute top-0 right-0 w-3 h-3 bg-[#FF0033]" aria-hidden="true" />
+        <span className="absolute top-0 right-0 w-3 h-3 bg-[var(--color-error)]" aria-hidden="true" />
 
         {/* Title section */}
         <div className="flex flex-col items-center gap-3">

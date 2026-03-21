@@ -78,6 +78,14 @@
   --sidebar-ring: oklch(0.6 0.2 145);
   --font-sans: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Design tokens -- light mode */
+  --color-terminal-text: #00FF41;
+  --color-terminal-bg: #000000;
+  --color-terminal-glow: rgba(0, 255, 65, 0.4);
+  --color-success: #00FF41;
+  --color-warning: #FFaa00;
+  --color-error: #FF0033;
 }
 
 .dark {
@@ -112,6 +120,14 @@
   --sidebar-accent-foreground: oklch(0.85 0.25 145);
   --sidebar-border: oklch(0.15 0 0);
   --sidebar-ring: oklch(0.85 0.25 145);
+
+  /* Design tokens -- dark mode */
+  --color-terminal-text: #00FF41;
+  --color-terminal-bg: #000000;
+  --color-terminal-glow: rgba(0, 255, 65, 0.4);
+  --color-success: #00FF41;
+  --color-warning: #FFaa00;
+  --color-error: #FF0033;
 }
 
 @layer base {

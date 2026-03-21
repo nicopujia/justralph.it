@@ -24,7 +24,7 @@ export function ToolSuggestion({
   const label = TOOL_LABELS[result.tool] ?? result.tool.toUpperCase();
   const [expanded, setExpanded] = useState(false);
   const isLong = result.content.length > 300;
-  const accentColor = result.mode === "inject" ? "#00FF41" : "#FFaa00";
+  const accentColor = result.mode === "inject" ? "var(--color-terminal-text)" : "var(--color-warning)";
 
   // Escape key dismisses the suggestion
   useEffect(() => {
@@ -37,11 +37,11 @@ export function ToolSuggestion({
 
   return (
     <div
-      className={`border font-mono mx-2 mb-2 ${
-        result.mode === "inject"
-          ? "border-[#00FF41]/50 bg-[#00FF41]/5"
-          : "border-[#FFaa00]/50 bg-[#FFaa00]/5"
-      }`}
+      className="border font-mono mx-2 mb-2"
+      style={{
+        borderColor: `color-mix(in srgb, ${accentColor} 50%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${accentColor} 5%, transparent)`,
+      }}
       role="status"
       aria-live="polite"
     >

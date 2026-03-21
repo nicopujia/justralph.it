@@ -19,14 +19,14 @@ function classifyLine(line: string): LineToken {
   return "default";
 }
 
-// Terminal syntax colors -- intentionally always dark (these are code output colors).
+// Terminal syntax colors -- use CSS design tokens for theme consistency.
 const TOKEN_CLASSES: Record<LineToken, string> = {
-  default: "text-[#00FF41] terminal-glow",
+  default: "text-[var(--color-terminal-text)] terminal-glow",
   filepath: "text-[#00ccff]",
-  addition: "text-[#00FF41]",
-  removal: "text-[#FF0033]",
-  status: "text-[#FFaa00]",
-  error: "text-[#FF0033]",
+  addition: "text-[var(--color-terminal-text)]",
+  removal: "text-[var(--color-error)]",
+  status: "text-[var(--color-warning)]",
+  error: "text-[var(--color-error)]",
   commit: "text-[#6699ff]",
 };
 
@@ -105,7 +105,7 @@ export function AgentOutput({ lines }: AgentOutputProps) {
           <button
             onClick={() => scrollToBottom(true)}
             aria-label="Scroll to bottom"
-            className="absolute bottom-3 right-5 border border-[#00FF41] bg-black text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors p-1"
+            className="absolute bottom-3 right-5 border border-[var(--color-terminal-text)] bg-black text-[var(--color-terminal-text)] hover:bg-[var(--color-terminal-text)] hover:text-black transition-colors p-1"
           >
             <ArrowDown className="size-4" />
           </button>

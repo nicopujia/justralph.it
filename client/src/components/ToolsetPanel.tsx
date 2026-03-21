@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Lightbulb, Maximize2, Pencil, Network } from "lucide-react";
+import { Lightbulb, Maximize2, Pencil, Network, ListChecks } from "lucide-react";
 import type { ChatState, ToolName } from "@/hooks/useChatbot";
 
 type ToolDef = {
@@ -34,6 +34,12 @@ const TOOLS: ToolDef[] = [
     description: "Suggest architecture based on known requirements.",
     icon: <Network className="size-3.5" />,
   },
+  {
+    id: "modify",
+    label: "MODIFY TASKS",
+    description: "Suggest task additions, removals, or priority changes.",
+    icon: <ListChecks className="size-3.5" />,
+  },
 ];
 
 const TOOL_MODES: Record<ToolName, "inject" | "edit"> = {
@@ -41,6 +47,7 @@ const TOOL_MODES: Record<ToolName, "inject" | "edit"> = {
   expand: "inject",
   refine: "edit",
   architect: "inject",
+  modify: "inject",
 };
 
 const TOOL_SHORTCUTS: Record<ToolName, string> = {
@@ -48,6 +55,7 @@ const TOOL_SHORTCUTS: Record<ToolName, string> = {
   expand: "Ctrl+2",
   refine: "Ctrl+3",
   architect: "Ctrl+4",
+  modify: "Ctrl+5",
 };
 
 function getToolGating(state: ChatState) {
@@ -59,6 +67,7 @@ function getToolGating(state: ChatState) {
     expand: totalChars >= 120,
     refine: state.questionCount >= 1,
     architect: state.phase >= 2,
+    modify: state.questionCount >= 1,
   };
 }
 
@@ -71,6 +80,7 @@ function getGateReason(tool: ToolName, state: ChatState): string {
     case "expand":
       return `Need ${Math.max(0, 120 - totalChars)} more chars`;
     case "refine":
+    case "modify":
       return "Need 1+ message";
     case "architect":
       return `Need Phase 2+ (${Math.max(0, 4 - state.questionCount)} more msgs)`;
@@ -138,7 +148,7 @@ export function ToolsetPanel({
 
   useEffect(() => {
     const newlyUnlocked = new Set<ToolName>();
-    for (const tool of ["brainstorm", "expand", "refine", "architect"] as ToolName[]) {
+    for (const tool of ["brainstorm", "expand", "refine", "architect", "modify"] as ToolName[]) {
       if (!prevGating[tool] && gating[tool]) {
         newlyUnlocked.add(tool);
       }
@@ -160,6 +170,7 @@ export function ToolsetPanel({
         "2": "expand",
         "3": "refine",
         "4": "architect",
+        "5": "modify",
       };
       const tool = toolMap[e.key];
       if (tool && gating[tool] && !toolLoading && !state.loading) {
@@ -229,7 +240,7 @@ export function ToolsetPanel({
                 ? "border-primary animate-pulse bg-primary/5"
                 : enabled
                   ? `border-border hover:border-primary hover:bg-primary/5 cursor-pointer ${
-                      justUnlocked.has(tool.id) ? "ring-1 ring-[#00FF41] border-[#00FF41]" : ""
+                      justUnlocked.has(tool.id) ? "ring-1 ring-[var(--color-success)] border-[var(--color-success)]" : ""
                     }`
                   : "border-border/50 opacity-40 cursor-not-allowed"
             }`}
@@ -248,7 +259,7 @@ export function ToolsetPanel({
                   isRunning
                     ? "text-primary"
                     : enabled
-                      ? "text-[#00FF41]"
+                      ? "text-[var(--color-success)]"
                       : "text-muted-foreground"
                 }`}
               >
@@ -262,8 +273,8 @@ export function ToolsetPanel({
               <span
                 className={`text-[10px] ml-1 ${
                   TOOL_MODES[tool.id] === "inject"
-                    ? "text-[#00FF41]"
-                    : "text-[#FFaa00]"
+                    ? "text-[var(--color-terminal-text)]"
+                    : "text-[var(--color-warning)]"
                 }`}
               >
                 {TOOL_MODES[tool.id] === "inject" ? "INJECT" : "EDIT"}
@@ -274,7 +285,7 @@ export function ToolsetPanel({
             </p>
             {/* Change 4: slow-load warning */}
             {isRunning && elapsed > 15 && (
-              <p className="text-[10px] text-[#FFaa00] mt-1 animate-pulse">
+              <p className="text-[10px] text-[var(--color-warning)] mt-1 animate-pulse">
                 THIS IS TAKING A WHILE...
               </p>
             )}

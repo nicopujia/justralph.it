@@ -48,10 +48,10 @@ export function SharedView({ shareToken }: Props) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center font-mono">
         <div className="text-center space-y-3">
-          <p className="text-[#FF0033] text-sm uppercase tracking-widest">{error}</p>
+          <p className="text-[var(--color-error)] text-sm uppercase tracking-widest">{error}</p>
           <a
             href="/"
-            className="text-[#00FF41] text-xs uppercase tracking-wider underline hover:opacity-80"
+            className="text-[var(--color-terminal-text)] text-xs uppercase tracking-wider underline hover:opacity-80"
           >
             Go to justralph.it
           </a>
@@ -63,7 +63,7 @@ export function SharedView({ shareToken }: Props) {
   if (!data) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <span className="text-[#00FF41] text-sm font-mono uppercase tracking-widest">
+        <span className="text-[var(--color-terminal-text)] text-sm font-mono uppercase tracking-widest">
           LOADING...<span className="animate-blink">_</span>
         </span>
       </div>
@@ -103,7 +103,7 @@ export function SharedView({ shareToken }: Props) {
           <span
             className={`text-[10px] uppercase tracking-widest px-1.5 py-0.5 border ${
               session.status === "running"
-                ? "border-[#00FF41] text-[#00FF41]"
+                ? "border-[var(--color-success)] text-[var(--color-success)]"
                 : "border-border text-muted-foreground"
             }`}
           >

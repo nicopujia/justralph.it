@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState, useCallback } from "react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import type { WSState } from "@/hooks/useWebSocket";
-import { Play, Square, RotateCcw, Sun, Moon, LogOut, Volume2, VolumeX } from "lucide-react";
+import { Play, Square, RotateCcw, Sun, Moon, LogOut, Volume2, VolumeX, Skull } from "lucide-react";
 import { API_URL } from "@/lib/config";
 import { ShareButton } from "./ShareButton";
 
@@ -26,11 +26,11 @@ type StatusBarProps = {
   onSoundToggle?: () => void;
 };
 
-// Terminal-specific status dot colors -- intentionally not theme-switched.
+// Status dot colors using semantic design tokens.
 const STATUS_CONFIG = {
-  running: { color: "bg-[#00FF41] animate-pulse-dot", label: "RUNNING" },
-  waiting: { color: "bg-[#FFaa00]", label: "WAITING" },
-  stopped: { color: "bg-[#FF0033]", label: "STOPPED" },
+  running: { color: "bg-[var(--color-success)] animate-pulse-dot", label: "RUNNING" },
+  waiting: { color: "bg-[var(--color-warning)]", label: "WAITING" },
+  stopped: { color: "bg-[var(--color-error)]", label: "STOPPED" },
   unknown: { color: "bg-muted-foreground", label: "UNKNOWN" },
 } as const;
 
@@ -49,17 +49,29 @@ function fmtIter(n: number): string {
 }
 
 async function loopAction(
-  action: "start" | "stop" | "restart",
+  action: "start" | "stop" | "restart" | "kill-task",
   sessionId?: string,
   onError?: (msg: string) => void,
+  opts?: { force?: boolean },
 ) {
   if (!sessionId) return;
   const base = `${API_URL}/api/sessions/${sessionId}`;
+  const url = opts?.force ? `${base}/${action}?force=true` : `${base}/${action}`;
   try {
-    const resp = await fetch(`${base}/${action}`, { method: "POST" });
-    if (!resp.ok) onError?.("Action failed");
+    const resp = await fetch(url, { method: "POST" });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      const detail = body?.detail;
+      if (detail && typeof detail === "object") {
+        onError?.(`${detail.error}. ${detail.suggestion ?? ""}`);
+      } else if (typeof detail === "string") {
+        onError?.(detail);
+      } else {
+        onError?.(`${action} failed (${resp.status})`);
+      }
+    }
   } catch {
-    onError?.("Action failed");
+    onError?.(`${action} request failed -- network error`);
   }
 }
 
@@ -165,30 +177,12 @@ export function StatusBar({
 
         <span className="text-muted-foreground">|</span>
 
-        {/* Loop controls */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => loopAction("start", sessionId, onError)}
-            title="Start loop"
-            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
-          >
-            <Play className="size-3" />
-          </button>
-          <button
-            onClick={() => loopAction("stop", sessionId, onError)}
-            title="Stop loop"
-            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
-          >
-            <Square className="size-3" />
-          </button>
-          <button
-            onClick={() => loopAction("restart", sessionId, onError)}
-            title="Restart loop"
-            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
-          >
-            <RotateCcw className="size-3" />
-          </button>
-        </div>
+        {/* Loop controls with confirmation dialogs */}
+        <LoopControls
+          sessionId={sessionId}
+          loopStatus={loopStatus}
+          onError={onError}
+        />
 
         {/* Share button: only shown when a session is active */}
         {sessionId && (
@@ -213,5 +207,156 @@ export function StatusBar({
         )}
       </div>
     </div>
+  );
+}
+
+// -- Confirmation dialog + loop control buttons --------------------------------
+
+function ConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
+        <AlertDialog.Content className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] bg-card border border-border p-5 font-mono shadow-2xl">
+          <AlertDialog.Title className="text-foreground text-xs uppercase tracking-widest mb-2">
+            {title}
+          </AlertDialog.Title>
+          <AlertDialog.Description className="text-muted-foreground text-xs mb-4">
+            {description}
+          </AlertDialog.Description>
+          <div className="flex items-center gap-2 justify-end">
+            <AlertDialog.Cancel asChild>
+              <button className="px-3 py-1.5 border border-border text-muted-foreground hover:text-foreground text-xs uppercase tracking-wider transition-colors">
+                Cancel
+              </button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action asChild>
+              <button
+                onClick={onConfirm}
+                className="px-3 py-1.5 border border-red-500 text-red-400 hover:bg-red-500 hover:text-black text-xs uppercase tracking-wider transition-colors"
+              >
+                {confirmLabel}
+              </button>
+            </AlertDialog.Action>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
+}
+
+function LoopControls({
+  sessionId,
+  loopStatus,
+  onError,
+}: {
+  sessionId?: string;
+  loopStatus: string;
+  onError?: (msg: string) => void;
+}) {
+  const [confirmAction, setConfirmAction] = useState<"stop" | "restart" | "force_stop" | "kill_task" | null>(null);
+
+  const execute = useCallback(async () => {
+    if (!confirmAction) return;
+    switch (confirmAction) {
+      case "stop":
+        await loopAction("stop", sessionId, onError);
+        break;
+      case "restart":
+        await loopAction("restart", sessionId, onError);
+        break;
+      case "force_stop":
+        await loopAction("stop", sessionId, onError, { force: true });
+        break;
+      case "kill_task":
+        await loopAction("kill-task", sessionId, onError);
+        break;
+    }
+    setConfirmAction(null);
+  }, [confirmAction, sessionId, onError]);
+
+  const confirmMessages: Record<string, { title: string; desc: string; label: string }> = {
+    stop: {
+      title: "Stop Loop",
+      desc: "The current task will be marked BLOCKED. The loop will not process further tasks until restarted.",
+      label: "Stop",
+    },
+    restart: {
+      title: "Restart Loop",
+      desc: "The current iteration will complete, then the loop restarts from the next ready task.",
+      label: "Restart",
+    },
+    force_stop: {
+      title: "Force Stop",
+      desc: "This will kill the agent subprocess immediately. The current task will be marked BLOCKED. Use only if the loop is unresponsive.",
+      label: "Force Stop",
+    },
+    kill_task: {
+      title: "Kill Current Task",
+      desc: "The current agent subprocess will be killed and the task marked BLOCKED. The loop continues to the next task.",
+      label: "Kill Task",
+    },
+  };
+
+  const active = confirmAction ? confirmMessages[confirmAction] : null;
+
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => loopAction("start", sessionId, onError)}
+          title={`Start loop (status: ${loopStatus})`}
+          className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
+        >
+          <Play className="size-3" />
+        </button>
+        <button
+          onClick={() => setConfirmAction("stop")}
+          title={`Stop loop (status: ${loopStatus})`}
+          className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
+        >
+          <Square className="size-3" />
+        </button>
+        <button
+          onClick={() => setConfirmAction("restart")}
+          title={`Restart loop (status: ${loopStatus})`}
+          className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
+        >
+          <RotateCcw className="size-3" />
+        </button>
+        <button
+          onClick={() => setConfirmAction("kill_task")}
+          title={`Kill current task (status: ${loopStatus})`}
+          className="p-1 border border-border hover:border-red-500 text-foreground hover:text-red-400 transition-colors"
+        >
+          <Skull className="size-3" />
+        </button>
+      </div>
+
+      {active && (
+        <ConfirmDialog
+          open={!!confirmAction}
+          onOpenChange={(v) => { if (!v) setConfirmAction(null); }}
+          title={active.title}
+          description={active.desc}
+          confirmLabel={active.label}
+          onConfirm={execute}
+        />
+      )}
+    </>
   );
 }
