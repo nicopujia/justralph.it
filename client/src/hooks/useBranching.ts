@@ -12,9 +12,19 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import type { ChatMessage } from "./useChatbot";
+import type { ChatMessage, Confidence, Relevance } from "./useChatbot";
 
 export const MAX_BRANCHES = 5;
+
+/** Snapshot of chatbot scoring state at the moment a branch is created. */
+export type BranchStateSnapshot = {
+  confidence: Confidence;
+  relevance: Relevance;
+  weightedReadiness: number;
+  questionCount: number;
+  phase: number;
+  ready: boolean;
+};
 
 export type Branch = {
   id: string;
@@ -25,6 +35,8 @@ export type Branch = {
   /** Index (0-based) of the last shared message from the parent branch. */
   forkIndex: number;
   createdAt: number;
+  /** Scoring state snapshot at fork time -- used to restore on branch switch. */
+  stateSnapshot?: BranchStateSnapshot;
 };
 
 type BranchStore = {
@@ -67,9 +79,10 @@ type UseBranchingReturn = {
   activeMessages: ChatMessage[];
   /**
    * Create a new branch forked from `forkIndex` (inclusive).
+   * Optionally captures a state snapshot for restoring on switch.
    * Returns the id of the new branch.
    */
-  branchFrom: (allMessages: ChatMessage[], forkIndex: number) => string;
+  branchFrom: (allMessages: ChatMessage[], forkIndex: number, snapshot?: BranchStateSnapshot) => string;
   /** Switch the active branch. */
   switchBranch: (id: string) => void;
   /**
@@ -78,6 +91,10 @@ type UseBranchingReturn = {
    * so this only matters for non-main branches).
    */
   setActiveBranchMessages: (messages: ChatMessage[]) => void;
+  /** State snapshot of the active branch (undefined for main). */
+  activeBranchSnapshot: BranchStateSnapshot | undefined;
+  /** Update the state snapshot on the active branch (e.g. after a chat response). */
+  updateActiveBranchSnapshot: (snapshot: BranchStateSnapshot) => void;
   /** Whether the current branch is the main branch. */
   isMainBranch: boolean;
 };
@@ -115,16 +132,37 @@ export function useBranching(
   }, [sessionId, store]);
 
   const branchFrom = useCallback(
-    (allMessages: ChatMessage[], forkIndex: number): string => {
+    (allMessages: ChatMessage[], forkIndex: number, snapshot?: BranchStateSnapshot): string => {
       const newId = makeId();
       const branchNumber =
         store.branches.filter((b) => b.id !== "main").length + 1;
+
+      // Derive snapshot from the last assistant message at/before forkIndex if not provided
+      let resolvedSnapshot = snapshot;
+      if (!resolvedSnapshot) {
+        for (let i = forkIndex; i >= 0; i--) {
+          const m = allMessages[i];
+          if (m?.role === "assistant" && m.metadata) {
+            resolvedSnapshot = {
+              confidence: m.metadata.confidence,
+              relevance: m.metadata.relevance,
+              weightedReadiness: m.metadata.weightedReadiness,
+              questionCount: m.metadata.questionCount,
+              phase: m.metadata.phase,
+              ready: false,
+            };
+            break;
+          }
+        }
+      }
+
       const newBranch: Branch = {
         id: newId,
         name: `Branch ${branchNumber}`,
         messages: allMessages.slice(0, forkIndex + 1),
         forkIndex,
         createdAt: Date.now(),
+        stateSnapshot: resolvedSnapshot,
       };
 
       setStore((prev) => {
@@ -159,6 +197,18 @@ export function useBranching(
     });
   }, []);
 
+  const updateActiveBranchSnapshot = useCallback((snapshot: BranchStateSnapshot) => {
+    setStore((prev) => {
+      if (prev.activeBranchId === "main") return prev;
+      return {
+        ...prev,
+        branches: prev.branches.map((b) =>
+          b.id === prev.activeBranchId ? { ...b, stateSnapshot: snapshot } : b,
+        ),
+      };
+    });
+  }, []);
+
   const isMainBranch = store.activeBranchId === "main";
 
   const activeBranch = isMainBranch
@@ -176,6 +226,8 @@ export function useBranching(
     branchFrom,
     switchBranch,
     setActiveBranchMessages,
+    activeBranchSnapshot: activeBranch?.stateSnapshot,
+    updateActiveBranchSnapshot,
     isMainBranch,
   };
 }
