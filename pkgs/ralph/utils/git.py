@@ -128,6 +128,18 @@ def _prune_empty_dirs(root: Path, keep: set[str]) -> None:
             pass
 
 
+def add_remote(repo: Path, name: str, url: str) -> None:
+    """Add a named remote to the repo.
+
+    Args:
+        repo: Root of the repo (bare or worktree).
+        name: Remote name (e.g. "origin").
+        url: Remote URL.
+    """
+    _run("remote", "add", name, url, cwd=repo)
+    logger.info("Added remote %s -> %s", name, url)
+
+
 def hard_reset(cwd: Path | None = None) -> None:
     """Run ``git reset --hard`` to discard uncommitted changes.
 

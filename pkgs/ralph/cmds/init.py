@@ -16,6 +16,7 @@ from ..config import (
     Config,
 )
 from ..utils.git import (
+    add_remote,
     add_worktree,
     convert_to_bare,
     has_worktree,
@@ -41,6 +42,10 @@ class InitConfig(Config):
     force: bool = field(
         default=False,
         metadata={"help": "Delete and re-create the project directory"},
+    )
+    remote: str = field(
+        default="",
+        metadata={"help": "GitHub repo URL to add as origin remote"},
     )
 
 
@@ -84,10 +89,13 @@ class Init(Command):
             self._init_fresh(root)
 
         self._scaffold_ralph_dir(root)
-        
+
         # Symlink Ralph's config files (auto-updates with Ralph)
         self._symlink_config(root, "opencode.jsonc")
         self._symlink_config(root, "PROMPT.xml")
+
+        if self.cfg.remote:
+            add_remote(root, "origin", self.cfg.remote)
 
         logger.info("Initialized %s", root)
 
