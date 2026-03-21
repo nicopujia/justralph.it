@@ -31,6 +31,7 @@ from ..core.state import State
 from ..utils.backup import prune_old_snapshots, snapshot_issues
 from ..utils.git import (
     cleanup_branch,
+    cleanup_issue_tags,
     create_tag,
     done_tag,
     ensure_on_main,
@@ -202,13 +203,16 @@ class Loop(Command):
             logger.warning("Skipping entire loop: max_iters is 0")
 
         while self.cfg.max_iters:
+            processed = False
             try:
                 self._check_signals()
                 self._check_resources()
                 issue = self._next_issue()
                 agent = self._create_agent(issue, i)
+                processed = True
                 self._process_issue(agent, issue, i)
                 self._consecutive_failures = 0
+                self._emit(EventType.ITER_COMPLETED, issue_id=issue.id, iteration=i)
             except StopRequested:
                 break
             except RestartRequested:
@@ -219,7 +223,8 @@ class Loop(Command):
             finally:
                 i += 1
                 self._state.clear()
-                self._verify_worktree_health()
+                if processed:
+                    self._verify_worktree_health()
                 if self.cfg.max_iters >= 0 and i >= self.cfg.max_iters:
                     logger.warning(
                         "Stopping loop: reached max iterations (%s)",
@@ -397,6 +402,7 @@ class Loop(Command):
 
                 # Success
                 create_tag(done_tag(issue.id), message=f"completed: {issue.id}", cwd=self._prod_dir)
+                cleanup_issue_tags(issue.id, cwd=self._prod_dir)
                 bd.close_issue(issue.id, cwd=self.cfg.base_dir)
                 self._emit(EventType.ISSUE_DONE, issue_id=issue.id)
 
