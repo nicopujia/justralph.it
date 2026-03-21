@@ -128,16 +128,26 @@ def _prune_empty_dirs(root: Path, keep: set[str]) -> None:
             pass
 
 
+def has_remote(repo: Path, name: str) -> bool:
+    """Return True if a remote named *name* exists."""
+    result = _run("remote", cwd=repo, check=False)
+    return name in result.stdout.splitlines()
+
+
 def add_remote(repo: Path, name: str, url: str) -> None:
-    """Add a named remote to the repo.
+    """Add a named remote, or update URL if it already exists.
 
     Args:
         repo: Root of the repo (bare or worktree).
         name: Remote name (e.g. "origin").
         url: Remote URL.
     """
-    _run("remote", "add", name, url, cwd=repo)
-    logger.info("Added remote %s -> %s", name, url)
+    if has_remote(repo, name):
+        _run("remote", "set-url", name, url, cwd=repo)
+        logger.info("Updated remote %s -> %s", name, url)
+    else:
+        _run("remote", "add", name, url, cwd=repo)
+        logger.info("Added remote %s -> %s", name, url)
 
 
 def push(branch: str = MAIN_BRANCH, remote: str = "origin", cwd: Path | None = None) -> None:
