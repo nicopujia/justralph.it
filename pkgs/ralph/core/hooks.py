@@ -18,6 +18,7 @@ from ..config import (
     HOOKS_CLASS_NAME,
     HOOKS_FILENAME,
     HOOKS_MODULE_NAME,
+    PROD_WORKTREE,
     RALPH_DIR_NAME,
     Config,
 )
@@ -111,7 +112,7 @@ def load_hooks(cfg: Config) -> Hooks:
         AttributeError: If CustomHooks class is not defined
         TypeError: If CustomHooks does not subclass Hooks
     """
-    hooks_file = cfg.base_dir / RALPH_DIR_NAME / HOOKS_FILENAME
+    hooks_file = cfg.base_dir / PROD_WORKTREE / RALPH_DIR_NAME / HOOKS_FILENAME
     if not hooks_file.exists():
         raise FileNotFoundError(f"{hooks_file} not found. Run `ralph init` first.")
 
