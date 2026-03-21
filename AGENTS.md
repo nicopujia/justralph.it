@@ -3,6 +3,26 @@
 - When you write code, you should document the non-obvious in a concise way.
 - Do not use em-dashes for docs.
 
+## Commit Messages
+- Use conventional commits.
+- Mostly lowercase.
+- Abbreviate when obvious (e.g. `deps`, `cfg`, `init`, `impl`, `refactor`, `rm`, `mv`, etc.).
+- Keep subjects short.
+- If you include a body, keep it concise.
+
+### Examples
+```
+feat: impl username/password auth
+
+Closes: ex-001
+```
+
+```
+docs: update setup instructions in README
+
+Replace pip with uv.
+```
+
 ## Tooling
 - Use `uv` for any Python-related task.
 
