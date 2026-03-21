@@ -167,7 +167,7 @@ class Loop(Command):
         self._dev_dir = self.cfg.base_dir / DEV_WORKTREE
         self._backup_dir = self._prod_dir / RALPH_DIR_NAME / "backups"
         self._backup_dir.mkdir(parents=True, exist_ok=True)
-        self._state = State(self.cfg.state_file, prod_dir=self._prod_dir, bd_cwd=self.cfg.base_dir)
+        self._state = State(self.cfg.state_file, prod_dir=self._prod_dir, dev_dir=self._dev_dir, bd_cwd=self.cfg.base_dir)
         self._hooks = load_hooks(self.cfg)
         self._consecutive_failures = 0
         self._current_iteration = 0

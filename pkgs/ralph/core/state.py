@@ -22,9 +22,12 @@ class State:
     previous run crashed mid-iteration.
     """
 
-    def __init__(self, file: Path, prod_dir: Path | None = None, bd_cwd: Path | None = None) -> None:
+    def __init__(
+        self, file: Path, prod_dir: Path | None = None, dev_dir: Path | None = None, bd_cwd: Path | None = None
+    ) -> None:
         self._file = file
         self._prod_dir = prod_dir
+        self._dev_dir = dev_dir
         self._bd_cwd = bd_cwd
         self.issue_id: str | None = None
 
@@ -71,7 +74,12 @@ class State:
         try:
             hard_reset(cwd=self._prod_dir)
         except Exception as e:
-            logger.error("git reset --hard failed: %s", e)
+            logger.error("git reset --hard (prod) failed: %s", e)
+        if self._dev_dir:
+            try:
+                hard_reset(cwd=self._dev_dir)
+            except Exception as e:
+                logger.error("git reset --hard (dev) failed: %s", e)
 
         if self.issue_id:
             self.cleanup_failed_iteration()
