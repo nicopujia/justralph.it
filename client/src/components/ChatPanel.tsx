@@ -11,7 +11,10 @@ import {
   Code,
   ListTodo,
   BarChart2,
+  Sun,
+  Moon,
 } from "lucide-react";
+import type { Theme } from "@/hooks/useTheme";
 import { API_URL } from "@/lib/config";
 import { ConfidenceMeter } from "./ConfidenceMeter";
 import { useToast } from "./Toast";
@@ -32,6 +35,9 @@ type ChatPanelProps = {
   ralphItLoading?: boolean;
   /** "full" = Phase 1 fullscreen two-column; "sidebar" = Phase 2 collapsed sidebar. */
   mode?: "full" | "sidebar";
+  /** Theme control for the header toggle. */
+  theme?: Theme;
+  onThemeToggle?: () => void;
   /** Undo the last user+assistant message pair. */
   onUndo?: () => void;
 };
@@ -227,6 +233,8 @@ export function ChatPanel({
   ralphItLoading = false,
   mode = "full",
   onUndo,
+  theme,
+  onThemeToggle,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -394,14 +402,28 @@ export function ChatPanel({
       {/* LEFT column: header + messages + input */}
       <div className="flex-1 flex flex-col min-w-0 border-r dark:border-zinc-800 border-gray-200">
         {/* Header */}
-        <div className="border-b dark:border-zinc-800 border-gray-200 px-6 py-4 shrink-0">
-          <h1 className="text-xl font-mono font-bold dark:text-zinc-100 text-gray-900 flex items-center gap-2">
-            <MessageCircle className="size-5 text-emerald-500" />
-            justralph.it
-          </h1>
-          <p className="text-sm dark:text-zinc-500 text-gray-400 mt-1">
-            Describe your project. Ralphy will ask questions until he's confident enough to build it.
-          </p>
+        <div className="border-b dark:border-zinc-800 border-gray-200 px-6 py-4 shrink-0 flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-mono font-bold dark:text-zinc-100 text-gray-900 flex items-center gap-2">
+              <MessageCircle className="size-5 text-emerald-500" />
+              justralph.it
+            </h1>
+            <p className="text-sm dark:text-zinc-500 text-gray-400 mt-1">
+              Describe your project. Ralphy will ask questions until he's confident enough to build it.
+            </p>
+          </div>
+          {onThemeToggle && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onThemeToggle}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+              className="shrink-0"
+            >
+              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
+          )}
         </div>
 
         {/* Messages */}

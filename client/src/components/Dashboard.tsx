@@ -91,6 +91,8 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
         onUndo={chatbot.undoLastMessage}
         ralphItLoading={ralphItLoading}
         mode="full"
+        theme={theme}
+        onThemeToggle={onThemeToggle}
       />
     );
   }

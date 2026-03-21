@@ -38,6 +38,8 @@ function AppInner() {
       <WelcomePage
         onLogin={loginWithGithub}
         onSkip={() => setSkipped(true)}
+        theme={theme}
+        onThemeToggle={toggleTheme}
       />
     );
   }

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { Github } from "lucide-react";
+import { Github, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/config";
+import type { Theme } from "@/hooks/useTheme";
 
 type Props = {
   onLogin: () => void;
   onSkip?: () => void;
+  theme?: Theme;
+  onThemeToggle?: () => void;
 };
 
-export function WelcomePage({ onLogin, onSkip }: Props) {
+export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
   // Check if GitHub OAuth is configured by probing the auth endpoint
   const [oauthReady, setOauthReady] = useState<boolean | null>(null);
 
@@ -20,7 +23,20 @@ export function WelcomePage({ onLogin, onSkip }: Props) {
   }, []);
 
   return (
-    <div className="min-h-screen dark:bg-zinc-950 bg-white flex items-center justify-center">
+    <div className="min-h-screen dark:bg-zinc-950 bg-white flex items-center justify-center relative">
+      {/* Theme toggle - top right corner */}
+      {onThemeToggle && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onThemeToggle}
+          className="absolute top-4 right-4 dark:text-zinc-400 text-gray-500 dark:hover:text-zinc-200 hover:text-gray-700"
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          title={theme === "dark" ? "Light mode" : "Dark mode"}
+        >
+          {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+        </Button>
+      )}
       {/* Animated gradient border wrapper */}
       <div className="relative p-px rounded-2xl animated-border">
         <div className="relative rounded-2xl dark:bg-zinc-900 bg-gray-50 px-10 py-12 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
