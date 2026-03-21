@@ -1,8 +1,10 @@
 """OpenCode agent wrapper for processing Beads issues."""
 
 import logging
+import queue as queue_mod
 import shutil
 import subprocess
+import threading
 import time
 from collections.abc import Generator
 from enum import StrEnum
@@ -77,21 +79,24 @@ class Agent:
             cwd=self._bd_cwd,
         )
 
-    def run(self, timeout: float | None = None) -> Generator[str, None, None]:
+    def run(
+        self, timeout: float | None = None, progress_timeout: float = 120.0
+    ) -> Generator[str, None, None]:
         """Run OpenCode to process the issue and stream output.
 
-        Executes OpenCode as a subprocess, yields each line of output, then
-        parses the final status XML to determine completion state.
+        Uses a threaded reader so we can detect both total timeout and
+        progress stalls (no output for ``progress_timeout`` seconds).
 
         Args:
-            timeout: Optional timeout in seconds, kills process if exceeded
+            timeout: Total timeout in seconds, kills process if exceeded.
+            progress_timeout: Kill if no output for this many seconds.
 
         Yields:
-            Lines of stdout from OpenCode
+            Lines of stdout from OpenCode.
 
         Raises:
-            BadAgentStatus: If status XML is missing, unparseable, or unknown
-            subprocess.TimeoutExpired: If timeout is exceeded
+            BadAgentStatus: If status XML is missing, unparseable, or unknown.
+            subprocess.TimeoutExpired: If either timeout is exceeded.
         """
         if not shutil.which(OPENCODE_CMD):
             raise FileNotFoundError(
@@ -127,16 +132,43 @@ class Agent:
 
                 lines: list[str] = []
                 start_time = time.monotonic()
-                for line in process.stdout:
-                    if timeout and (time.monotonic() - start_time) > timeout:
+
+                # Threaded reader: non-blocking so we can check timeouts
+                q: queue_mod.Queue[str | None] = queue_mod.Queue()
+                reader = threading.Thread(
+                    target=self._read_stdout, args=(process.stdout, q), daemon=True
+                )
+                reader.start()
+
+                last_output_time = start_time
+                while True:
+                    now = time.monotonic()
+                    if timeout and (now - start_time) > timeout:
                         process.kill()
                         raise subprocess.TimeoutExpired(args, timeout)
+                    try:
+                        line = q.get(timeout=1.0)
+                    except queue_mod.Empty:
+                        if progress_timeout and (time.monotonic() - last_output_time) > progress_timeout:
+                            process.kill()
+                            raise subprocess.TimeoutExpired(args, progress_timeout)
+                        continue
+                    if line is None:  # EOF
+                        break
+                    last_output_time = time.monotonic()
                     lines.append(line)
                     yield line
 
                 process.wait()
         finally:
             self.status = AgentStatus.IDLE
+
+    @staticmethod
+    def _read_stdout(stdout, q: "queue_mod.Queue[str | None]") -> None:
+        """Read stdout lines into a queue (runs in daemon thread)."""
+        for line in stdout:
+            q.put(line)
+        q.put(None)
 
         status_xml = ""
         for line in reversed(lines):
