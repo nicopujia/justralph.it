@@ -19,7 +19,7 @@ function classifyLine(line: string): LineToken {
   return "default";
 }
 
-// Single terminal color set -- always dark, no dark: variants needed.
+// Terminal syntax colors -- intentionally always dark (these are code output colors).
 const TOKEN_CLASSES: Record<LineToken, string> = {
   default: "text-[#00FF41] terminal-glow",
   filepath: "text-[#00ccff]",
@@ -62,18 +62,18 @@ export function AgentOutput({ lines }: AgentOutputProps) {
   }, []);
 
   return (
-    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a] bg-black">
+    <div className="flex flex-col overflow-hidden h-full border border-border bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2 shrink-0">
+      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2 shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-[#00FF41] text-xs uppercase tracking-wider font-mono">TERMINAL</span>
+          <span className="text-primary text-xs uppercase tracking-wider font-mono">TERMINAL</span>
           {lines.length > 0 && (
-            <span className="text-[#333] text-xs font-mono">[{lines.length}]</span>
+            <span className="text-muted-foreground text-xs font-mono">[{lines.length}]</span>
           )}
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body -- always dark terminal bg regardless of theme */}
       <div className="flex-1 overflow-hidden relative">
         <div
           ref={scrollRef}

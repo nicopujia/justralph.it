@@ -17,11 +17,12 @@ type StatusBarProps = {
   onThemeToggle?: () => void;
 };
 
+// Terminal-specific status dot colors -- intentionally not theme-switched.
 const STATUS_CONFIG = {
   running: { color: "bg-[#00FF41] animate-pulse-dot", label: "RUNNING" },
   waiting: { color: "bg-[#FFaa00]", label: "WAITING" },
   stopped: { color: "bg-[#FF0033]", label: "STOPPED" },
-  unknown: { color: "bg-[#333]", label: "UNKNOWN" },
+  unknown: { color: "bg-muted-foreground", label: "UNKNOWN" },
 } as const;
 
 function formatUptime(seconds: number): string {
@@ -81,23 +82,23 @@ export function StatusBar({
   const wsConnected = wsState === "connected";
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a1a1a] bg-[#0a0a0a] font-mono text-xs uppercase tracking-wider">
+    <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card font-mono text-xs uppercase tracking-wider">
       {/* Left: loop status */}
       <div className="flex items-center gap-2">
         <span className={`w-2 h-2 ${status.color}`} />
-        <span className="text-white">{status.label}</span>
+        <span className="text-foreground">{status.label}</span>
       </div>
 
       {/* Center: iteration + uptime */}
       <div className="flex items-center gap-3">
         <span>
-          <span className="text-[#333]">ITER:</span>
-          <span className="text-white">#{fmtIter(iterationCount)}</span>
+          <span className="text-muted-foreground">ITER:</span>
+          <span className="text-foreground">#{fmtIter(iterationCount)}</span>
         </span>
         {loopStatus === "running" && loopStartTime && (
           <>
-            <span className="text-[#333]">|</span>
-            <span className="text-[#00FF41]">{formatUptime(uptime)}</span>
+            <span className="text-muted-foreground">|</span>
+            <span className="text-primary">{formatUptime(uptime)}</span>
           </>
         )}
       </div>
@@ -105,12 +106,12 @@ export function StatusBar({
       {/* Right: ws status + theme toggle + controls */}
       <div className="flex items-center gap-3">
         {wsConnected ? (
-          <span className="text-[#00FF41]">WS:OK</span>
+          <span className="text-primary">WS:OK</span>
         ) : (
-          <span className="text-[#FF0033]">WS:OFF</span>
+          <span className="text-destructive">WS:OFF</span>
         )}
 
-        <span className="text-[#333]">|</span>
+        <span className="text-muted-foreground">|</span>
 
         {/* Theme toggle */}
         {onThemeToggle && (
@@ -118,34 +119,34 @@ export function StatusBar({
             onClick={onThemeToggle}
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
+            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
           >
             {theme === "dark" ? <Sun className="size-3" /> : <Moon className="size-3" />}
           </button>
         )}
 
-        <span className="text-[#333]">|</span>
+        <span className="text-muted-foreground">|</span>
 
         {/* Loop controls */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => loopAction("start", sessionId, onError)}
             title="Start loop"
-            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
+            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
           >
             <Play className="size-3" />
           </button>
           <button
             onClick={() => loopAction("stop", sessionId, onError)}
             title="Stop loop"
-            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
+            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
           >
             <Square className="size-3" />
           </button>
           <button
             onClick={() => loopAction("restart", sessionId, onError)}
             title="Restart loop"
-            className="p-1 border border-[#333] hover:border-[#00FF41] text-white hover:text-[#00FF41] transition-colors"
+            className="p-1 border border-border hover:border-primary text-foreground hover:text-primary transition-colors"
           >
             <RotateCcw className="size-3" />
           </button>

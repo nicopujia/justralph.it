@@ -12,13 +12,13 @@ type TaskListProps = {
   onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
 };
 
-// Bracketed status text with terminal colors.
+// Bracketed status text -- open/done use muted, active/blocked use terminal colors.
 const STATUS_TEXT: Record<TaskInfo["status"], { label: string; cls: string }> = {
-  open: { label: "[OPEN]", cls: "text-[#333]" },
+  open: { label: "[OPEN]", cls: "text-muted-foreground" },
   in_progress: { label: "[IN_PROGRESS]", cls: "text-[#00FF41]" },
-  blocked: { label: "[BLOCKED]", cls: "text-[#FF0033]" },
+  blocked: { label: "[BLOCKED]", cls: "text-destructive" },
   done: { label: "[DONE]", cls: "text-[#00FF41] opacity-60" },
-  help: { label: "[HELP]", cls: "text-[#FF0033]" },
+  help: { label: "[HELP]", cls: "text-destructive" },
 };
 
 const RETRYABLE: Set<TaskInfo["status"]> = new Set(["blocked", "help"]);
@@ -64,30 +64,30 @@ function TaskItem({ task, index, selected, onSelect, sessionId, onTaskUpdate }: 
 
   return (
     <li
-      className={`border-b border-[#1a1a1a] font-mono text-xs px-3 py-2 hover:bg-[#111] cursor-pointer select-none transition-colors ${
-        isBlocked ? "border-l-2 border-l-[#FF0033]" : ""
+      className={`border-b border-border font-mono text-xs px-3 py-2 hover:bg-muted cursor-pointer select-none transition-colors ${
+        isBlocked ? "border-l-2 border-l-destructive" : ""
       }`}
       onClick={onSelect}
     >
       {/* Fixed-width column row: [001] [STATUS] Title */}
       <div className="flex items-baseline gap-2">
-        <span className="text-[#333] shrink-0">[{String(index + 1).padStart(3, "0")}]</span>
+        <span className="text-muted-foreground shrink-0">[{String(index + 1).padStart(3, "0")}]</span>
         <span className={`shrink-0 ${cls}`}>{label}</span>
-        <span className="text-white truncate">{task.title}</span>
+        <span className="text-foreground truncate">{task.title}</span>
       </div>
 
       {/* Expanded detail */}
       <div
         className={`overflow-hidden transition-all duration-200 ${selected ? "max-h-40" : "max-h-0"}`}
       >
-        <div className="pt-2 pl-2 space-y-2 border-t border-[#1a1a1a] mt-1">
-          <p className="text-[#333] break-words">{task.id}</p>
+        <div className="pt-2 pl-2 space-y-2 border-t border-border mt-1">
+          <p className="text-muted-foreground break-words">{task.id}</p>
           {task.error && (
-            <p className="text-[#FF0033] break-words">{task.error}</p>
+            <p className="text-destructive break-words">{task.error}</p>
           )}
           {canRetry && sessionId && (
             <button
-              className="border border-[#00FF41] text-[#00FF41] bg-transparent uppercase text-[10px] tracking-wider px-2 py-0.5 hover:bg-[#00FF41] hover:text-black transition-colors disabled:opacity-50"
+              className="border border-primary text-primary bg-transparent uppercase text-[10px] tracking-wider px-2 py-0.5 hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-50"
               disabled={retrying}
               onClick={handleRetry}
             >
@@ -118,7 +118,7 @@ function TaskItems({ tasks, sessionId, onTaskUpdate }: TaskItemsProps) {
   if (taskEntries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-8">
-        <span className="text-[#333] font-mono text-xs uppercase tracking-wider">NO TASKS YET</span>
+        <span className="text-muted-foreground font-mono text-xs uppercase tracking-wider">NO TASKS YET</span>
       </div>
     );
   }
@@ -154,10 +154,10 @@ export function TaskList({ tasks, sessionId, embedded = false, onTaskUpdate }: T
   }
 
   return (
-    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a]">
-      <div className="border-b border-[#1a1a1a] bg-[#0a0a0a] px-4 py-2 shrink-0 flex items-center gap-3">
-        <span className="text-[#00FF41] text-xs uppercase tracking-wider font-mono">TASKS</span>
-        <span className="text-[#333] text-xs font-mono">[{count}]</span>
+    <div className="flex flex-col overflow-hidden h-full border border-border">
+      <div className="border-b border-border bg-card px-4 py-2 shrink-0 flex items-center gap-3">
+        <span className="text-primary text-xs uppercase tracking-wider font-mono">TASKS</span>
+        <span className="text-muted-foreground text-xs font-mono">[{count}]</span>
       </div>
       <div className="flex-1 overflow-y-auto">
         <TaskItems tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} />

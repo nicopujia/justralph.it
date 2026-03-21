@@ -22,12 +22,12 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f5f5f0] dark:bg-black grid-bg scanline-overlay flex items-center justify-center relative">
+    <div className="min-h-screen bg-background grid-bg scanline-overlay flex items-center justify-center relative">
       {/* Theme toggle */}
       {onThemeToggle && (
         <button
           onClick={onThemeToggle}
-          className="absolute top-4 right-4 text-[#00AA33] dark:text-[#00FF41] hover:opacity-70 transition-opacity"
+          className="absolute top-4 right-4 text-primary hover:opacity-70 transition-opacity"
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           title={theme === "dark" ? "Light mode" : "Dark mode"}
         >
@@ -36,8 +36,8 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
       )}
 
       {/* Centered container */}
-      <div className="relative border-2 border-[#00AA33] dark:border-[#00FF41] bg-white dark:bg-[#0a0a0a] p-10 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
-        {/* Red accent square */}
+      <div className="relative border-2 border-primary bg-card p-10 flex flex-col items-center gap-8 text-center min-w-[340px] max-w-sm">
+        {/* Red accent square -- always red, intentional brand color */}
         <span className="absolute top-0 right-0 w-3 h-3 bg-[#FF0033]" aria-hidden="true" />
 
         {/* Title section */}
@@ -45,21 +45,21 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
           {/* Corner bracket decoration */}
           <div className="relative px-4 py-2">
             {/* top-left bracket */}
-            <span className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#00AA33] dark:border-[#00FF41]" aria-hidden="true" />
+            <span className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary" aria-hidden="true" />
             {/* top-right bracket */}
-            <span className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#00AA33] dark:border-[#00FF41]" aria-hidden="true" />
+            <span className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-primary" aria-hidden="true" />
             {/* bottom-left bracket */}
-            <span className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#00AA33] dark:border-[#00FF41]" aria-hidden="true" />
+            <span className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-primary" aria-hidden="true" />
             {/* bottom-right bracket */}
-            <span className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#00AA33] dark:border-[#00FF41]" aria-hidden="true" />
-            <h1 className="glitch-text text-5xl font-bold uppercase tracking-[0.2em] text-black dark:text-white px-2">
+            <span className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary" aria-hidden="true" />
+            <h1 className="glitch-text text-5xl font-bold uppercase tracking-[0.2em] text-foreground px-2">
               JUSTRALPH.IT
             </h1>
           </div>
-          <p className="text-[#00AA33] dark:text-[#00FF41] text-sm uppercase tracking-widest">
+          <p className="text-primary text-sm uppercase tracking-widest">
             FROM IDEA TO CODE
           </p>
-          <p className="text-[#555] dark:text-[#333] text-xs uppercase tracking-widest">
+          <p className="text-muted-foreground text-xs uppercase tracking-widest">
             DESCRIBE YOUR PROJECT. RALPH BUILDS IT.
           </p>
         </div>
@@ -73,8 +73,8 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
               className={[
                 "w-full border-2 bg-transparent uppercase tracking-wider text-sm py-3 px-4 transition-colors font-bold",
                 oauthReady === false
-                  ? "border-[#555] dark:border-[#333] text-[#555] dark:text-[#333] cursor-not-allowed"
-                  : "border-[#00AA33] dark:border-[#00FF41] text-[#00AA33] dark:text-[#00FF41] hover:bg-[#00AA33] dark:hover:bg-[#00FF41] hover:text-black",
+                  ? "border-border text-muted-foreground cursor-not-allowed"
+                  : "border-primary text-primary hover:bg-primary hover:text-primary-foreground",
               ].join(" ")}
             >
               {oauthReady === false ? "GITHUB OAUTH NOT CONFIGURED" : "LOGIN WITH GITHUB"}
@@ -84,7 +84,7 @@ export function WelcomePage({ onLogin, onSkip, theme, onThemeToggle }: Props) {
           {onSkip && (
             <button
               onClick={onSkip}
-              className="text-[#555] dark:text-[#333] hover:text-[#00AA33] dark:hover:text-[#00FF41] text-xs uppercase tracking-wider transition-colors"
+              className="text-muted-foreground hover:text-primary text-xs uppercase tracking-wider transition-colors"
             >
               CONTINUE WITHOUT LOGIN
             </button>

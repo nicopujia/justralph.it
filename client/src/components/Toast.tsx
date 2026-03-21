@@ -26,9 +26,9 @@ const MAX_TOASTS = 3;
 const AUTO_DISMISS_MS = 5000;
 
 const TYPE_STYLES: Record<ToastType, string> = {
-  success: "bg-black border-2 border-[#00FF41] text-[#00FF41]",
-  error: "bg-black border-2 border-[#FF0033] text-[#FF0033]",
-  info: "bg-black border-2 border-white text-white",
+  success: "bg-background border-2 border-primary text-primary",
+  error: "bg-background border-2 border-destructive text-destructive",
+  info: "bg-background border-2 border-foreground text-foreground",
 };
 
 let nextId = 0;

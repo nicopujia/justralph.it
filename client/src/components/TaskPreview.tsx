@@ -62,14 +62,14 @@ function TaskCard({
   };
 
   return (
-    <div className="border border-[#1a1a1a] bg-[#0a0a0a] font-mono">
+    <div className="border border-border bg-card font-mono">
       <div className="px-4 py-3 flex flex-col gap-2">
         {/* Top row: reorder + title + priority + delete */}
         <div className="flex items-start gap-2">
           {/* Reorder buttons */}
           <div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
             <button
-              className="size-5 flex items-center justify-center text-[#333] hover:text-[#00FF41] disabled:opacity-20 transition-colors"
+              className="size-5 flex items-center justify-center text-muted-foreground hover:text-primary disabled:opacity-20 transition-colors"
               disabled={index === 0}
               onClick={onMoveUp}
               title="Move up"
@@ -77,7 +77,7 @@ function TaskCard({
               <ArrowUp className="size-3" />
             </button>
             <button
-              className="size-5 flex items-center justify-center text-[#333] hover:text-[#00FF41] disabled:opacity-20 transition-colors"
+              className="size-5 flex items-center justify-center text-muted-foreground hover:text-primary disabled:opacity-20 transition-colors"
               disabled={index === total - 1}
               onClick={onMoveDown}
               title="Move down"
@@ -101,11 +101,11 @@ function TaskCard({
                     setEditingTitle(false);
                   }
                 }}
-                className="h-7 text-xs bg-black border-[#333] text-[#00FF41]"
+                className="h-7 text-xs bg-background border-border text-primary"
               />
             ) : (
               <button
-                className="text-xs text-white text-left w-full truncate flex items-center gap-1 group"
+                className="text-xs text-foreground text-left w-full truncate flex items-center gap-1 group"
                 onClick={() => {
                   setTitleDraft(task.title);
                   setEditingTitle(true);
@@ -118,12 +118,12 @@ function TaskCard({
             )}
           </div>
 
-          {/* Priority [P1] format */}
-          <span className="text-[#FFaa00] text-[10px] tracking-wider shrink-0">[P{task.priority}]</span>
+          {/* Priority [P1] format -- amber is intentional, not theme-switched */}
+          <span className="text-amber-500 text-[10px] tracking-wider shrink-0">[P{task.priority}]</span>
 
           {/* Delete */}
           <button
-            className="size-6 shrink-0 flex items-center justify-center text-[#333] hover:text-[#FF0033] transition-colors"
+            className="size-6 shrink-0 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
             onClick={onDelete}
             title="Remove task"
           >
@@ -133,15 +133,15 @@ function TaskCard({
 
         {/* Parent dependency indicator */}
         {task.parent && (
-          <p className="text-[#333] text-[10px] pl-7">
-            DEPENDS ON: <span className="text-[#FFaa00]">{task.parent}</span>
+          <p className="text-muted-foreground text-[10px] pl-7">
+            DEPENDS ON: <span className="text-amber-500">{task.parent}</span>
           </p>
         )}
 
         {/* Collapsible body / acceptance criteria */}
         <div className="pl-7">
           <button
-            className="flex items-center gap-1 text-[10px] text-[#333] hover:text-[#00FF41] uppercase tracking-wider transition-colors"
+            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary uppercase tracking-wider transition-colors"
             onClick={() => setBodyOpen((v) => !v)}
           >
             {bodyOpen ? (
@@ -154,7 +154,7 @@ function TaskCard({
 
           {bodyOpen && (
             <Textarea
-              className="mt-2 text-xs min-h-20 resize-y bg-black border-[#333] text-[#00FF41] placeholder:text-[#333]"
+              className="mt-2 text-xs min-h-20 resize-y bg-background border-border text-primary placeholder:text-muted-foreground"
               value={task.body}
               placeholder="No acceptance criteria yet..."
               onChange={(e) => onUpdate({ body: e.target.value })}
@@ -197,11 +197,11 @@ export function TaskPreview({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-black font-mono">
+    <div className="h-screen flex flex-col bg-background font-mono">
       {/* Header */}
-      <div className="border-b border-[#1a1a1a] px-6 py-4 shrink-0">
-        <h1 className="text-white text-sm font-bold uppercase tracking-wider">REVIEW TASKS</h1>
-        <p className="text-[#333] text-xs mt-1 tracking-wider">
+      <div className="border-b border-border px-6 py-4 shrink-0">
+        <h1 className="text-foreground text-sm font-bold uppercase tracking-wider">REVIEW TASKS</h1>
+        <p className="text-muted-foreground text-xs mt-1 tracking-wider">
           {tasks.length} TASK{tasks.length !== 1 ? "S" : ""} GENERATED
           {project ? ` FOR ${project.name.toUpperCase()}` : ""}. EDIT BEFORE STARTING THE LOOP.
         </p>
@@ -211,7 +211,7 @@ export function TaskPreview({
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full">
-            <p className="text-[#333] text-xs uppercase tracking-wider">
+            <p className="text-muted-foreground text-xs uppercase tracking-wider">
               ALL TASKS REMOVED. GO BACK TO CHAT TO REGENERATE.
             </p>
           </div>
@@ -234,9 +234,9 @@ export function TaskPreview({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-[#1a1a1a] px-6 py-4 flex items-center justify-between gap-3 shrink-0">
+      <div className="border-t border-border px-6 py-4 flex items-center justify-between gap-3 shrink-0">
         <button
-          className="border border-[#333] text-[#333] hover:text-white hover:border-white uppercase tracking-wider text-xs px-4 py-2 transition-colors disabled:opacity-50"
+          className="border border-border text-muted-foreground hover:text-foreground hover:border-foreground uppercase tracking-wider text-xs px-4 py-2 transition-colors disabled:opacity-50"
           onClick={onBack}
           disabled={loading}
         >
@@ -244,7 +244,7 @@ export function TaskPreview({
         </button>
 
         <button
-          className="border-2 border-[#00FF41] text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs px-6 py-2 transition-colors disabled:opacity-50 flex items-center gap-2"
+          className="border-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-xs px-6 py-2 transition-colors disabled:opacity-50 flex items-center gap-2"
           onClick={() => onConfirm(tasks)}
           disabled={loading || tasks.length === 0}
         >

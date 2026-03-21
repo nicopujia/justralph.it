@@ -113,12 +113,12 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
   const sessionId = chatbot.state.sessionId!;
 
   return (
-    <div className="h-screen flex flex-col bg-black grid-bg overflow-hidden">
+    <div className="h-screen flex flex-col bg-background grid-bg overflow-hidden">
       {/* System status strip: session/model/token info */}
-      <div className="flex items-center gap-4 px-4 py-1 border-b border-[#1a1a1a] bg-black font-mono text-[10px] uppercase tracking-widest text-[#333]">
-        <span>SESSION: <span className="text-[#00FF41]">{sessionId.slice(0, 8)}</span></span>
-        <span>MODEL: <span className="text-[#00FF41]">kimi-k2.5</span></span>
-        <span>TOKENS: <span className="text-[#00FF41]">{loopState.totalTokens?.toLocaleString() ?? "0"}</span></span>
+      <div className="flex items-center gap-4 px-4 py-1 border-b border-border bg-background font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        <span>SESSION: <span className="text-primary">{sessionId.slice(0, 8)}</span></span>
+        <span>MODEL: <span className="text-primary">kimi-k2.5</span></span>
+        <span>TOKENS: <span className="text-primary">{loopState.totalTokens?.toLocaleString() ?? "0"}</span></span>
       </div>
 
       {/* Status bar */}
@@ -136,7 +136,7 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
       <div className="flex-1 flex overflow-hidden">
         {/* Collapsible chat sidebar */}
         <div
-          className="flex flex-col bg-[#0a0a0a] border-r border-[#1a1a1a] shrink-0 overflow-hidden transition-all duration-200"
+          className="flex flex-col bg-card border-r border-border shrink-0 overflow-hidden transition-all duration-200"
           style={{ width: sidebarOpen ? 350 : 60 }}
         >
           {sidebarOpen ? (
@@ -155,7 +155,7 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
               </div>
               {/* Collapse toggle at bottom */}
               <button
-                className="w-full border-t border-[#1a1a1a] h-9 flex items-center justify-center gap-1.5 font-mono text-xs uppercase tracking-wider text-[#333] hover:text-[#00FF41] hover:border-[#00FF41] transition-colors shrink-0"
+                className="w-full border-t border-border h-9 flex items-center justify-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-primary hover:border-primary transition-colors shrink-0"
                 onClick={() => setSidebarOpen(false)}
               >
                 <ChevronLeft className="size-3.5" />
@@ -166,20 +166,20 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
             /* Collapsed: icon-only strip */
             <div className="flex flex-col items-center py-3 gap-3">
               <button
-                className="p-2 border border-[#333] hover:border-[#00FF41] text-[#333] hover:text-[#00FF41] transition-colors"
+                className="p-2 border border-border hover:border-primary text-muted-foreground hover:text-primary transition-colors"
                 title="Open chat"
                 onClick={() => setSidebarOpen(true)}
               >
                 <MessageCircle className="size-4" />
               </button>
               <span
-                className="text-[10px] text-[#333] uppercase tracking-widest select-none"
+                className="text-[10px] text-muted-foreground uppercase tracking-widest select-none"
                 style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
               >
                 CHAT
               </span>
               <button
-                className="p-1 mt-auto border border-[#333] hover:border-[#00FF41] text-[#333] hover:text-[#00FF41] transition-colors"
+                className="p-1 mt-auto border border-border hover:border-primary text-muted-foreground hover:text-primary transition-colors"
                 title="Expand chat"
                 onClick={() => setSidebarOpen(true)}
               >
@@ -192,7 +192,7 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
         {/* Main area: agent output + right panel -- borders separate panels, no gaps */}
         <div className="flex-1 grid grid-cols-[1fr_280px] gap-0 overflow-hidden min-w-0">
           {/* Center: agent output + optional help panel */}
-          <div className="flex flex-col gap-0 overflow-hidden border-r border-[#1a1a1a]">
+          <div className="flex flex-col gap-0 overflow-hidden border-r border-border">
             <AgentOutput lines={loopState.agentOutputLines} />
             {helpTaskId && (
               <HelpPanel

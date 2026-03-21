@@ -32,22 +32,22 @@ export function RightPanel({
   ];
 
   return (
-    <div className="flex flex-col overflow-hidden h-full border border-[#1a1a1a] bg-[#0a0a0a]">
+    <div className="flex flex-col overflow-hidden h-full border border-border bg-card">
       {/* Tab bar */}
-      <div className="flex border-b border-[#1a1a1a] shrink-0">
+      <div className="flex border-b border-border shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`text-xs uppercase tracking-wider px-3 py-2 font-mono transition-colors ${
               activeTab === tab.id
-                ? "border-b-2 border-[#00FF41] text-[#00FF41]"
-                : "text-[#333] hover:text-[#00FF41]"
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-primary"
             }`}
           >
             {tab.label}
             {tab.id === "tasks" && loopStarted && tasks.size > 0 && (
-              <span className="ml-1.5 border border-[#333] text-[#00FF41] px-1 text-[10px]">
+              <span className="ml-1.5 border border-border text-primary px-1 text-[10px]">
                 {tasks.size}
               </span>
             )}
@@ -72,7 +72,7 @@ export function RightPanel({
             <TaskList tasks={tasks} sessionId={sessionId} onTaskUpdate={onTaskUpdate} embedded />
           ) : (
             <div className="flex flex-col items-center justify-center h-full py-8 text-center">
-              <p className="text-[#333] font-mono text-xs uppercase tracking-wider">
+              <p className="text-muted-foreground font-mono text-xs uppercase tracking-wider">
                 TASKS WILL APPEAR WHEN RALPHY IS READY
               </p>
             </div>
@@ -80,7 +80,7 @@ export function RightPanel({
         )}
         {activeTab === "code" && (
           <div className="flex flex-col items-center justify-center h-full py-8 text-center">
-            <p className="text-[#333] font-mono text-xs uppercase tracking-wider">
+            <p className="text-muted-foreground font-mono text-xs uppercase tracking-wider">
               CODE CHANGES WILL APPEAR WHEN LOOP STARTS
             </p>
           </div>

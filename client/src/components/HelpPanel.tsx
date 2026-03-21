@@ -62,13 +62,13 @@ export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelPro
   };
 
   return (
-    <div className="border-2 border-[#FF0033] bg-black font-mono">
-      <div className="px-4 py-3 border-b border-[#FF0033]">
-        <h2 className="text-[#FF0033] text-xs uppercase tracking-wider">RALPH NEEDS YOUR HELP</h2>
+    <div className="border-2 border-destructive bg-background font-mono">
+      <div className="px-4 py-3 border-b border-destructive">
+        <h2 className="text-destructive text-xs uppercase tracking-wider">RALPH NEEDS YOUR HELP</h2>
       </div>
       <div className="px-4 pb-4 pt-3 space-y-3">
-        <p className="text-[#333] text-xs">
-          Task <span className="text-[#FFaa00]">{taskId}</span> is blocked and requires human input.
+        <p className="text-muted-foreground text-xs">
+          Task <span className="text-amber-500">{taskId}</span> is blocked and requires human input.
           Upload files or provide what's needed, then click Resume.
         </p>
 
@@ -78,12 +78,12 @@ export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelPro
             ref={fileRef}
             type="file"
             multiple
-            className="flex-1 text-xs text-[#333] bg-black border border-[#333] px-2 py-1 file:bg-transparent file:text-[#333] file:border-0 file:text-xs file:uppercase file:tracking-wider file:cursor-pointer"
+            className="flex-1 text-xs text-muted-foreground bg-background border border-border px-2 py-1 file:bg-transparent file:text-muted-foreground file:border-0 file:text-xs file:uppercase file:tracking-wider file:cursor-pointer"
           />
           <button
             onClick={handleUpload}
             disabled={uploading}
-            className="border border-[#00FF41] text-[#00FF41] bg-transparent text-[10px] uppercase tracking-wider px-2 py-1 hover:bg-[#00FF41] hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
+            className="border border-primary text-primary bg-transparent text-[10px] uppercase tracking-wider px-2 py-1 hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-50 flex items-center gap-1"
           >
             <Upload className="size-3" />
             UPLOAD
@@ -91,7 +91,7 @@ export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelPro
         </div>
 
         {uploadedFiles.length > 0 && (
-          <div className="text-[#333] text-[10px]">
+          <div className="text-muted-foreground text-[10px]">
             UPLOADED: {uploadedFiles.join(", ")}
           </div>
         )}
@@ -99,7 +99,7 @@ export function HelpPanel({ sessionId, taskId, onResume, onError }: HelpPanelPro
         {/* Resume */}
         <button
           onClick={handleResume}
-          className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs py-2 transition-colors flex items-center justify-center gap-1"
+          className="w-full border-2 border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-xs py-2 transition-colors flex items-center justify-center gap-1"
         >
           <Play className="size-3" />
           RESUME LOOP

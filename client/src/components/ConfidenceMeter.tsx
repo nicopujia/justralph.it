@@ -22,9 +22,9 @@ type ConfidenceMeterProps = {
 };
 
 // Render 10 VU meter blocks based on a 0-100 score.
+// Fill colors are terminal-semantic and intentionally keep explicit hex.
 function VuBlocks({ score }: { score: number }) {
   const filled = Math.round(score / 10);
-  // Color is determined by the overall score level, not per-block.
   const fillColor =
     score >= 80 ? "bg-[#00FF41]" : score >= 50 ? "bg-[#FFaa00]" : "bg-[#FF0033]";
 
@@ -33,7 +33,7 @@ function VuBlocks({ score }: { score: number }) {
       {Array.from({ length: 10 }, (_, i) => (
         <div
           key={i}
-          className={`flex-1 h-3 border border-[#1a1a1a] ${i < filled ? fillColor : "bg-[#111]"}`}
+          className={`flex-1 h-3 border border-border ${i < filled ? fillColor : "bg-muted"}`}
         />
       ))}
     </div>
@@ -58,11 +58,11 @@ export function ConfidenceMeter({
       {/* Overall readiness */}
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs tracking-wider">
-          <span className="text-[#333] uppercase">READINESS</span>
+          <span className="text-muted-foreground uppercase">READINESS</span>
           {ready ? (
-            <span className="text-[#00FF41] uppercase">READY</span>
+            <span className="text-primary uppercase">READY</span>
           ) : (
-            <span className="text-[#00FF41] tabular-nums">{Math.round(weightedReadiness)}%</span>
+            <span className="text-primary tabular-nums">{Math.round(weightedReadiness)}%</span>
           )}
         </div>
         <VuBlocks score={weightedReadiness} />
@@ -70,13 +70,13 @@ export function ConfidenceMeter({
 
       {/* Phase + question count */}
       <div className="flex justify-between text-xs tracking-wider">
-        <span className="text-[#333]">PHASE {phase}/4</span>
-        <span className="text-[#333]">
+        <span className="text-muted-foreground">PHASE {phase}/4</span>
+        <span className="text-muted-foreground">
           Q:{String(questionCount).padStart(2, "0")}/{questionCount < 10 ? "10 MIN" : "10"}
         </span>
       </div>
 
-      <div className="h-px bg-[#1a1a1a]" />
+      <div className="h-px bg-border" />
 
       {/* Per-dimension VU meters */}
       {dims.map(([key, value]) => {
@@ -90,24 +90,24 @@ export function ConfidenceMeter({
             key={key}
             className={`space-y-1 px-1 -mx-1 transition-colors ${
               clickable ? "cursor-crosshair" : ""
-            } ${isHovered && clickable ? "border border-[#00FF41] outline outline-[#00FF41]" : ""}`}
+            } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""}`}
             style={{ opacity: isIrrelevant ? 0.35 : 1 }}
             onClick={() => clickable && onDimensionClick(key)}
             onMouseEnter={() => clickable && setHoveredDim(key)}
             onMouseLeave={() => setHoveredDim(null)}
           >
             <div className="flex justify-between items-center text-xs tracking-wider">
-              <span className="flex items-center gap-1 text-[#333]">
+              <span className="flex items-center gap-1 text-muted-foreground">
                 {DIMENSION_LABELS[key]}
                 {isIrrelevant && (
-                  <span className="text-[#333] ml-1">(N/A)</span>
+                  <span className="text-muted-foreground ml-1">(N/A)</span>
                 )}
                 {/* "Ask about this" hint -- only visible on hover */}
                 {isHovered && clickable && !isIrrelevant && (
-                  <span className="text-[#00FF41] text-[10px]">ASK</span>
+                  <span className="text-primary text-[10px]">ASK</span>
                 )}
               </span>
-              <span className="text-[#00FF41] tabular-nums">{value}%</span>
+              <span className="text-primary tabular-nums">{value}%</span>
             </div>
             <VuBlocks score={value} />
           </div>

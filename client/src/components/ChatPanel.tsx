@@ -58,7 +58,7 @@ function FileInput({
       <button
         className={[
           sizeClass,
-          "border border-[#333] text-[#333] hover:text-[#00FF41] hover:border-[#00FF41] transition-colors flex items-center justify-center bg-transparent",
+          "border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors flex items-center justify-center bg-transparent",
           !sessionId ? "opacity-40 cursor-not-allowed" : "",
         ].join(" ")}
         onClick={() => fileRef.current?.click()}
@@ -115,9 +115,9 @@ function RightTabPanel({
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0a] border-l border-[#1a1a1a]">
+    <div className="flex flex-col h-full bg-card border-l border-border">
       {/* Tab bar */}
-      <div className="flex border-b border-[#1a1a1a] shrink-0">
+      <div className="flex border-b border-border shrink-0">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -125,8 +125,8 @@ function RightTabPanel({
             className={[
               "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors",
               activeTab === tab.id
-                ? "text-[#00FF41] border-b-2 border-[#00FF41]"
-                : "text-[#333] hover:text-[#00FF41]",
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:text-primary",
             ].join(" ")}
           >
             {tab.icon}
@@ -153,27 +153,27 @@ function RightTabPanel({
               state.tasks.map((task: any, i: number) => (
                 <div
                   key={i}
-                  className="border border-[#1a1a1a] px-3 py-2 bg-black"
+                  className="border border-border px-3 py-2 bg-background"
                 >
-                  <p className="text-xs font-bold text-white uppercase truncate">
+                  <p className="text-xs font-bold text-foreground uppercase truncate">
                     {task.title ?? task.name ?? `TASK ${i + 1}`}
                   </p>
                   {task.body && (
-                    <p className="text-xs text-[#333] mt-0.5 line-clamp-2">
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                       {task.body}
                     </p>
                   )}
                 </div>
               ))
             ) : (
-              <p className="text-xs text-[#333] uppercase tracking-wider text-center py-8">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider text-center py-8">
                 TASKS WILL APPEAR WHEN RALPH IS READY.
               </p>
             )}
           </div>
         )}
         {activeTab === "code" && (
-          <p className="text-xs text-[#333] uppercase tracking-wider text-center py-8">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider text-center py-8">
             CODE CHANGES WILL APPEAR WHEN THE LOOP STARTS.
           </p>
         )}
@@ -181,12 +181,12 @@ function RightTabPanel({
 
       {/* Action button */}
       {state.ready && (
-        <div className="p-4 border-t border-[#1a1a1a] shrink-0 space-y-2">
+        <div className="p-4 border-t border-border shrink-0 space-y-2">
           {onReviewTasks ? (
             <button
               onClick={onReviewTasks}
               disabled={busy}
-              className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full border-2 border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               REVIEW TASKS
             </button>
@@ -194,13 +194,13 @@ function RightTabPanel({
             <button
               onClick={onRalphIt}
               disabled={busy}
-              className="w-full border-2 border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full border-2 border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {ralphItLoading ? "CREATING PROJECT..." : "JUST RALPH IT"}
             </button>
           )}
           {slowLoad && !onReviewTasks && (
-            <p className="text-xs text-[#333] uppercase tracking-wider text-center">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider text-center">
               THIS IS TAKING A WHILE...
             </p>
           )}
@@ -272,10 +272,10 @@ export function ChatPanel({
   // ----------------------------- sidebar mode -----------------------------
   if (mode === "sidebar") {
     return (
-      <div className="h-full flex flex-col bg-[#0a0a0a] border-r border-[#1a1a1a] overflow-hidden">
+      <div className="h-full flex flex-col bg-card border-r border-border overflow-hidden">
         {/* Compact header */}
-        <div className="px-3 py-3 border-b border-[#1a1a1a] shrink-0">
-          <h2 className="text-xs font-bold text-[#333] uppercase tracking-wider">
+        <div className="px-3 py-3 border-b border-border shrink-0">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             CHAT
           </h2>
         </div>
@@ -283,7 +283,7 @@ export function ChatPanel({
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-1">
           {state.messages.length === 0 && (
-            <div className="flex flex-col justify-center h-full text-[#333] text-xs text-center py-6 px-2 uppercase tracking-wider">
+            <div className="flex flex-col justify-center h-full text-muted-foreground text-xs text-center py-6 px-2 uppercase tracking-wider">
               <p>NO MESSAGES YET.</p>
             </div>
           )}
@@ -297,11 +297,11 @@ export function ChatPanel({
             return (
               <div
                 key={i}
-                className="border-b border-[#1a1a1a] py-2 flex items-start gap-1"
+                className="border-b border-border py-2 flex items-start gap-1"
               >
                 {showUndo && (
                   <button
-                    className="shrink-0 text-[#333] hover:text-[#00FF41] opacity-60 hover:opacity-100 mt-0.5"
+                    className="shrink-0 text-muted-foreground hover:text-primary opacity-60 hover:opacity-100 mt-0.5"
                     title="Undo last message"
                     onClick={onUndo}
                   >
@@ -311,10 +311,10 @@ export function ChatPanel({
                 <p
                   className={[
                     "text-xs whitespace-pre-wrap break-words",
-                    msg.role === "user" ? "text-[#00FF41]" : "text-white",
+                    msg.role === "user" ? "text-primary" : "text-foreground",
                   ].join(" ")}
                 >
-                  <span className={msg.role === "user" ? "text-[#00FF41]" : "text-white"}>
+                  <span className={msg.role === "user" ? "text-primary" : "text-foreground"}>
                     {msg.role === "user" ? "> " : "$ "}
                   </span>
                   {msg.content}
@@ -323,10 +323,10 @@ export function ChatPanel({
             );
           })}
           {state.loading && (
-            <div className="py-2 border-b border-[#1a1a1a]">
-              <span className="text-xs text-white">
+            <div className="py-2 border-b border-border">
+              <span className="text-xs text-foreground">
                 $ PROCESSING...<span className="animate-blink">_</span>
-                <span className="text-[#333] ml-2">{elapsedSeconds}s</span>
+                <span className="text-muted-foreground ml-2">{elapsedSeconds}s</span>
               </span>
             </div>
           )}
@@ -339,7 +339,7 @@ export function ChatPanel({
               <button
                 onClick={onReviewTasks}
                 disabled={busy}
-                className="w-full border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full border border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 REVIEW TASKS
               </button>
@@ -347,7 +347,7 @@ export function ChatPanel({
               <button
                 onClick={onRalphIt}
                 disabled={busy}
-                className="w-full border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full border border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {ralphItLoading ? "CREATING..." : "RALPH IT"}
               </button>
@@ -356,7 +356,7 @@ export function ChatPanel({
         )}
 
         {/* Input */}
-        <div className="border-t border-[#1a1a1a] p-2 shrink-0">
+        <div className="border-t border-border p-2 shrink-0">
           <div className="flex gap-1">
             <FileInput sessionId={state.sessionId} onSend={onSend} size="sm" />
             <input
@@ -365,12 +365,12 @@ export function ChatPanel({
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               placeholder="MSG..."
               disabled={busy}
-              className="flex-1 h-7 text-xs bg-transparent border border-[#333] text-[#00FF41] placeholder:text-[#333] px-2 outline-none focus:border-[#00FF41] transition-colors"
+              className="flex-1 h-7 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 outline-none focus:border-primary transition-colors"
             />
             <button
               onClick={handleSend}
               disabled={busy || !input.trim()}
-              className="size-7 shrink-0 border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              className="size-7 shrink-0 border border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="size-3" />
             </button>
@@ -382,16 +382,16 @@ export function ChatPanel({
 
   // ----------------------------- full mode (two columns) -----------------
   return (
-    <div className="h-screen flex bg-black overflow-hidden">
+    <div className="h-screen flex bg-background overflow-hidden">
       {/* LEFT column: header + messages + input */}
-      <div className="flex-1 flex flex-col min-w-0 border-r border-[#1a1a1a]">
+      <div className="flex-1 flex flex-col min-w-0 border-r border-border">
         {/* Header */}
-        <div className="border-b border-[#1a1a1a] px-6 py-4 shrink-0 flex items-start justify-between">
+        <div className="border-b border-border px-6 py-4 shrink-0 flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-bold uppercase tracking-[0.15em] text-white">
+            <h1 className="text-xl font-bold uppercase tracking-[0.15em] text-foreground">
               JUSTRALPH.IT
             </h1>
-            <p className="text-[#00FF41] text-xs uppercase tracking-widest mt-1">
+            <p className="text-primary text-xs uppercase tracking-widest mt-1">
               DESCRIBE YOUR PROJECT. RALPH BUILDS IT.
             </p>
           </div>
@@ -400,7 +400,7 @@ export function ChatPanel({
               onClick={onThemeToggle}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               title={theme === "dark" ? "Light mode" : "Dark mode"}
-              className="shrink-0 text-[#00FF41] hover:opacity-70 transition-opacity"
+              className="shrink-0 text-primary hover:opacity-70 transition-opacity"
             >
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
@@ -410,7 +410,7 @@ export function ChatPanel({
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-2">
           {state.messages.length === 0 && (
-            <div className="flex flex-col justify-center h-full text-[#333] uppercase tracking-wider text-center">
+            <div className="flex flex-col justify-center h-full text-muted-foreground uppercase tracking-wider text-center">
               <p className="text-sm font-bold">WHAT DO YOU WANT TO BUILD?</p>
               <p className="text-xs mt-1">DESCRIBE YOUR IDEA AND RALPH WILL TAKE IT FROM THERE.</p>
             </div>
@@ -425,11 +425,11 @@ export function ChatPanel({
             return (
               <div
                 key={i}
-                className="border-b border-[#1a1a1a] py-3 flex items-start gap-2"
+                className="border-b border-border py-3 flex items-start gap-2"
               >
                 {showUndo && (
                   <button
-                    className="shrink-0 text-[#333] hover:text-[#00FF41] opacity-60 hover:opacity-100 mt-0.5"
+                    className="shrink-0 text-muted-foreground hover:text-primary opacity-60 hover:opacity-100 mt-0.5"
                     title="Undo last message"
                     onClick={onUndo}
                   >
@@ -439,7 +439,7 @@ export function ChatPanel({
                 <p
                   className={[
                     "text-sm whitespace-pre-wrap break-words w-full",
-                    msg.role === "user" ? "text-[#00FF41]" : "text-white",
+                    msg.role === "user" ? "text-primary" : "text-foreground",
                   ].join(" ")}
                 >
                   <span className="font-bold mr-1">
@@ -451,32 +451,32 @@ export function ChatPanel({
             );
           })}
           {state.loading && (
-            <div className="py-3 border-b border-[#1a1a1a]">
-              <span className="text-sm text-white">
+            <div className="py-3 border-b border-border">
+              <span className="text-sm text-foreground">
                 $ PROCESSING...<span className="animate-blink">_</span>
-                <span className="text-[#333] text-xs ml-2">{elapsedSeconds}s</span>
+                <span className="text-muted-foreground text-xs ml-2">{elapsedSeconds}s</span>
               </span>
             </div>
           )}
         </div>
 
         {/* Input bar */}
-        <div className="border-t border-[#1a1a1a] p-4 shrink-0">
+        <div className="border-t border-border p-4 shrink-0">
           <div className="flex gap-2 items-center">
             <FileInput sessionId={state.sessionId} onSend={onSend} />
-            <span className="text-[#00FF41] font-bold text-sm shrink-0">&gt;</span>
+            <span className="text-primary font-bold text-sm shrink-0">&gt;</span>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               placeholder="DESCRIBE YOUR PROJECT..."
               disabled={busy}
-              className="flex-1 bg-transparent border border-[#333] text-[#00FF41] placeholder:text-[#333] px-3 py-2 text-sm outline-none focus:border-[#00FF41] transition-colors"
+              className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
             />
             <button
               onClick={handleSend}
               disabled={busy || !input.trim()}
-              className="border border-[#00FF41] bg-transparent text-[#00FF41] hover:bg-[#00FF41] hover:text-black transition-colors px-3 py-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              className="border border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground transition-colors px-3 py-2 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="size-4" />
             </button>
