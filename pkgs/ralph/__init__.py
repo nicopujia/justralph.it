@@ -1,12 +1,11 @@
-"""Ralph: An autonomous agent that processes Beads issues using OpenCode.
+"""Ralph: An autonomous coding agent loop powered by ralphy.
 
 Package layout:
     config:         Single source of truth for all configuration and defaults
     main:           CLI entry point (argparse with subcommands)
-    cmds/:          One module per CLI command (init, loop)
-    core/:          Core business logic (agent, hooks, state)
-    utils/:         Shared utilities (git)
+    cmds/:          One module per CLI command (init, loop, run, task)
+    core/:          Core business logic (agent, hooks, state, ralphy_runner, events)
+    utils/:         Shared utilities (git, backup)
     templates/:     Scaffolding skeletons copied into new projects
-    opencode.jsonc: OpenCode agent config (symlinked into projects)
     PROMPT.xml:     System prompt for the Ralph agent (symlinked into projects)
 """

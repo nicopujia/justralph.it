@@ -7,7 +7,7 @@
   },
   "agent": {
     "ralph": {
-      "description": "Solves one issue",
+      "description": "Solves one task",
       "temperature": 0.25,
       "variant": "max",
       "prompt": "{file:./PROMPT.xml}",

@@ -11,16 +11,16 @@ class CustomHooks(Hooks):
     def pre_loop(self, cfg):
         pass
 
-    def pre_iter(self, cfg, issue, iteration):
+    def pre_iter(self, cfg, task, iteration):
         pass
 
-    def post_iter(self, cfg, issue, iteration, status, error):
+    def post_iter(self, cfg, task, iteration, status, error):
         pass
 
     def post_loop(self, cfg, iterations_completed):
         pass
 
-    def extra_args_kwargs(self, cfg, issue):
+    def extra_args_kwargs(self, cfg, task):
         return (), {}
 
     def on_agent_output(self, line):
