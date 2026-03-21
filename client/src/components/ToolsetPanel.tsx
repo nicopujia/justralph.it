@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Lightbulb, Maximize2, Pencil, Network } from "lucide-react";
 import type { ChatState, ToolName } from "@/hooks/useChatbot";
 
 type ToolDef = {
   id: ToolName;
   label: string;
   description: string;
-  icon: string;
+  icon: React.ReactNode;
 };
 
 const TOOLS: ToolDef[] = [
@@ -13,27 +14,41 @@ const TOOLS: ToolDef[] = [
     id: "brainstorm",
     label: "BRAINSTORM",
     description: "Generate creative feature angles targeting weak dimensions.",
-    icon: "[*]",
+    icon: <Lightbulb className="size-3.5" />,
   },
   {
     id: "expand",
     label: "EXPAND",
     description: "Flesh out use cases, personas, and data flows.",
-    icon: "[+]",
+    icon: <Maximize2 className="size-3.5" />,
   },
   {
     id: "refine",
     label: "REFINE",
     description: "Rewrite your last message for maximum clarity.",
-    icon: "[~]",
+    icon: <Pencil className="size-3.5" />,
   },
   {
     id: "architect",
     label: "ARCHITECT",
     description: "Suggest architecture based on known requirements.",
-    icon: "[#]",
+    icon: <Network className="size-3.5" />,
   },
 ];
+
+const TOOL_MODES: Record<ToolName, "inject" | "edit"> = {
+  brainstorm: "inject",
+  expand: "inject",
+  refine: "edit",
+  architect: "inject",
+};
+
+const TOOL_SHORTCUTS: Record<ToolName, string> = {
+  brainstorm: "Ctrl+1",
+  expand: "Ctrl+2",
+  refine: "Ctrl+3",
+  architect: "Ctrl+4",
+};
 
 function getToolGating(state: ChatState) {
   const totalChars = state.messages
@@ -77,6 +92,7 @@ type ToolsetPanelProps = {
   onRunTool: (tool: ToolName, context?: string) => void;
   toolLoading: boolean;
   activeTool: string | null;
+  onCancelTool?: () => void;
 };
 
 export function ToolsetPanel({
@@ -84,9 +100,20 @@ export function ToolsetPanel({
   onRunTool,
   toolLoading,
   activeTool,
+  onCancelTool,
 }: ToolsetPanelProps) {
-  const gating = getToolGating(state);
-  const weakDims = getWeakDims(state);
+  // Change 5: memoize gating and weakDims
+  const gating = useMemo(
+    () => getToolGating(state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.messages, state.questionCount, state.phase],
+  );
+  const weakDims = useMemo(
+    () => getWeakDims(state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.confidence, state.relevance],
+  );
+
   const [elapsed, setElapsed] = useState(0);
 
   // Elapsed timer for loading state
@@ -105,6 +132,52 @@ export function ToolsetPanel({
   // Refine tool: optional freeform input
   const [refineInput, setRefineInput] = useState("");
 
+  // Change 11: animate tool unlock
+  const [prevGating, setPrevGating] = useState(gating);
+  const [justUnlocked, setJustUnlocked] = useState<Set<ToolName>>(new Set());
+
+  useEffect(() => {
+    const newlyUnlocked = new Set<ToolName>();
+    for (const tool of ["brainstorm", "expand", "refine", "architect"] as ToolName[]) {
+      if (!prevGating[tool] && gating[tool]) {
+        newlyUnlocked.add(tool);
+      }
+    }
+    setPrevGating(gating);
+    if (newlyUnlocked.size > 0) {
+      setJustUnlocked(newlyUnlocked);
+      const t = setTimeout(() => setJustUnlocked(new Set()), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [gating]);
+
+  // Change 7: keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.shiftKey || e.altKey) return;
+      const toolMap: Record<string, ToolName> = {
+        "1": "brainstorm",
+        "2": "expand",
+        "3": "refine",
+        "4": "architect",
+      };
+      const tool = toolMap[e.key];
+      if (tool && gating[tool] && !toolLoading && !state.loading) {
+        e.preventDefault();
+        if (tool === "refine" && refineInput.trim()) {
+          onRunTool(tool, refineInput.trim());
+        } else {
+          onRunTool(tool);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [gating, toolLoading, state.loading, onRunTool, refineInput]);
+
+  // Unused ref kept for future abort integration
+  const _abortRef = useRef<(() => void) | null>(null);
+
   return (
     <div className="space-y-3 font-mono">
       <div className="flex items-center justify-between text-xs tracking-wider">
@@ -119,7 +192,26 @@ export function ToolsetPanel({
       {TOOLS.map((tool) => {
         const enabled = gating[tool.id];
         const isRunning = toolLoading && activeTool === tool.id;
-        const isDisabled = !enabled || (toolLoading && !isRunning);
+        // Change 6: also disable when state.loading
+        const isDisabled = !enabled || (toolLoading && !isRunning) || state.loading;
+
+        // Change 10: collapsed locked tools
+        if (!enabled) {
+          return (
+            <div
+              key={tool.id}
+              className="w-full text-left border border-border/50 px-3 py-1.5 opacity-40 flex items-center justify-between"
+            >
+              <span className="flex items-center gap-2 text-xs tracking-wider">
+                <span className="text-primary">{tool.icon}</span>
+                <span>{tool.label}</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                [LOCKED] {getGateReason(tool.id, state)}
+              </span>
+            </div>
+          );
+        }
 
         return (
           <button
@@ -136,7 +228,9 @@ export function ToolsetPanel({
               isRunning
                 ? "border-primary animate-pulse bg-primary/5"
                 : enabled
-                  ? "border-border hover:border-primary hover:bg-primary/5 cursor-pointer"
+                  ? `border-border hover:border-primary hover:bg-primary/5 cursor-pointer ${
+                      justUnlocked.has(tool.id) ? "ring-1 ring-[#00FF41] border-[#00FF41]" : ""
+                    }`
                   : "border-border/50 opacity-40 cursor-not-allowed"
             }`}
           >
@@ -144,6 +238,10 @@ export function ToolsetPanel({
               <span className="flex items-center gap-2">
                 <span className="text-primary">{tool.icon}</span>
                 <span>{tool.label}</span>
+                {/* Change 7: keyboard shortcut hint */}
+                <span className="text-muted-foreground/40 text-[9px] ml-auto">
+                  {TOOL_SHORTCUTS[tool.id]}
+                </span>
               </span>
               <span
                 className={`text-[10px] ${
@@ -160,14 +258,37 @@ export function ToolsetPanel({
                     ? "[READY]"
                     : "[LOCKED]"}
               </span>
+              {/* Change 2: mode badge */}
+              <span
+                className={`text-[10px] ml-1 ${
+                  TOOL_MODES[tool.id] === "inject"
+                    ? "text-[#00FF41]"
+                    : "text-[#FFaa00]"
+                }`}
+              >
+                {TOOL_MODES[tool.id] === "inject" ? "INJECT" : "EDIT"}
+              </span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
               {tool.description}
             </p>
-            {!enabled && (
-              <p className="text-[10px] text-muted-foreground/60 mt-1">
-                {getGateReason(tool.id, state)}
+            {/* Change 4: slow-load warning */}
+            {isRunning && elapsed > 15 && (
+              <p className="text-[10px] text-[#FFaa00] mt-1 animate-pulse">
+                THIS IS TAKING A WHILE...
               </p>
+            )}
+            {/* Change 12: cancel button */}
+            {isRunning && onCancelTool && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancelTool();
+                }}
+                className="text-[10px] text-destructive border border-destructive/50 px-1.5 py-0.5 hover:bg-destructive/10 transition-colors mt-1"
+              >
+                CANCEL
+              </button>
             )}
           </button>
         );
@@ -186,8 +307,30 @@ export function ToolsetPanel({
             className="w-full bg-background border border-border text-xs font-mono p-2 resize-none h-16 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
             disabled={toolLoading}
           />
+          {/* Change 3: preview of what will be refined */}
+          {!refineInput.trim() && state.messages.length > 0 && (
+            <p className="text-[10px] text-muted-foreground/60 italic truncate">
+              Will refine: "
+              {state.messages
+                .filter((m) => m.role === "user")
+                .pop()
+                ?.content.slice(0, 60)}
+              ..."
+            </p>
+          )}
+          {/* Change 9: character count */}
+          {refineInput.length > 0 && (
+            <p className="text-[9px] text-muted-foreground/40 text-right">
+              {refineInput.length} chars
+            </p>
+          )}
         </div>
       )}
+
+      {/* Change 8: usage hint */}
+      <p className="text-[10px] text-muted-foreground/40 text-center mt-2 leading-relaxed">
+        TOOLS TARGET YOUR WEAKEST DIMENSIONS TO ACCELERATE READINESS.
+      </p>
     </div>
   );
 }

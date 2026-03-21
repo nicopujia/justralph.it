@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Literal
 
 import tasks
 
@@ -21,7 +22,7 @@ from .auth import (
     get_github_user,
     get_user_session,
 )
-from .chatbot import DIMENSIONS, ChatState, _chat_states, chat as chatbot_chat, get_chat_state, run_tool as chatbot_run_tool, undo_last_message
+from .chatbot import DIMENSIONS, TOOL_CONFIGS, ChatState, _chat_states, chat as chatbot_chat, get_chat_state, run_tool as chatbot_run_tool, undo_last_message
 from .sessions import (
     Session,
     create_session,
@@ -447,7 +448,7 @@ def api_chat_undo(session_id: str):
 
 
 class ToolRequest(BaseModel):
-    tool: str  # brainstorm, expand, refine, architect
+    tool: Literal["brainstorm", "expand", "refine", "architect"]
     context: str = ""  # optional freeform input (for refine tool)
 
 
@@ -462,6 +463,23 @@ async def api_run_tool(session_id: str, req: ToolRequest):
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@app.get("/api/sessions/{session_id}/chat/tools")
+def api_chat_tools(session_id: str):
+    """Return tool gating state for the session."""
+    _require_session(session_id)
+    state = get_chat_state(session_id)
+
+    tools = {}
+    for tool_id, config in TOOL_CONFIGS.items():
+        enabled = config["gate"](state)
+        tools[tool_id] = {
+            "enabled": enabled,
+            "reason": None if enabled else config["gate_reason"],
+            "mode": config["mode"],
+        }
+    return {"tools": tools}
 
 
 class RalphItRequest(BaseModel):

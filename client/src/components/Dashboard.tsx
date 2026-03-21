@@ -229,6 +229,8 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
             activeBranchId={branching.activeBranchId}
             onBranchFrom={handleBranchFrom}
             onBranchSwitch={branching.switchBranch}
+            onNewChat={chatbot.newChat}
+            wsStatus={wsState}
           />
         </div>
       </div>
@@ -322,6 +324,8 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                   onRunTool={chatbot.runTool}
                   onClearToolResult={chatbot.clearToolResult}
                   onRetry={chatbot.retryMessage}
+                  onNewChat={chatbot.newChat}
+                  wsStatus={wsState}
                 />
               </div>
               {/* Collapse toggle at bottom */}
@@ -382,6 +386,8 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
             loopStarted={phase === "loop"}
             sessionId={sessionId}
             onDimensionClick={handleDimensionClick}
+            onRunTool={chatbot.runTool}
+            onClearToolResult={chatbot.clearToolResult}
             onTaskUpdate={(taskId, patch) => {
               if (patch.status === "open") {
                 dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });

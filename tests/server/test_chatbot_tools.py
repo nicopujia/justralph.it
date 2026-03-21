@@ -3,7 +3,10 @@
 No subprocess, no OpenCode -- only pure functions and ChatState.
 """
 
+import json
+import time
 import pytest
+from unittest.mock import patch, MagicMock
 
 from server.chatbot import (
     DIMENSIONS,
@@ -13,6 +16,7 @@ from server.chatbot import (
     _total_user_chars,
     _weak_dimensions,
     _conversation_summary,
+    _strip_code_fences,
 )
 
 
@@ -239,3 +243,273 @@ class TestToolPromptFormatting:
             result = config["system"].format(**kwargs)
             assert isinstance(result, str)
             assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# _strip_code_fences
+# ---------------------------------------------------------------------------
+
+
+class TestStripCodeFences:
+    def test_json_tag(self):
+        assert _strip_code_fences('```json\n{"a":1}\n```') == '{"a":1}'
+
+    def test_python_tag(self):
+        assert _strip_code_fences('```python\nprint("hi")\n```') == 'print("hi")'
+
+    def test_text_tag(self):
+        assert _strip_code_fences('```text\nhello world\n```') == 'hello world'
+
+    def test_markdown_tag(self):
+        assert _strip_code_fences('```markdown\n# Title\n```') == '# Title'
+
+    def test_bare_fences(self):
+        assert _strip_code_fences('```\ncontent\n```') == 'content'
+
+    def test_no_fences(self):
+        assert _strip_code_fences('plain text') == 'plain text'
+
+    def test_content_outside_fences(self):
+        # re.search finds the fenced block and strips to inner content only
+        result = _strip_code_fences('before ```json\n{"a":1}\n``` after')
+        assert '{"a":1}' in result
+
+
+# ---------------------------------------------------------------------------
+# _conversation_summary content
+# ---------------------------------------------------------------------------
+
+
+class TestConversationSummaryContent:
+    def test_extracts_message_from_json_assistant(self):
+        """Assistant messages stored as JSON should show only the 'message' field."""
+        parsed = {"message": "What tech stack?", "confidence": {"functional": 50}}
+        state = ChatState(messages=[
+            {"role": "user", "content": "I want a todo app"},
+            {"role": "assistant", "content": json.dumps(parsed)},
+        ])
+        result = _conversation_summary(state)
+        assert "What tech stack?" in result
+        assert '"confidence"' not in result
+        assert '"functional"' not in result
+
+    def test_plain_text_assistant_unchanged(self):
+        """Non-JSON assistant messages pass through unchanged."""
+        state = ChatState(messages=[
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ])
+        result = _conversation_summary(state)
+        assert "Hi there!" in result
+
+
+# ---------------------------------------------------------------------------
+# _conversation_summary max_messages cap
+# ---------------------------------------------------------------------------
+
+
+class TestConversationSummaryCap:
+    def test_caps_to_max_messages(self):
+        """Summary should only include last N messages."""
+        msgs = []
+        for i in range(20):
+            msgs.append({"role": "user", "content": f"msg-{i}"})
+        state = ChatState(messages=msgs)
+        result = _conversation_summary(state, max_messages=4)
+        assert "msg-18" in result
+        assert "msg-19" in result
+        assert "msg-0" not in result
+        assert "msg-10" not in result
+
+    def test_no_cap_when_zero(self):
+        """max_messages=0 should return all messages."""
+        msgs = []
+        for i in range(5):
+            msgs.append({"role": "user", "content": f"msg-{i}"})
+        state = ChatState(messages=msgs)
+        result = _conversation_summary(state, max_messages=0)
+        for i in range(5):
+            assert f"msg-{i}" in result
+
+
+# ---------------------------------------------------------------------------
+# Tool gating edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeCases:
+    def test_empty_session_gates_all_char_tools(self):
+        """Empty session should gate brainstorm, expand, and refine."""
+        state = ChatState()
+        assert not TOOL_CONFIGS["brainstorm"]["gate"](state)
+        assert not TOOL_CONFIGS["expand"]["gate"](state)
+        assert not TOOL_CONFIGS["refine"]["gate"](state)
+
+    def test_architect_gated_until_phase2(self):
+        """Architect needs at least 4 messages (phase 2)."""
+        for n in range(1, 4):
+            msgs = [f"msg{i}" for i in range(n)]
+            state = _state_with_messages(*msgs)
+            assert not TOOL_CONFIGS["architect"]["gate"](state), (
+                f"Should be gated at {n} messages"
+            )
+
+        state = _state_with_messages("a", "b", "c", "d")
+        assert TOOL_CONFIGS["architect"]["gate"](state)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimiting:
+    def test_tool_has_separate_rate_limit(self):
+        """Tool rate limit is independent of chat rate limit."""
+        state = _state_with_messages("x" * 130)
+        state.last_message_time = time.time()  # Chat just happened
+        state.last_tool_time = 0.0             # Tool was not recently used
+        # Tool should NOT be rate limited
+        assert time.time() - state.last_tool_time >= 3.0
+
+    def test_chat_rate_limit_independent(self):
+        """Chat rate limit checks only last_message_time."""
+        state = ChatState()
+        state.last_message_time = 0.0  # Long ago
+        assert time.time() - state.last_message_time >= 3.0
+
+
+# ---------------------------------------------------------------------------
+# run_tool integration (subprocess mocked)
+# ---------------------------------------------------------------------------
+
+
+class TestRunToolIntegration:
+    """Integration tests for run_tool with mocked subprocess and db."""
+
+    @pytest.mark.asyncio
+    async def test_brainstorm_returns_parsed_content(self):
+        """Mock subprocess to return NDJSON, verify full pipeline."""
+        from server.chatbot import _chat_states, run_tool
+
+        state = _state_with_messages("x" * 130)  # passes gate (>= 120 chars)
+        state.last_tool_time = 0.0
+        _chat_states["test-integration"] = state
+
+        ndjson = '{"type":"text","part":{"text":"1. Idea one\\n2. Idea two"}}\n'
+        mock_result = MagicMock()
+        mock_result.stdout = ndjson
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+
+        try:
+            with patch("server.chatbot.subprocess.run", return_value=mock_result), \
+                 patch("server.db.save_tool_invocation"):
+                result = await run_tool("test-integration", "brainstorm")
+
+            assert result["tool"] == "brainstorm"
+            assert result["mode"] == "inject"
+            assert "Idea one" in result["result"]
+            assert "elapsed_ms" in result
+        finally:
+            _chat_states.pop("test-integration", None)
+
+    @pytest.mark.asyncio
+    async def test_refine_with_custom_context(self):
+        """Refine tool with explicit context."""
+        from server.chatbot import _chat_states, run_tool
+
+        state = _state_with_messages("hello world")
+        state.last_tool_time = 0.0
+        _chat_states["test-refine"] = state
+
+        ndjson = '{"type":"text","part":{"text":"Improved text here"}}\n'
+        mock_result = MagicMock()
+        mock_result.stdout = ndjson
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+
+        try:
+            with patch("server.chatbot.subprocess.run", return_value=mock_result), \
+                 patch("server.db.save_tool_invocation"):
+                result = await run_tool("test-refine", "refine", "my custom text")
+
+            assert result["mode"] == "edit"
+            assert "Improved" in result["result"]
+        finally:
+            _chat_states.pop("test-refine", None)
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_raises(self):
+        """Unknown tool ID raises ValueError before any state lookup."""
+        from server.chatbot import run_tool
+
+        with pytest.raises(ValueError, match="Unknown tool"):
+            await run_tool("test-session", "nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_gated_tool_raises(self):
+        """Tool that fails gate check raises RuntimeError with gate_reason."""
+        from server.chatbot import _chat_states, run_tool
+
+        state = ChatState()  # Empty -- _total_user_chars == 0, gate fails
+        state.last_tool_time = 0.0
+        _chat_states["test-gated"] = state
+
+        try:
+            with pytest.raises(RuntimeError, match="120"):
+                await run_tool("test-gated", "brainstorm")
+        finally:
+            _chat_states.pop("test-gated", None)
+
+
+# ---------------------------------------------------------------------------
+# Tool prompt with realistic conversation data
+# ---------------------------------------------------------------------------
+
+
+class TestToolPromptWithRealData:
+    def test_brainstorm_prompt_coherent(self):
+        """Format brainstorm prompt with realistic data and verify coherence."""
+        state = ChatState(
+            messages=[
+                {"role": "user", "content": "I want to build a recipe sharing app"},
+                {"role": "assistant", "content": json.dumps({"message": "Interesting! What tech stack?"})},
+                {"role": "user", "content": "React frontend, Python backend, PostgreSQL"},
+                {"role": "assistant", "content": json.dumps({"message": "Great choices. What about auth?"})},
+            ],
+            confidence={
+                "functional": 40, "technical_stack": 60, "data_model": 20,
+                "auth": 10, "deployment": 0, "testing": 0, "edge_cases": 0,
+            },
+        )
+        conversation = _conversation_summary(state)
+        weak_dims = _weak_dimensions(state)
+
+        prompt = TOOL_CONFIGS["brainstorm"]["system"].format(
+            conversation=conversation,
+            weak_dims=weak_dims,
+            confidence_summary="",
+            original="",
+        )
+        assert "recipe" in conversation.lower()
+        assert len(prompt) > 100
+        assert "weak dimensions" in prompt.lower()
+
+    def test_all_prompts_format_with_real_data(self):
+        """All tool prompts format without error using realistic kwargs."""
+        state = _state_with_messages("Build me a chat app", "Use WebSockets")
+        conversation = _conversation_summary(state)
+        weak_dims = _weak_dimensions(state)
+        confidence_summary = ", ".join(f"{d}: 50%" for d in DIMENSIONS)
+
+        kwargs = {
+            "conversation": conversation,
+            "weak_dims": weak_dims,
+            "confidence_summary": confidence_summary,
+            "original": "Build me a chat app using WebSockets",
+        }
+        for tool_id, config in TOOL_CONFIGS.items():
+            result = config["system"].format(**kwargs)
+            assert isinstance(result, str)
+            assert len(result) > 50, f"Tool {tool_id} prompt too short"

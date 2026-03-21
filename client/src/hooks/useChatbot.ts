@@ -54,7 +54,7 @@ export type Relevance = {
 };
 
 export type ToolName = "brainstorm" | "expand" | "refine" | "architect";
-export type ToolResult = { text: string; mode: "edit" | "inject"; tool: string };
+export type ToolResult = { content: string; mode: "edit" | "inject"; tool: ToolName; elapsed_ms?: number; model?: string };
 
 export type ChatState = {
   messages: ChatMessage[];
@@ -70,8 +70,11 @@ export type ChatState = {
   weightedReadiness: number;
   questionCount: number;
   phase: number;
+  /** @deprecated use toolLoadingId !== null */
   toolLoading: boolean;
+  toolLoadingId: ToolName | null;
   toolResult: ToolResult | null;
+  toolUsageCount: Record<ToolName, number>;
 };
 
 import { API_URL } from "@/lib/config";
@@ -99,6 +102,13 @@ const EMPTY_RELEVANCE: Relevance = {
   edge_cases: 1.0,
 };
 
+const EMPTY_TOOL_USAGE: Record<ToolName, number> = {
+  brainstorm: 0,
+  expand: 0,
+  refine: 0,
+  architect: 0,
+};
+
 export function useChatbot() {
   const [state, setState] = useState<ChatState>({
     messages: [],
@@ -114,7 +124,9 @@ export function useChatbot() {
     questionCount: 0,
     phase: 1,
     toolLoading: false,
+    toolLoadingId: null,
     toolResult: null,
+    toolUsageCount: { ...EMPTY_TOOL_USAGE },
   });
 
   // Restore session from localStorage on mount.
@@ -200,7 +212,7 @@ export function useChatbot() {
                 : m,
             )
           : [...s.messages, { role: "user" as const, content: message, timestamp: msgTimestamp, status: "pending" as const }];
-        return { ...s, sessionId: sid, messages: next, loading: true, error: null };
+        return { ...s, sessionId: sid, messages: next, loading: true, error: null, toolResult: null };
       });
 
       try {
@@ -350,7 +362,9 @@ export function useChatbot() {
         questionCount: 0,
         phase: 1,
         toolLoading: false,
+        toolLoadingId: null,
         toolResult: null,
+        toolUsageCount: { ...EMPTY_TOOL_USAGE },
       });
     }
   }, [state.sessionId]);
@@ -373,6 +387,7 @@ export function useChatbot() {
       weightedReadiness: 0,
       questionCount: 0,
       phase: 1,
+      toolUsageCount: { ...EMPTY_TOOL_USAGE },
     }));
   }, [state.sessionId]);
 
@@ -406,7 +421,9 @@ export function useChatbot() {
         loading: false,
         error: null,
         toolLoading: false,
+        toolLoadingId: null,
         toolResult: null,
+        toolUsageCount: { ...EMPTY_TOOL_USAGE },
       }));
     } catch {
       // silently ignore -- leave state unchanged
@@ -416,7 +433,7 @@ export function useChatbot() {
   const runTool = useCallback(
     async (tool: ToolName, context?: string) => {
       if (!state.sessionId) return;
-      setState((s) => ({ ...s, toolLoading: true, error: null }));
+      setState((s) => ({ ...s, toolLoadingId: tool, toolLoading: true, error: null }));
       try {
         const resp = await fetch(
           `${API}/api/sessions/${state.sessionId}/chat/tool`,
@@ -433,14 +450,21 @@ export function useChatbot() {
           throw new Error(err.detail || `HTTP ${resp.status}`);
         }
         const data = await resp.json();
+        const toolLabel = data.tool.charAt(0).toUpperCase() + data.tool.slice(1);
+        const prefixedContent = data.mode === "inject"
+          ? `[Tool: ${toolLabel}] ${data.result}`
+          : data.result;
         setState((s) => ({
           ...s,
+          toolLoadingId: null,
           toolLoading: false,
-          toolResult: { text: data.result, mode: data.mode, tool: data.tool },
+          toolResult: { content: prefixedContent, mode: data.mode, tool: data.tool, elapsed_ms: data.elapsed_ms, model: data.model },
+          toolUsageCount: { ...s.toolUsageCount, [tool]: (s.toolUsageCount[tool] || 0) + 1 },
         }));
       } catch (err) {
         setState((s) => ({
           ...s,
+          toolLoadingId: null,
           toolLoading: false,
           error: err instanceof Error ? err.message : "Tool failed",
         }));
@@ -451,6 +475,46 @@ export function useChatbot() {
 
   const clearToolResult = useCallback(() => {
     setState((s) => ({ ...s, toolResult: null }));
+  }, []);
+
+  /**
+   * Start a fresh chat: clear localStorage, reset all state, create a new session.
+   * Useful for "New Chat" UX where the user wants a blank slate without deleting the old session.
+   */
+  const newChat = useCallback(async () => {
+    localStorage.removeItem(LS_KEY);
+    setState({
+      messages: [],
+      confidence: EMPTY_CONFIDENCE,
+      relevance: EMPTY_RELEVANCE,
+      ready: false,
+      loading: false,
+      error: null,
+      sessionId: null,
+      tasks: null,
+      project: null,
+      weightedReadiness: 0,
+      questionCount: 0,
+      phase: 1,
+      toolLoading: false,
+      toolLoadingId: null,
+      toolResult: null,
+      toolUsageCount: { ...EMPTY_TOOL_USAGE },
+    });
+    try {
+      const resp = await fetch(`${API}/api/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        localStorage.setItem(LS_KEY, data.id);
+        setState((s) => ({ ...s, sessionId: data.id }));
+      }
+    } catch {
+      // Network error -- state already reset, user can still chat
+    }
   }, []);
 
   return {
@@ -466,5 +530,6 @@ export function useChatbot() {
     retryMessage,
     runTool,
     clearToolResult,
+    newChat,
   };
 }

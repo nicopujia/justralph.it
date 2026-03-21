@@ -59,6 +59,17 @@ def init_db() -> None:
             project TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
+
+        CREATE TABLE IF NOT EXISTS tool_invocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            elapsed_ms INTEGER,
+            model TEXT,
+            created_at REAL NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
     """)
     # Migrate existing DBs: add columns if absent.
     for ddl in [
@@ -122,6 +133,7 @@ def delete_session(id: str) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM chat_state WHERE session_id = ?", (id,))
     conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (id,))
+    conn.execute("DELETE FROM tool_invocations WHERE session_id = ?", (id,))
     conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
     conn.commit()
     conn.close()
@@ -254,3 +266,27 @@ def get_session_by_share_token(token: str) -> dict | None:
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# -- Tool invocations ----------------------------------------------------------
+
+
+def save_tool_invocation(session_id: str, tool: str, mode: str, elapsed_ms: int = 0, model: str = "") -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO tool_invocations (session_id, tool, mode, elapsed_ms, model, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (session_id, tool, mode, elapsed_ms, model, time.time()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def load_tool_invocations(session_id: str) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM tool_invocations WHERE session_id = ? ORDER BY id ASC",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

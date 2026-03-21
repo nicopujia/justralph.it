@@ -121,18 +121,27 @@ def _weak_dimensions(state: "ChatState", n: int = 3) -> str:
     return ", ".join(f"{d} ({v}%)" for d, v in weakest)
 
 
-def _conversation_summary(state: "ChatState") -> str:
+def _conversation_summary(state: "ChatState", max_messages: int = 10) -> str:
     """Build conversation context string for tool prompts."""
+    msgs = state.messages[-max_messages:] if max_messages else state.messages
     lines = []
-    for msg in state.messages:
+    for msg in msgs:
         role = "User" if msg["role"] == "user" else "Ralphy"
-        lines.append(f"**{role}:** {msg['content']}")
+        content = msg["content"]
+        if msg["role"] == "assistant":
+            try:
+                parsed = json.loads(content)
+                content = parsed.get("message", content)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        lines.append(f"**{role}:** {content}")
     return "\n\n".join(lines)
 
 
 TOOL_CONFIGS: dict[str, dict] = {
     "brainstorm": {
         "mode": "inject",
+        "model": None,  # use default
         "gate": lambda s: _total_user_chars(s) >= 120,
         "gate_reason": "Need 120+ characters of conversation first",
         "system": """\
@@ -145,12 +154,13 @@ You are a brainstorming assistant for a software project.
 {weak_dims}
 
 ## Task
-Generate 3-5 creative feature ideas or angles the user hasn't explored yet.
+Generate exactly 5 creative feature ideas or angles the user hasn't explored yet.
 Each idea should help clarify the weak dimensions listed above.
 Format as a numbered list. Be specific to THIS project. No preamble.""",
     },
     "expand": {
         "mode": "inject",
+        "model": None,  # use default
         "gate": lambda s: _total_user_chars(s) >= 120,
         "gate_reason": "Need 120+ characters of conversation first",
         "system": """\
@@ -169,10 +179,12 @@ Expand the project concept with:
 - Data flow descriptions
 - Integration points
 
+Provide exactly 3 use cases and 2 user personas.
 Focus on the weak dimensions listed. Format as a structured list. Be specific.""",
     },
     "refine": {
         "mode": "edit",
+        "model": "opencode-go/kimi-k2.5",  # fast model for refinement
         "gate": lambda s: s.user_msg_count >= 1,
         "gate_reason": "Need at least 1 message to refine",
         "system": """\
@@ -194,6 +206,7 @@ Return ONLY the improved text. No preamble, no explanation, no quotes.""",
     },
     "architect": {
         "mode": "inject",
+        "model": None,  # use default (bigger model)
         "gate": lambda s: _get_phase(s.user_msg_count) >= 2,
         "gate_reason": "Need Phase 2+ (4+ messages) for architecture suggestions",
         "system": """\
@@ -221,6 +234,17 @@ Be specific to THIS project. Format as a numbered list with brief rationale for 
 }
 
 
+# Validate all tool prompts can be formatted with expected kwargs
+_TOOL_FORMAT_KWARGS = {
+    "conversation": "", "weak_dims": "", "confidence_summary": "", "original": "",
+}
+for _tool_id, _cfg in TOOL_CONFIGS.items():
+    try:
+        _cfg["system"].format(**_TOOL_FORMAT_KWARGS)
+    except KeyError as e:
+        raise ValueError(f"Tool '{_tool_id}' has unknown placeholder: {e}")
+
+
 async def run_tool(
     session_id: str,
     tool: str,
@@ -228,18 +252,18 @@ async def run_tool(
     *,
     session_dir: Path | None = None,
 ) -> dict:
-    """Run a toolset tool. Returns {result, mode, tool}. Does NOT modify chat state."""
+    """Run a toolset tool. Returns {result, mode, tool, elapsed_ms, model}. Does NOT modify chat state."""
     if tool not in TOOL_CONFIGS:
         raise ValueError(f"Unknown tool: {tool}")
 
     state = get_chat_state(session_id)
     config = TOOL_CONFIGS[tool]
 
-    # Rate limit (shared with chat)
+    # Rate limit (separate from chat rate limit)
     now = time.time()
-    if now - state.last_message_time < 3.0:
+    if now - state.last_tool_time < 3.0:
         raise RuntimeError("Rate limited. Wait a moment.")
-    state.last_message_time = now
+    state.last_tool_time = now
 
     # Gate check
     if not config["gate"](state):
@@ -252,8 +276,8 @@ async def run_tool(
         f"{d}: {state.confidence.get(d, 0)}%" for d in DIMENSIONS
     )
 
-    # For refine: use provided context or last user message
-    original = context
+    # For refine: use provided context (stripped) or last user message
+    original = context.strip() if context else ""
     if tool == "refine" and not original:
         user_msgs = [m for m in state.messages if m["role"] == "user"]
         original = user_msgs[-1]["content"] if user_msgs else ""
@@ -265,11 +289,27 @@ async def run_tool(
         original=original,
     )
 
+    # Conditionally remove auth section for architect if auth is irrelevant
+    if tool == "architect":
+        auth_relevant = state.relevance.get("auth", 1.0) > RELEVANCE_CUTOFF
+        if not auth_relevant:
+            system_prompt = system_prompt.replace(
+                "3. Auth strategy (or note if not needed)\n", ""
+            )
+
+    # Model override per tool
+    model = config.get("model")
+
     # Call opencode
     cwd = str(session_dir or state.session_dir) if (session_dir or state.session_dir) else None
+    cmd = [OPENCODE_CMD, "run", system_prompt, "--format", "json"]
+    if model:
+        cmd.extend(["--model", model])
+
+    start = time.time()
     try:
         result = subprocess.run(
-            [OPENCODE_CMD, "run", system_prompt, "--format", "json"],
+            cmd,
             capture_output=True, text=True, timeout=120, cwd=cwd,
         )
         output = result.stdout.strip()
@@ -277,6 +317,7 @@ async def run_tool(
         raise RuntimeError("Tool timed out (120s)")
     except FileNotFoundError:
         raise RuntimeError("OpenCode not found on PATH")
+    elapsed_ms = int((time.time() - start) * 1000)
 
     if not output:
         output = result.stderr.strip() or ""
@@ -286,7 +327,9 @@ async def run_tool(
     content = _extract_content(output)
     content = _strip_code_fences(content)
 
-    return {"result": content, "mode": config["mode"], "tool": tool}
+    db.save_tool_invocation(session_id, tool, config["mode"], elapsed_ms, model or DEFAULT_MODEL)
+
+    return {"result": content, "mode": config["mode"], "tool": tool, "elapsed_ms": elapsed_ms, "model": model or DEFAULT_MODEL}
 
 
 SYSTEM_PROMPT = """\
@@ -406,6 +449,7 @@ class ChatState:
     weighted_readiness: float = 0.0
     session_dir: Path | None = None
     last_message_time: float = 0.0
+    last_tool_time: float = 0.0
 
     @property
     def user_msg_count(self) -> int:
@@ -668,7 +712,7 @@ def _strip_code_fences(text: str) -> str:
     """Remove markdown code fences (```json ... ```) that LLMs love to add."""
     import re
     # Match ```json\n...\n``` or ```\n...\n```
-    m = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
+    m = re.search(r"```(?:\w+)?\s*\n?(.*?)```", text, re.DOTALL)
     if m:
         return m.group(1).strip()
     return text.strip()

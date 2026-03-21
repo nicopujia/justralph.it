@@ -23,6 +23,7 @@ import {
   GitBranch,
   Pin,
   PinOff,
+  SquarePen,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -41,6 +42,9 @@ import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { BranchSwitcher } from "./BranchSwitcher";
 import type { Branch } from "@/hooks/useBranching";
 import { usePinnedMessages, msgId } from "@/hooks/usePinnedMessages";
+import { ConnectionStatus } from "./ConnectionStatus";
+import { InlineTaskCard } from "./InlineTaskCard";
+import type { WSState } from "@/hooks/useWebSocket";
 
 /** Renders a muted relative timestamp below a message. Renders nothing if no timestamp. */
 function MessageTimestamp({ timestamp }: { timestamp: number | undefined }) {
@@ -93,6 +97,10 @@ type ChatPanelProps = {
   /** Called with the 0-based index of the user message to branch from. */
   onBranchFrom?: (msgIndex: number) => void;
   onBranchSwitch?: (id: string) => void;
+  /** Start a fresh chat session. */
+  onNewChat?: () => void;
+  /** WebSocket connection status for the indicator dot. */
+  wsStatus?: WSState;
 };
 
 /**
@@ -399,6 +407,9 @@ function RightTabPanel({
           >
             {tab.icon}
             {tab.label}
+            {tab.id === "tools" && state.toolResult && (
+              <span className="size-1.5 rounded-full bg-[#FFaa00] ml-1" />
+            )}
           </button>
         ))}
       </div>
@@ -450,7 +461,7 @@ function RightTabPanel({
             state={state}
             onRunTool={onRunTool}
             toolLoading={state.toolLoading}
-            activeTool={state.toolResult?.tool ?? null}
+            activeTool={state.toolLoadingId ?? null}
           />
         )}
         {activeTab === "tools" && !onRunTool && (
@@ -568,6 +579,8 @@ export function ChatPanel({
   onBranchFrom,
   onBranchSwitch,
   user,
+  onNewChat,
+  wsStatus,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -631,12 +644,82 @@ export function ChatPanel({
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [state.messages.length]);
 
+  // Auto-scroll when a tool suggestion banner appears (it pushes content up)
+  useEffect(() => {
+    if (state.toolResult) {
+      scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+    }
+  }, [state.toolResult]);
+
+  // Global Ctrl+K / Cmd+K -> new chat
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        onNewChat?.();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onNewChat]);
+
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const dragCounterRef = useRef(0);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    if (dragCounterRef.current === 1) setIsDragging(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    if (!state.sessionId) {
+      setPendingFiles((prev) => [...prev, ...files]);
+      return;
+    }
+    const uploaded: File[] = [];
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        await fetch(`${API_URL}/api/sessions/${state.sessionId}/uploads`, {
+          method: "POST",
+          body: form,
+        });
+        uploaded.push(file);
+      } catch {
+        // best-effort
+      }
+    }
+    if (uploaded.length > 0) {
+      onSend(`[Attached ${uploaded.length} file(s): ${uploaded.map((f) => f.name).join(", ")}]`);
+    }
+  };
+  const removePendingFile = (idx: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSend = () => {
     const msg = input.trim();
     if (!msg || state.loading) return;
     setInput("");
     resetHeight(textareaRef.current);
     resetHeight(sidebarTextareaRef.current);
+    setPendingFiles([]);
     onSend(msg);
   };
 
@@ -659,10 +742,22 @@ export function ChatPanel({
       <div className="h-full flex flex-col bg-card border-r border-border overflow-hidden">
         {/* Compact header */}
         <div className="px-3 py-3 border-b border-border shrink-0 flex items-center justify-between">
-          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            CHAT
-          </h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              CHAT
+            </h2>
+            {wsStatus && <ConnectionStatus status={wsStatus} />}
+          </div>
           <div className="flex items-center gap-2">
+            {onNewChat && (
+              <button
+                onClick={onNewChat}
+                title="New chat (Ctrl+K)"
+                className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+              >
+                <SquarePen className="size-3" />
+              </button>
+            )}
             <PinsDropdown
               pinnedMessages={pinnedList}
               onScrollTo={scrollToMessage}
@@ -791,6 +886,16 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Tool suggestion banner (sidebar) */}
+        {state.toolResult && onClearToolResult && (
+          <ToolSuggestion
+            result={state.toolResult}
+            onUse={(text) => { setInput(text); onClearToolResult(); }}
+            onEdit={(text) => { setInput(text); onClearToolResult(); }}
+            onDismiss={onClearToolResult}
+          />
+        )}
+
         {/* Input */}
         <div className="border-t border-border p-2 shrink-0">
           <div className="flex gap-1 items-end">
@@ -803,7 +908,10 @@ export function ChatPanel({
                 setInput(e.target.value);
                 autoResize(e.target);
               }}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                else if (e.key === "Escape") setInput("");
+              }}
               placeholder="MSG..."
               disabled={busy}
               className="flex-1 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 py-1 outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"
@@ -842,6 +950,16 @@ export function ChatPanel({
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {wsStatus && <ConnectionStatus status={wsStatus} />}
+            {onNewChat && (
+              <button
+                onClick={onNewChat}
+                title="New chat (Ctrl+K)"
+                className="text-muted-foreground hover:text-primary transition-colors"
+              >
+                <SquarePen className="size-4" />
+              </button>
+            )}
             <PinsDropdown
               pinnedMessages={pinnedList}
               onScrollTo={scrollToMessage}
@@ -894,8 +1012,22 @@ export function ChatPanel({
           />
         )}
 
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-2">
+        {/* Messages with drag-and-drop overlay */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto px-6 py-2 relative"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-primary bg-background/80 pointer-events-none">
+              <p className="text-primary font-mono text-sm uppercase tracking-wider">
+                DROP FILES HERE
+              </p>
+            </div>
+          )}
           {state.messages.length === 0 && (
             <div className="flex flex-col justify-center h-full text-muted-foreground uppercase tracking-wider text-center">
               <p className="text-sm font-bold">WHAT DO YOU WANT TO BUILD?</p>
@@ -972,6 +1104,21 @@ export function ChatPanel({
           {state.loading && (
             <TypingIndicator elapsedSeconds={elapsedSeconds} />
           )}
+          {/* Inline task cards -- rendered after last assistant message when ready */}
+          {state.ready && state.tasks && state.tasks.length > 0 && state.sessionId && (
+            <div className="mt-3 space-y-1 pb-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
+                TASKS (click to edit)
+              </p>
+              {state.tasks.map((task: any) => (
+                <InlineTaskCard
+                  key={task.id ?? task.title}
+                  task={{ id: task.id ?? task.title, title: task.title ?? task.name ?? "", priority: task.priority, status: task.status }}
+                  sessionId={state.sessionId!}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tool suggestion banner */}
@@ -982,6 +1129,27 @@ export function ChatPanel({
             onEdit={(text) => { setInput(text); onClearToolResult(); }}
             onDismiss={onClearToolResult}
           />
+        )}
+
+        {/* Pending file chips (from drag-and-drop before session exists) */}
+        {pendingFiles.length > 0 && (
+          <div className="px-4 pt-2 flex flex-wrap gap-1 shrink-0">
+            {pendingFiles.map((f, idx) => (
+              <span
+                key={idx}
+                className="flex items-center gap-1 text-[10px] font-mono border border-border bg-card px-2 py-0.5 text-muted-foreground"
+              >
+                {f.name}
+                <button
+                  onClick={() => removePendingFile(idx)}
+                  className="hover:text-destructive ml-0.5"
+                  title="Remove"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Input bar */}
@@ -997,7 +1165,10 @@ export function ChatPanel({
                 setInput(e.target.value);
                 autoResize(e.target);
               }}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                else if (e.key === "Escape") setInput("");
+              }}
               placeholder="DESCRIBE YOUR PROJECT..."
               disabled={busy}
               className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"

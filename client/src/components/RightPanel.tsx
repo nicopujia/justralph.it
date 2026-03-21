@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ConfidenceMeter } from "./ConfidenceMeter";
 import { TaskList } from "./TaskList";
-import type { ChatState } from "@/hooks/useChatbot";
+import type { ChatState, ToolName } from "@/hooks/useChatbot";
 import type { TaskInfo } from "@/hooks/useEventReducer";
 
 type Tab = "confidence" | "tasks" | "code";
@@ -13,6 +13,8 @@ type RightPanelProps = {
   sessionId?: string;
   onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
   onDimensionClick?: (dimension: string) => void;
+  onRunTool?: (tool: ToolName, context?: string) => void;
+  onClearToolResult?: () => void;
 };
 
 export function RightPanel({
@@ -22,6 +24,8 @@ export function RightPanel({
   sessionId,
   onTaskUpdate,
   onDimensionClick,
+  onRunTool: _onRunTool,
+  onClearToolResult: _onClearToolResult,
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("confidence");
 
