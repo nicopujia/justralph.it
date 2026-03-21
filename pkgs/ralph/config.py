@@ -32,7 +32,7 @@ BRANCH_PREFIX = "ralph/"
 
 # Default project root (current working directory)
 PROJECT_ROOT = Path.cwd()
-RALPH_DIR = PROJECT_ROOT / RALPH_DIR_NAME
+RALPH_DIR = PROJECT_ROOT / PROD_WORKTREE / RALPH_DIR_NAME
 LOGS_DIR = RALPH_DIR / "logs"
 
 
