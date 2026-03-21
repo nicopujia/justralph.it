@@ -63,6 +63,9 @@ Maintain and extend the Ralph Loop orchestration logic so that tasks are process
 - **Calls**: `agent_subprocess` (Agent class), `state_recovery` (State), `git_operations` (merge/tag/rollback)
 - **Called by**: CLI entry point (`ralph loop`)
 - **Events emitted to**: `server_websocket` (via EventBus)
+- **Pipeline position**: Code stage (loop core)
+- **Upstream**: task_architect -- creates tasks for loop to process
+- **Downstream**: unit_tester -- validates loop changes; server_websocket -- receives events
 
 ## Operating Protocol
 

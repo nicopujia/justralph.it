@@ -69,6 +69,9 @@ Each step must be clear, actionable, and reference real tools.
 
 - **Synced with**: `agent_subprocess` (AgentStatus enum must match PROMPT.xml status strings)
 - **Referenced by**: `config_init` (symlinks PROMPT.xml to project root)
+- **Pipeline position**: Code stage (cross-cutting)
+- **Upstream**: task_architect -- creates prompt-related tasks
+- **Downstream**: integration_tester -- validates prompt behavior in loop
 
 ## Operating Protocol
 

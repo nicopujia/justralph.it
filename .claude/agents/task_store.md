@@ -63,6 +63,9 @@ Maintain and extend the task store so that task CRUD operations are reliable, th
 
 - **Called by**: `loop_orchestrator` (task polling, status updates), `state_recovery` (task cleanup), `task_architect` (task creation)
 - **Never calls other agents directly**
+- **Pipeline position**: Code stage (infrastructure)
+- **Upstream**: task_architect -- uses task store to create tasks
+- **Downstream**: unit_tester -- validates task CRUD operations
 
 ## Operating Protocol
 

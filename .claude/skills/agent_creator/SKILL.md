@@ -59,7 +59,7 @@ Run the quality checklist before declaring done:
 
 - [ ] All file paths in "Reads First" exist in the project (`pkgs/`, `server/`, `client/`)
 - [ ] Instructions align with `CLAUDE.md` rules (uv tooling, conventional commits, concise docs, no em-dashes)
-- [ ] No references to MT4, EA, MQL4, trading, or non-existent patterns
+- [ ] No references to non-existent files, deprecated patterns, or stale external project references
 - [ ] Output Contract is complete with real paths
 - [ ] Done-when criteria are measurable ("Done when X" not "when it looks good")
 - [ ] `description` field: starts "Use this agent when...", max 2 sentences

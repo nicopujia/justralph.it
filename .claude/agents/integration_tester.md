@@ -62,6 +62,12 @@ Design and maintain integration tests that catch regressions at subsystem bounda
 - Use real git operations in temp directories (test actual behavior)
 - Use real State/EventBus (test actual persistence and threading)
 
+## Agent Coordination
+
+- **Pipeline position**: Test stage
+- **Upstream**: All code-stage agents -- provide changes to test
+- **Downstream**: qa_reviewer -- receives test results for quality audit
+
 ## Operating Protocol
 
 ### Phase 1: Discovery

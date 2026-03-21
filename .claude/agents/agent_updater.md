@@ -61,6 +61,12 @@ Ensure each agent includes:
 - Maintain consistent error escalation patterns
 - Verify no two agents own the same file (exclusive ownership)
 
+## Agent Coordination
+
+- **Pipeline position**: Meta (not in formal pipeline)
+- **Upstream**: agent_creator -- new agents need quality check; qa_reviewer -- flags agent drift
+- **Downstream**: None (maintenance agent)
+
 ## Update Workflow
 
 1. **Audit** -- Scan all `.claude/agents/*.md` files for drift indicators
@@ -78,7 +84,7 @@ Before marking an agent as "updated", verify:
 - [ ] Instructions align with `CLAUDE.md` rules (uv tooling, conventional commits, concise docs)
 - [ ] Output contract is complete and specific
 - [ ] Done-when criteria are measurable
-- [ ] No references to MT4, EA, MQL4, trading, or non-existent patterns
+- [ ] No references to non-existent files, deprecated patterns, or stale external project references
 - [ ] Role-specific best practices from the table above are included
 - [ ] Description starts with "Use this agent when..."
 

@@ -58,6 +58,9 @@ Maintain and extend the git utilities so that branch isolation, tag-based checkp
 
 - **Called by**: `loop_orchestrator` (merge/tag/rollback during status handling), `state_recovery` (hard_reset during crash recovery), `config_init` (is_repo check during setup)
 - **Never calls other agents directly**
+- **Pipeline position**: Code stage (infrastructure)
+- **Upstream**: loop_orchestrator -- calls git ops during status handling
+- **Downstream**: unit_tester -- validates git operations
 
 ## Operating Protocol
 

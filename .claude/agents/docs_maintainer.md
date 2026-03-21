@@ -67,6 +67,12 @@ When code patterns change significantly:
 - Verify CLAUDE.md rules still match actual codebase conventions
 - Flag rules that reference deleted or renamed patterns
 
+## Agent Coordination
+
+- **Pipeline position**: Docs stage (final in pipeline)
+- **Upstream**: qa_reviewer -- QA pass triggers documentation update
+- **Downstream**: None (final stage in pipeline)
+
 ## Operating Protocol
 
 ### Phase 1: Discovery

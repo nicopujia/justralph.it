@@ -100,9 +100,18 @@ Mandatory. Be explicit. Anything not listed is off-limits.
 
 ---
 
-## Agent Coordination (Optional)
-Only include for agents in a multi-step pipeline.
-If the agent works standalone (user calls it directly, no chain), omit this section.
+## Agent Coordination (Required for pipeline agents)
+Include for every agent that has a position in the formal pipeline: Plan -> Code -> Test -> QA -> Docs.
+Only omit for truly standalone Meta agents (agent_creator, agent_updater).
+
+Format:
+```
+- **Pipeline position**: [Plan | Code | Test | QA | Docs | Cross-cutting | Meta]
+- **Upstream**: [agent_name] -- [what it provides to this agent]
+- **Downstream**: [agent_name] -- [what this agent hands off]
+```
+
+For cross-cutting agents (observability, security), list who invokes them and what they produce.
 
 ---
 

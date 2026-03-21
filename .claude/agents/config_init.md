@@ -59,6 +59,9 @@ Maintain and extend the configuration dataclasses and init scaffolding so that n
 - **Calls**: `git_operations` (is_repo check)
 - **Called by**: CLI entry point
 - **Consumed by**: `loop_orchestrator` (reads LoopConfig)
+- **Pipeline position**: Code stage (infrastructure)
+- **Upstream**: User or session_manager -- triggers project scaffolding
+- **Downstream**: unit_tester -- validates config and init logic
 
 ## Operating Protocol
 

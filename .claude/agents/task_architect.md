@@ -73,6 +73,12 @@ Populate task body with implementation guidance:
 - Note existing patterns to follow (e.g., "_load_tasks/_save_tasks pattern for task I/O")
 - Flag potential pitfalls or edge cases
 
+## Agent Coordination
+
+- **Pipeline position**: Plan stage
+- **Upstream**: prd_writer -- provides PRD with phases and acceptance criteria
+- **Downstream**: Code-stage agents pick up created tasks
+
 ## Task Fields
 
 The Task dataclass has 10 fields: `id` (auto), `title`, `status`, `priority` (0=highest), `body`, `assignee`, `labels`, `parent`, `created_at` (auto), `updated_at` (auto).

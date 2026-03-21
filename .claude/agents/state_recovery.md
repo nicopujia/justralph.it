@@ -59,6 +59,9 @@ Maintain and extend the crash recovery and state persistence code so developers 
 
 - **Called by**: `loop_orchestrator` (save/clear state, check crash recovery, cleanup)
 - **Calls**: `git_operations` (hard_reset, reset_git_state), `task_store` (update_task)
+- **Pipeline position**: Code stage (loop core)
+- **Upstream**: loop_orchestrator -- calls recovery at lifecycle points
+- **Downstream**: unit_tester -- validates recovery logic
 
 ## Operating Protocol
 

@@ -61,6 +61,10 @@ Maintain and extend the Agent subprocess wrapper and EventBus so that OpenCode r
 - **Consumes**: `task_store` (Task.as_xml() for agent prompt)
 - **Consumed by**: `server_websocket` (EventBus.drain() for WebSocket broadcast)
 - **Synced with**: `prompt_engineer` (PROMPT.xml status strings must match AgentStatus enum)
+- **Pipeline position**: Code stage (loop core)
+- **Upstream**: loop_orchestrator -- invokes agent for task processing
+- **Downstream**: unit_tester -- validates agent/event changes
+- **Shared boundary**: error_handler DEFINES exceptions in `exceptions.py`; agent_subprocess RAISES them from `agent.py`
 
 ## Operating Protocol
 

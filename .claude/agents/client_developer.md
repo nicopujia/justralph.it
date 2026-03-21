@@ -66,6 +66,9 @@ Maintain and extend the React 19 frontend code: components, state management, We
 
 - **Consumes**: `server_websocket` (API contract -- REST endpoints and WebSocket format)
 - **References**: `agent_subprocess` (EventType enum for message parsing)
+- **Pipeline position**: Code stage (client)
+- **Upstream**: server_websocket -- provides API contract
+- **Downstream**: unit_tester -- validates components (bun test); typescript_improver -- improves code quality
 
 ## Operating Protocol
 

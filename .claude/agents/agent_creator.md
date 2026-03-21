@@ -57,6 +57,12 @@ Transform a stated requirement into a complete, deployable `.claude/agents/*.md`
 - Python agents must reference `uv` tooling where applicable
 - Color follows semantic guide: purple=core logic, blue=creation/scaffolding, green=execution/testing, orange=maintenance, red=risk, gray=standards/enforcement
 
+## Agent Coordination
+
+- **Pipeline position**: Meta (not in formal pipeline)
+- **Upstream**: qa_reviewer -- may propose new agents; User -- requests new agents
+- **Downstream**: agent_updater -- validates newly created agents
+
 ## Operating Protocol
 
 ### Phase 1: Discovery
@@ -77,7 +83,7 @@ Transform a stated requirement into a complete, deployable `.claude/agents/*.md`
 1. Verify: all file paths in "Reads First" exist (`ls` or Read to confirm).
 2. Verify: "description" starts with "Use this agent when..." and is 1-2 sentences max.
 3. Verify: Output Contract has real paths, not vague descriptions.
-4. Verify: no references to MT4, EA, MQL4, trading, or any non-existent patterns.
+4. Verify: no references to non-existent files, deprecated patterns, or stale external project references.
 5. Write to `.claude/agents/{snake_case_name}.md`.
 6. Update `existing_agents_index.md` with new agent's name + one-line scope.
 

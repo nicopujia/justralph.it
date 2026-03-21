@@ -60,6 +60,10 @@ Maintain and extend the FastAPI server code: WebSocket endpoints, REST API route
 - **Consumes**: `agent_subprocess` (EventBus events), `task_store` (Task CRUD)
 - **Consumed by**: `client_developer` (API contract)
 - **Calls**: `loop_orchestrator` (starts loop in background thread)
+- **Pipeline position**: Code stage (server)
+- **Upstream**: loop_orchestrator -- emits events consumed by WebSocket
+- **Downstream**: unit_tester -- validates API endpoints; client_developer -- consumes API
+- **Scope note**: chatbot_engine owns `server/chatbot.py`; session_manager owns `server/sessions.py`. This agent owns API routes in `server/main.py`.
 
 ## Operating Protocol
 
