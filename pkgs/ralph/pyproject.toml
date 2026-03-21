@@ -5,7 +5,8 @@ description = "Autonomous coding agent loop."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "bd",
+    "tasks",
+    "pyyaml>=6.0",
     "psutil>=7.2.2",
 ]
 
@@ -27,4 +28,4 @@ ralph = ["opencode.jsonc", "PROMPT.xml"]
 "ralph.templates" = ["hooks.py"]
 
 [tool.uv.sources]
-bd = { workspace = true }
+tasks = { workspace = true }

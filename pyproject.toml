@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "bd",
+    "tasks",
     "fastapi[standard]>=0.135.1",
     "ralph",
 ]
@@ -15,19 +15,29 @@ python = ".venv"
 
 [tool.uv.workspace]
 members = [
-    "pkgs/bd",
+    "pkgs/tasks",
     "pkgs/ralph",
 ]
 
 [tool.uv.sources]
 ralph = { workspace = true }
-bd = { workspace = true }
+tasks = { workspace = true }
 
 [dependency-groups]
 dev = [
     "ruff>=0.15.6",
     "ty>=0.0.23",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests",
+]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 88
