@@ -3,10 +3,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfidenceMeter } from "./ConfidenceMeter";
 import { TaskList } from "./TaskList";
-import type { ChatState } from "@/hooks/useChatbot";
+import type { ChatState, Confidence } from "@/hooks/useChatbot";
 import type { TaskInfo } from "@/hooks/useEventReducer";
 
-type Tab = "confidence" | "tasks";
+type Tab = "confidence" | "tasks" | "summary";
 
 type RightPanelProps = {
   chatState: ChatState;
@@ -14,9 +14,110 @@ type RightPanelProps = {
   loopStarted: boolean;
   sessionId?: string;
   onTaskUpdate?: (taskId: string, patch: Partial<TaskInfo>) => void;
+  onDimensionClick?: (dimension: string) => void;
 };
 
-export function RightPanel({ chatState, tasks, loopStarted, sessionId, onTaskUpdate }: RightPanelProps) {
+const DIMENSION_LABELS: Record<keyof Confidence, string> = {
+  functional: "Functional",
+  technical_stack: "Tech Stack",
+  data_model: "Data Model",
+  auth: "Auth",
+  deployment: "Deployment",
+  testing: "Testing",
+  edge_cases: "Edge Cases",
+};
+
+function SummaryTab({ chatState }: { chatState: ChatState }) {
+  const { project, confidence, phase, questionCount } = chatState;
+
+  const activeDims = (Object.entries(confidence) as [keyof Confidence, number][]).filter(
+    ([, v]) => v > 0,
+  );
+
+  return (
+    <div className="space-y-4 text-sm">
+      {/* Project metadata */}
+      {project && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Project
+          </p>
+          {project.name && (
+            <p className="font-medium">{project.name}</p>
+          )}
+          {project.description && (
+            <p className="text-xs text-muted-foreground">{project.description}</p>
+          )}
+          <div className="flex flex-wrap gap-1 mt-1">
+            {project.language && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{project.language}</span>
+            )}
+            {project.framework && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{project.framework}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Confidence by dimension */}
+      {activeDims.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Confidence
+          </p>
+          <ul className="space-y-0.5">
+            {activeDims.map(([key, value]) => (
+              <li key={key} className="flex justify-between text-xs">
+                <span className="text-muted-foreground">{DIMENSION_LABELS[key]}</span>
+                <span
+                  className={`font-mono tabular-nums font-medium ${
+                    value >= 70
+                      ? "text-green-600 dark:text-green-400"
+                      : value >= 40
+                        ? "text-yellow-600 dark:text-yellow-400"
+                        : "text-red-500"
+                  }`}
+                >
+                  {value}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Session metadata */}
+      <div className="space-y-0.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Session
+        </p>
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground">Phase</span>
+          <span>{phase}/4</span>
+        </div>
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground">Questions</span>
+          <span>{questionCount}</span>
+        </div>
+      </div>
+
+      {activeDims.length === 0 && !project && (
+        <p className="text-xs text-muted-foreground text-center py-4 opacity-60">
+          Summary builds as you chat.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function RightPanel({
+  chatState,
+  tasks,
+  loopStarted,
+  sessionId,
+  onTaskUpdate,
+  onDimensionClick,
+}: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("confidence");
 
   return (
@@ -45,6 +146,14 @@ export function RightPanel({ chatState, tasks, loopStarted, sessionId, onTaskUpd
               </span>
             )}
           </Button>
+          <Button
+            variant={activeTab === "summary" ? "secondary" : "ghost"}
+            size="sm"
+            className="text-xs h-7 px-3"
+            onClick={() => setActiveTab("summary")}
+          >
+            Summary
+          </Button>
         </div>
       </CardHeader>
 
@@ -57,6 +166,7 @@ export function RightPanel({ chatState, tasks, loopStarted, sessionId, onTaskUpd
             questionCount={chatState.questionCount}
             phase={chatState.phase}
             ready={chatState.ready}
+            onDimensionClick={onDimensionClick}
           />
         )}
         {activeTab === "tasks" && (
@@ -67,6 +177,9 @@ export function RightPanel({ chatState, tasks, loopStarted, sessionId, onTaskUpd
               <p className="opacity-60">Tasks appear once the loop starts.</p>
             </div>
           )
+        )}
+        {activeTab === "summary" && (
+          <SummaryTab chatState={chatState} />
         )}
       </CardContent>
     </Card>

@@ -149,6 +149,13 @@ def load_chat_messages(session_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def delete_chat_messages(session_id: str) -> None:
+    conn = _get_conn()
+    conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+
 # -- Chat state ----------------------------------------------------------------
 
 

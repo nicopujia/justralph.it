@@ -202,14 +202,21 @@ export function useChatbot() {
     [state.sessionId, createSession],
   );
 
-  const ralphIt = useCallback(async () => {
+  // tasksOverride: if provided, sent in the request body so the server
+  // uses the user-edited list instead of chatbot-generated tasks.
+  const ralphIt = useCallback(async (tasksOverride?: any[]) => {
     if (!state.sessionId) return null;
     setState((s) => ({ ...s, loading: true, error: null }));
 
     try {
+      const body = tasksOverride ? JSON.stringify({ tasks: tasksOverride }) : undefined;
       const resp = await fetch(
         `${API}/api/sessions/${state.sessionId}/ralph-it`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: body ? { "Content-Type": "application/json" } : undefined,
+          body,
+        },
       );
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ detail: "Server error" }));
@@ -233,5 +240,24 @@ export function useChatbot() {
     setState((s) => ({ ...s, error: null }));
   }, []);
 
-  return { state, sendMessage, ralphIt, createSession, clearError };
+  /** Remove the last user+assistant message pair and sync confidence from server. */
+  const undoLastMessage = useCallback(async () => {
+    if (!state.sessionId) return;
+    const resp = await fetch(`${API}/api/sessions/${state.sessionId}/chat/undo`, {
+      method: "POST",
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    setState((s) => ({
+      ...s,
+      messages: s.messages.slice(0, -2),
+      confidence: data.confidence ?? s.confidence,
+      relevance: data.relevance ?? s.relevance,
+      ready: data.ready ?? false,
+      weightedReadiness: data.weighted_readiness ?? s.weightedReadiness,
+      questionCount: data.question_count ?? s.questionCount,
+    }));
+  }, [state.sessionId]);
+
+  return { state, sendMessage, ralphIt, createSession, clearError, undoLastMessage };
 }

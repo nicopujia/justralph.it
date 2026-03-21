@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, Send, Loader2, Rocket, Paperclip } from "lucide-react";
+import { MessageCircle, Send, Loader2, Rocket, Paperclip, Undo2 } from "lucide-react";
 import { API_URL } from "@/lib/config";
 import { ConfidenceMeter } from "./ConfidenceMeter";
 import { useToast } from "./Toast";
@@ -13,20 +13,26 @@ type ChatPanelProps = {
   state: ChatState;
   onSend: (message: string) => void;
   onRalphIt: () => void;
+  /** Called when user wants to review generated tasks before starting loop. */
+  onReviewTasks?: () => void;
   onClearError?: () => void;
   /** true while ralphIt() is in flight (distinct from message loading). */
   ralphItLoading?: boolean;
   /** "full" = Phase 1 fullscreen; "sidebar" = Phase 2 collapsed sidebar. */
   mode?: "full" | "sidebar";
+  /** Undo the last user+assistant message pair. */
+  onUndo?: () => void;
 };
 
 export function ChatPanel({
   state,
   onSend,
   onRalphIt,
+  onReviewTasks,
   onClearError,
   ralphItLoading = false,
   mode = "full",
+  onUndo,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -84,22 +90,42 @@ export function ChatPanel({
               <p>No messages yet.</p>
             </div>
           )}
-          {state.messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+          {state.messages.map((msg, i) => {
+            // Last user message index (for undo button)
+            const lastUserIdx = state.messages.length >= 2
+              ? state.messages.map((m) => m.role).lastIndexOf("user")
+              : -1;
+            const showUndo = onUndo && msg.role === "user" && i === lastUserIdx && state.messages.length >= 2;
+            return (
               <div
-                className={`max-w-full rounded-md px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.content}
+                <div className={`flex items-end gap-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                  {showUndo && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-5 shrink-0 text-muted-foreground hover:text-foreground opacity-60 hover:opacity-100"
+                      title="Undo last message"
+                      onClick={onUndo}
+                    >
+                      <Undo2 className="size-3" />
+                    </Button>
+                  )}
+                  <div
+                    className={`max-w-full rounded-md px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {state.loading && (
             <div className="flex justify-start">
               <div className="bg-muted rounded-md px-2.5 py-1.5">
@@ -109,22 +135,34 @@ export function ChatPanel({
           )}
         </div>
 
-        {/* Ralph It button (sidebar) */}
+        {/* Ready actions (sidebar) */}
         {state.ready && (
           <div className="px-2 pb-2 shrink-0">
-            <Button
-              onClick={onRalphIt}
-              disabled={busy}
-              className="w-full bg-green-600 hover:bg-green-700 text-white text-xs h-8"
-              size="sm"
-            >
-              {ralphItLoading ? (
-                <Loader2 className="size-3 mr-1 animate-spin" />
-              ) : (
+            {onReviewTasks ? (
+              <Button
+                onClick={onReviewTasks}
+                disabled={busy}
+                className="w-full bg-green-600 hover:bg-green-700 text-white text-xs h-8"
+                size="sm"
+              >
                 <Rocket className="size-3 mr-1" />
-              )}
-              {ralphItLoading ? "Creating project..." : "Ralph It"}
-            </Button>
+                Review Tasks
+              </Button>
+            ) : (
+              <Button
+                onClick={onRalphIt}
+                disabled={busy}
+                className="w-full bg-green-600 hover:bg-green-700 text-white text-xs h-8"
+                size="sm"
+              >
+                {ralphItLoading ? (
+                  <Loader2 className="size-3 mr-1 animate-spin" />
+                ) : (
+                  <Rocket className="size-3 mr-1" />
+                )}
+                {ralphItLoading ? "Creating project..." : "Ralph It"}
+              </Button>
+            )}
           </div>
         )}
 
@@ -207,22 +245,41 @@ export function ChatPanel({
                 <p className="text-sm mt-1">Describe your idea and Ralphy will take it from there.</p>
               </div>
             )}
-            {state.messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
+            {state.messages.map((msg, i) => {
+              const lastUserIdx = state.messages.length >= 2
+                ? state.messages.map((m) => m.role).lastIndexOf("user")
+                : -1;
+              const showUndo = onUndo && msg.role === "user" && i === lastUserIdx && state.messages.length >= 2;
+              return (
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
+                  key={i}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {msg.content}
+                  <div className={`flex items-end gap-1.5 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                    {showUndo && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 shrink-0 text-muted-foreground hover:text-foreground opacity-60 hover:opacity-100"
+                        title="Undo last message"
+                        onClick={onUndo}
+                      >
+                        <Undo2 className="size-3.5" />
+                      </Button>
+                    )}
+                    <div
+                      className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {state.loading && (
               <div className="flex justify-start">
                 <div className="bg-muted rounded-lg px-4 py-2.5">
@@ -291,26 +348,38 @@ export function ChatPanel({
 
           {state.ready && (
             <div className="flex flex-col items-center gap-2">
-              <Button
-                onClick={onRalphIt}
-                disabled={busy}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
-                size="lg"
-              >
-                {ralphItLoading ? (
-                  <>
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                    Creating project...
-                  </>
-                ) : (
-                  <>
-                    <Rocket className="size-4 mr-2" />
-                    Just Ralph It
-                  </>
-                )}
-              </Button>
-              {/* Shown if ralphIt has been loading for >15s */}
-              {slowLoad && (
+              {onReviewTasks ? (
+                <Button
+                  onClick={onReviewTasks}
+                  disabled={busy}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  size="lg"
+                >
+                  <Rocket className="size-4 mr-2" />
+                  Review Tasks
+                </Button>
+              ) : (
+                <Button
+                  onClick={onRalphIt}
+                  disabled={busy}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  size="lg"
+                >
+                  {ralphItLoading ? (
+                    <>
+                      <Loader2 className="size-4 mr-2 animate-spin" />
+                      Creating project...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="size-4 mr-2" />
+                      Just Ralph It
+                    </>
+                  )}
+                </Button>
+              )}
+              {/* Shown if ralphIt has been loading for >15s (only applies to direct ralph-it flow) */}
+              {slowLoad && !onReviewTasks && (
                 <p className="text-xs text-muted-foreground text-center">
                   This is taking a while...
                 </p>

@@ -9,6 +9,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -156,6 +157,7 @@ You MUST respond with valid JSON only (no markdown, no code fences):
     "functional": <0.0-1.0>, "technical_stack": <0.0-1.0>, "data_model": <0.0-1.0>,
     "auth": <0.0-1.0>, "deployment": <0.0-1.0>, "testing": <0.0-1.0>, "edge_cases": <0.0-1.0>
   }},
+  "contradictions": [],
   "ready": false
 }}
 
@@ -165,6 +167,7 @@ When requirements are thoroughly covered, set "ready": true and add:
   "message": "Here are the tasks:",
   "confidence": {{ ... }},
   "relevance": {{ ... }},
+  "contradictions": [],
   "ready": true,
   "tasks": [
     {{ "title": "...", "body": "Acceptance: ...\\nDesign: ...", "priority": 1, "parent": null }},
@@ -183,6 +186,16 @@ When requirements are thoroughly covered, set "ready": true and add:
 - Don't assume. If unsure, ask.
 - Score honestly. The server validates independently.
 - Before ready=true: verify ZERO contradictions. Every gap becomes a bug.
+- After each user answer, check for contradictions with previous answers.
+  If the user previously said one thing (e.g., "Python") and now says something
+  conflicting (e.g., "JavaScript"), DO NOT update confidence. Instead, set your
+  message to ask the user to clarify: "Earlier you mentioned Python, but now
+  you're saying JavaScript. Which one should I use?"
+- Include a "contradictions" field in your JSON response (array of strings).
+  Each string describes a detected contradiction. Empty array if none.
+- If the user's message contains '[Attached: ...]', they have uploaded files.
+  Acknowledge the files by name and factor them into your understanding of
+  the project. Ask what role these files play if unclear.
 """
 
 
@@ -198,6 +211,7 @@ class ChatState:
     project: dict | None = None
     weighted_readiness: float = 0.0
     session_dir: Path | None = None
+    last_message_time: float = 0.0
 
     @property
     def user_msg_count(self) -> int:
@@ -247,6 +261,11 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         )
 
     state = get_chat_state(session_id)
+
+    # A3: Rate limiting
+    if time.time() - state.last_message_time < 3.0:
+        raise RuntimeError("Please wait a few seconds between messages")
+
     if session_dir:
         state.session_dir = session_dir
 
@@ -294,11 +313,16 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     state.messages.append({"role": "assistant", "content": json.dumps(parsed)})
     db.save_chat_message(session_id, "assistant", json.dumps(parsed))
 
+    # A1: Contradiction detection -- skip confidence update if contradictions found
+    contradictions = parsed.get("contradictions") or []
+    if contradictions:
+        logger.info("Contradictions detected: %s", contradictions)
+
     # Validate and apply confidence
     user_msg_len = len(user_message)
     phase_max = _phase_cap(state.user_msg_count)
 
-    if "confidence" in parsed:
+    if "confidence" in parsed and not contradictions:
         for dim in DIMENSIONS:
             raw = parsed["confidence"].get(dim)
             if not isinstance(raw, (int, float)):
@@ -347,6 +371,9 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
             state.project,
         )
 
+    # A3: Record timestamp after processing
+    state.last_message_time = time.time()
+
     return {
         "message": assistant_msg,
         "confidence": state.confidence,
@@ -357,6 +384,89 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         "phase": _get_phase(state.user_msg_count),
         "tasks": state.tasks,
         "project": state.project,
+        "contradictions": contradictions,
+    }
+
+
+def undo_last_message(session_id: str) -> dict:
+    """Remove last user+assistant pair and recalculate confidence from history.
+
+    Re-parses assistant messages (no LLM re-call needed) to rebuild scores.
+    """
+    state = get_chat_state(session_id)
+    if len(state.messages) < 2:
+        raise RuntimeError("Nothing to undo")
+
+    # Remove last 2 messages (user + assistant)
+    state.messages = state.messages[:-2]
+
+    # Reset confidence to zeros
+    state.confidence = {d: 0 for d in DIMENSIONS}
+    state.relevance = {d: 1.0 for d in DIMENSIONS}
+    state.ready = False
+    state.tasks = None
+    state.project = None
+
+    # Replay assistant messages to recalculate confidence
+    # Compute user_msg_count at each step for correct phase capping
+    user_count = 0
+    for msg in state.messages:
+        if msg["role"] == "user":
+            user_count += 1
+            continue
+        # Assistant message -- try to parse its JSON content
+        try:
+            parsed = json.loads(msg["content"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        # Skip turns with contradictions (same logic as live chat)
+        if parsed.get("contradictions"):
+            continue
+
+        phase_max = _phase_cap(user_count)
+        if "confidence" in parsed:
+            for dim in DIMENSIONS:
+                raw = parsed["confidence"].get(dim)
+                if not isinstance(raw, (int, float)):
+                    continue
+                prev = state.confidence[dim]
+                # Use a default msg length for replay (not short)
+                clamped = _clamp_score(int(raw), prev, phase_max, SHORT_MSG_LEN + 1)
+                state.confidence[dim] = _smooth(clamped, prev)
+
+        if "relevance" in parsed:
+            for dim in DIMENSIONS:
+                rel = parsed["relevance"].get(dim)
+                if isinstance(rel, (int, float)):
+                    state.relevance[dim] = max(0.0, min(1.0, float(rel)))
+
+    state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
+    state.ready = _is_ready(state)
+
+    # Persist updated messages
+    db.delete_chat_messages(session_id)
+    for msg in state.messages:
+        db.save_chat_message(session_id, msg["role"], msg["content"])
+
+    db.save_chat_state(
+        session_id,
+        state.confidence,
+        state.relevance,
+        state.ready,
+        state.weighted_readiness,
+        state.tasks,
+        state.project,
+    )
+
+    return {
+        "confidence": state.confidence,
+        "relevance": state.relevance,
+        "ready": state.ready,
+        "weighted_readiness": round(state.weighted_readiness, 1),
+        "question_count": state.user_msg_count,
+        "phase": _get_phase(state.user_msg_count),
+        "message_count": len(state.messages),
     }
 
 
