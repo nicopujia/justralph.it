@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 PACKAGE_ROOT = Path(ralph_module.__file__).parent
 TEMPLATES = PACKAGE_ROOT / "templates"
 
-RALPH_GITIGNORE_CONTENT = "logs/\nstate.json\n*.ralph\n"
+RALPH_GITIGNORE_CONTENT = "logs/\nstate.json\n*.ralph\nbackups/\n"
 
 
 @dataclass
