@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import httpx
+
 from ralph.core.events import EventBus, EventType
 from ralph.core.hooks import load_hooks
 from ralph.core.ralphy_runner import RalphyRunner, RunnerConfig
@@ -53,14 +55,45 @@ class Session:
 _sessions: dict[str, Session] = {}
 
 
-def create_session(*, github_url: str = "", sessions_dir: Path = SESSIONS_DIR) -> Session:
+def _create_github_repo(session_id: str, github_token: str) -> str:
+    """Create a GitHub repo via API, return clone_url or empty string on failure."""
+    repo_name = f"ralph-{session_id[:8]}"
+    try:
+        resp = httpx.post(
+            "https://api.github.com/user/repos",
+            headers={
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            json={"name": repo_name, "private": False, "auto_init": False},
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            clone_url = resp.json().get("clone_url", "")
+            logger.info("Created GitHub repo %s -> %s", repo_name, clone_url)
+            return clone_url
+        logger.warning(
+            "GitHub repo creation failed (%s): %s", resp.status_code, resp.text
+        )
+    except Exception:
+        logger.warning("GitHub repo creation error", exc_info=True)
+    return ""
+
+
+def create_session(
+    *,
+    github_url: str = "",
+    github_token: str = "",
+    sessions_dir: Path = SESSIONS_DIR,
+) -> Session:
     """Create a new isolated session with git repo + ralph scaffolding.
 
     1. Generate session ID
     2. Create session directory
     3. git init
-    4. ralph init (creates .ralphy/, tasks.yaml, symlinks)
-    5. Add GitHub remote if provided
+    4. Auto-create GitHub repo if token provided and no url given
+    5. ralph init (creates .ralphy/, tasks.yaml, symlinks)
+    6. Add GitHub remote if available
     """
     session_id = uuid.uuid4().hex[:12]
     base_dir = sessions_dir / session_id
@@ -75,6 +108,10 @@ def create_session(*, github_url: str = "", sessions_dir: Path = SESSIONS_DIR) -
         cwd=base_dir, check=True, capture_output=True,
     )
     logger.info("Created git repo at %s", base_dir)
+
+    # Auto-create GitHub repo when token is provided but no explicit url
+    if github_token and not github_url:
+        github_url = _create_github_repo(session_id, github_token)
 
     # ralph init scaffolds .ralphy/, tasks.yaml, PROMPT.xml symlink
     from ralph.cmds.init import Init, InitConfig, PACKAGE_ROOT

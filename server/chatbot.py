@@ -100,6 +100,18 @@ def _is_ready(state: "ChatState") -> bool:
     return True
 
 
+def _find_weakest_dimension(state: "ChatState") -> str | None:
+    """Return the relevant dimension with the lowest confidence score."""
+    worst, worst_score = None, 101
+    for d in DIMENSIONS:
+        if state.relevance.get(d, 1.0) <= RELEVANCE_CUTOFF:
+            continue
+        score = state.confidence.get(d, 0)
+        if score < worst_score:
+            worst, worst_score = d, score
+    return worst
+
+
 SYSTEM_PROMPT = """\
 You are Ralphy, an expert software architect and requirement extractor.
 
@@ -296,6 +308,28 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
 
     state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
     state.ready = _is_ready(state)
+
+    # Override premature "ready" announcements from the LLM.
+    # The LLM may set ready=true at ~70% confidence; server _is_ready() is authoritative.
+    # If mismatch: replace the message, strip tasks/project, fix history.
+    llm_said_ready = parsed.get("ready", False)
+    if llm_said_ready and not state.ready:
+        weakest = _find_weakest_dimension(state)
+        label = weakest.replace("_", " ") if weakest else "some areas"
+        assistant_msg = (
+            f"I'm getting closer to understanding your project, but I need "
+            f"a few more details about **{label}** before we can generate tasks."
+        )
+        parsed.pop("tasks", None)
+        parsed.pop("project", None)
+        parsed["message"] = assistant_msg
+        parsed["ready"] = False
+        # Update conversation history with the corrected message
+        state.messages[-1] = {"role": "assistant", "content": json.dumps(parsed)}
+        logger.info(
+            "Overrode premature ready (readiness=%.1f, threshold=%d, weakest=%s)",
+            state.weighted_readiness, READINESS_THRESHOLD, weakest,
+        )
 
     if state.ready:
         state.tasks = parsed.get("tasks")

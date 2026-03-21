@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 import tasks
 
+from .auth import auth_router
 from .chatbot import chat as chatbot_chat, get_chat_state
 from .sessions import (
     Session,
@@ -74,6 +75,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(auth_router, prefix="/api/auth")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -123,12 +126,16 @@ async def ws_session(ws: WebSocket, session_id: str):
 
 class CreateSessionRequest(BaseModel):
     github_url: str = ""
+    github_token: str = ""
 
 
 @app.post("/api/sessions", status_code=201)
 def api_create_session(req: CreateSessionRequest):
     """Create a new isolated session with git repo + ralph scaffolding."""
-    session = create_session(github_url=req.github_url)
+    session = create_session(
+        github_url=req.github_url,
+        github_token=req.github_token,
+    )
     return session.to_dict()
 
 
