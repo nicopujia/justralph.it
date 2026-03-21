@@ -18,7 +18,7 @@ from .exceptions import BadAgentStatus
 
 logger = logging.getLogger(__name__)
 
-OPENCODE_CMD = "opencode"
+OPENCODE_CMD = shutil.which("opencode") or str(Path.home() / ".opencode" / "bin" / "opencode")
 
 
 class AgentStatus(StrEnum):

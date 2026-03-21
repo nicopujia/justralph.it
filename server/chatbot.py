@@ -14,8 +14,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-OPENCODE_CMD = "opencode"
-DEFAULT_MODEL = "opencode/kimi-k2.5"
+OPENCODE_CMD = shutil.which("opencode") or str(Path.home() / ".opencode" / "bin" / "opencode")
+DEFAULT_MODEL = "opencode-go/kimi-k2.5"
 
 DIMENSIONS = [
     "functional",       # what does it do?
@@ -263,6 +263,7 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
 
     # Parse response -- opencode --format json wraps in a JSON envelope
     content = _extract_content(output)
+    content = _strip_code_fences(content)
 
     try:
         parsed = json.loads(content)
@@ -313,15 +314,38 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     }
 
 
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) that LLMs love to add."""
+    import re
+    # Match ```json\n...\n``` or ```\n...\n```
+    m = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return text.strip()
+
+
 def _extract_content(output: str) -> str:
-    """Extract the LLM's response text from opencode's --format json output."""
-    # opencode --format json wraps response in a JSON object
-    try:
-        data = json.loads(output)
-        # opencode returns {response: "...", ...} or similar
-        if isinstance(data, dict):
-            return data.get("response", data.get("content", data.get("output", output)))
-        return output
-    except json.JSONDecodeError:
-        # Raw text output -- use as-is
-        return output
+    """Extract the LLM's response text from opencode's --format json NDJSON output.
+
+    OpenCode emits newline-delimited JSON events:
+        {"type": "step_start", ...}
+        {"type": "text", "part": {"text": "actual response"}, ...}
+        {"type": "step_finish", ...}
+
+    We concatenate all "text" event payloads.
+    """
+    texts: list[str] = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+            if event.get("type") == "text":
+                text = event.get("part", {}).get("text", "")
+                if text:
+                    texts.append(text)
+        except json.JSONDecodeError:
+            # Not JSON -- might be raw text, append it
+            texts.append(line)
+    return "".join(texts) if texts else output

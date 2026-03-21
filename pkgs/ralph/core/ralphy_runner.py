@@ -38,7 +38,7 @@ class RunnerConfig(Config):
         metadata={"help": "Project root directory"},
     )
     model: str = field(
-        default="opencode/kimi-k2.5",
+        default="opencode-go/kimi-k2.5",
         metadata={"help": "Model for OpenCode (e.g., opencode/kimi-k2.5)"},
     )
     poll_interval: float = field(
