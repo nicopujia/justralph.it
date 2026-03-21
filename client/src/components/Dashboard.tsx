@@ -1,28 +1,90 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useEventReducer } from "@/hooks/useEventReducer";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useChatbot } from "@/hooks/useChatbot";
+import { useBranching } from "@/hooks/useBranching";
 import { useToast } from "./Toast";
-import { WS_URL } from "@/lib/config";
+import { useSoundNotification } from "@/hooks/useSoundNotification";
+import { API_URL, WS_URL } from "@/lib/config";
 import { ChatPanel } from "./ChatPanel";
 import { TaskPreview, type PreviewTask } from "./TaskPreview";
 import { StatusBar } from "./StatusBar";
 import { AgentOutput } from "./AgentOutput";
 import { HelpPanel } from "./HelpPanel";
 import { RightPanel } from "./RightPanel";
+import { SessionSidebar, type SessionEntry } from "./SessionSidebar";
+import { SessionTitle } from "./SessionTitle";
 import { MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Theme } from "@/hooks/useTheme";
 
 type Phase = "chat" | "preview" | "loop";
 
+type DashboardUser = {
+  login: string;
+  name: string;
+  avatar_url: string;
+};
+
 type DashboardProps = {
   theme?: Theme;
   onThemeToggle?: () => void;
+  onLogout?: () => void;
+  /** Authenticated GitHub user; undefined when skipped. */
+  user?: DashboardUser;
 };
 
-export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
+export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardProps) {
   const [phase, setPhase] = useState<Phase>("chat");
   const chatbot = useChatbot();
+  const branching = useBranching(chatbot.state.sessionId, chatbot.state.messages);
+  // Loading state for non-main branch sends (main branch uses chatbot.state.loading).
+  const [branchLoading, setBranchLoading] = useState(false);
+
+  // Derived chat state: swap in active branch messages + loading when not on main branch.
+  const displayState = branching.isMainBranch
+    ? chatbot.state
+    : { ...chatbot.state, messages: branching.activeMessages, loading: branchLoading };
+
+  /**
+   * Send handler that is branch-aware:
+   * - On main branch: delegates to chatbot.sendMessage (normal flow).
+   * - On a non-main branch: appends optimistically, calls API directly,
+   *   stores result in branch without touching main chatbot state.
+   */
+  const handleBranchSend = useCallback(async (message: string) => {
+    if (branching.isMainBranch) {
+      chatbot.sendMessage(message);
+      return;
+    }
+    // Append user message to branch immediately
+    const userMsg = { role: "user" as const, content: message, timestamp: Date.now(), status: "sent" as const };
+    const withUser = [...branching.activeMessages, userMsg];
+    branching.setActiveBranchMessages(withUser);
+    setBranchLoading(true);
+
+    const sessionId = chatbot.state.sessionId;
+    if (!sessionId) { setBranchLoading(false); return; }
+    try {
+      const resp = await fetch(`${API_URL}/api/sessions/${sessionId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const assistantMsg = { role: "assistant" as const, content: data.message, timestamp: Date.now() };
+      branching.setActiveBranchMessages([...withUser, assistantMsg]);
+    } catch {
+      // leave branch with just user message on error
+    } finally {
+      setBranchLoading(false);
+    }
+  }, [branching, chatbot.sendMessage, chatbot.state.sessionId]);
+
+  const handleBranchFrom = useCallback((msgIndex: number) => {
+    branching.branchFrom(chatbot.state.messages, msgIndex);
+  }, [branching, chatbot.state.messages]);
+
   const [loopState, dispatch] = useEventReducer();
   const [helpTaskId, setHelpTaskId] = useState<string | null>(null);
   // Sidebar starts collapsed in loop phase
@@ -30,6 +92,45 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
   // Separate loading flag for the ralph-it transition
   const [ralphItLoading, setRalphItLoading] = useState(false);
   const { toast } = useToast();
+  const sound = useSoundNotification();
+  // User-visible session name; updated optimistically on rename
+  const [sessionName, setSessionName] = useState("");
+
+  // Sound: play when Ralphy finishes responding (loading -> false, new assistant msg).
+  const prevLoadingRef = useRef(chatbot.state.loading);
+  const prevMsgCountRef = useRef(chatbot.state.messages.length);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    const prevCount = prevMsgCountRef.current;
+    prevLoadingRef.current = chatbot.state.loading;
+    prevMsgCountRef.current = chatbot.state.messages.length;
+    if (
+      wasLoading &&
+      !chatbot.state.loading &&
+      chatbot.state.messages.length > prevCount
+    ) {
+      sound.playResponseDone();
+    }
+  }, [chatbot.state.loading, chatbot.state.messages.length, sound]);
+
+  // Sound: play when ready state first becomes true.
+  const prevReadyRef = useRef(chatbot.state.ready);
+  useEffect(() => {
+    if (!prevReadyRef.current && chatbot.state.ready) {
+      sound.playReadyToRalph();
+    }
+    prevReadyRef.current = chatbot.state.ready;
+  }, [chatbot.state.ready, sound]);
+
+  // Fetch session name when sessionId is set or changes (e.g., after loadSession).
+  useEffect(() => {
+    const sid = chatbot.state.sessionId;
+    if (!sid) return;
+    fetch(`${API_URL}/api/sessions/${sid}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setSessionName(d.name ?? ""); })
+      .catch(() => {});
+  }, [chatbot.state.sessionId]);
 
   const wsUrl = chatbot.state.sessionId
     ? `${WS_URL}/ws/${chatbot.state.sessionId}`
@@ -63,6 +164,23 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
     await handleRalphIt(editedTasks);
   }, [handleRalphIt]);
 
+  // Switch to a past session: restore its ID and history, reset loop state.
+  const handleSelectSession = useCallback((session: SessionEntry) => {
+    chatbot.loadSession(session.id);
+    // Reset loop state so stale events from previous session don't linger
+    dispatch({ type: "reset", timestamp: Date.now(), data: {} });
+    setPhase("chat");
+  }, [chatbot, dispatch]);
+
+  // Delete a session from the sidebar; reset state if it was the active session.
+  const handleDeleteSession = useCallback((deletedId: string) => {
+    if (deletedId === chatbot.state.sessionId) {
+      chatbot.deleteSession(deletedId);
+      dispatch({ type: "reset", timestamp: Date.now(), data: {} });
+      setPhase("chat");
+    }
+  }, [chatbot, dispatch]);
+
   // Dimension click -> send a focused chat message and open sidebar
   const handleDimensionClick = useCallback((dim: string) => {
     const labels: Record<string, string> = {
@@ -78,34 +196,64 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
     setSidebarOpen(true);
   }, [chatbot]);
 
-  // Phase 1: full-screen chat (two-column)
+  // Phase 1: full-screen chat with history sidebar on far left
   if (phase === "chat") {
     return (
-      <ChatPanel
-        state={chatbot.state}
-        onSend={chatbot.sendMessage}
-        onRalphIt={handleRalphIt}
-        onReviewTasks={handleReviewTasks}
-        onClearError={chatbot.clearError}
-        onUndo={chatbot.undoLastMessage}
-        ralphItLoading={ralphItLoading}
-        mode="full"
-        theme={theme}
-        onThemeToggle={onThemeToggle}
-      />
+      <div className="h-screen flex overflow-hidden">
+        <SessionSidebar
+          activeSessionId={chatbot.state.sessionId}
+          onSelectSession={handleSelectSession}
+          onDeleteSession={handleDeleteSession}
+        />
+        <div className="flex-1 overflow-hidden">
+          <ChatPanel
+            state={displayState}
+            onSend={handleBranchSend}
+            onRalphIt={handleRalphIt}
+            onReviewTasks={handleReviewTasks}
+            onClearError={chatbot.clearError}
+            onUndo={branching.isMainBranch ? chatbot.undoLastMessage : undefined}
+            onClearChat={chatbot.clearChat}
+            ralphItLoading={ralphItLoading}
+            mode="full"
+            theme={theme}
+            onThemeToggle={onThemeToggle}
+            onLogout={onLogout}
+            user={user}
+            soundEnabled={sound.enabled}
+            onSoundToggle={sound.toggle}
+            onRunTool={chatbot.runTool}
+            onClearToolResult={chatbot.clearToolResult}
+            onRetry={chatbot.retryMessage}
+            branches={branching.branches}
+            activeBranchId={branching.activeBranchId}
+            onBranchFrom={handleBranchFrom}
+            onBranchSwitch={branching.switchBranch}
+          />
+        </div>
+      </div>
     );
   }
 
-  // Phase 2: task preview/edit before starting the loop
+  // Phase 2: task preview/edit with history sidebar on far left
   if (phase === "preview") {
     return (
-      <TaskPreview
-        tasks={(chatbot.state.tasks as PreviewTask[] | null) ?? []}
-        project={chatbot.state.project}
-        onConfirm={handleConfirmTasks}
-        onBack={() => setPhase("chat")}
-        loading={ralphItLoading}
-      />
+      <div className="h-screen flex overflow-hidden">
+        <SessionSidebar
+          activeSessionId={chatbot.state.sessionId}
+          onSelectSession={handleSelectSession}
+          onDeleteSession={handleDeleteSession}
+        />
+        <div className="flex-1 overflow-hidden">
+          <TaskPreview
+            tasks={(chatbot.state.tasks as PreviewTask[] | null) ?? []}
+            project={chatbot.state.project}
+            onConfirm={handleConfirmTasks}
+            onBack={() => setPhase("chat")}
+            loading={ralphItLoading}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -116,7 +264,14 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
     <div className="h-screen flex flex-col bg-background grid-bg overflow-hidden">
       {/* System status strip: session/model/token info */}
       <div className="flex items-center gap-4 px-4 py-1 border-b border-border bg-background font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        <span>SESSION: <span className="text-primary">{sessionId.slice(0, 8)}</span></span>
+        <span className="flex items-center gap-1">
+          SESSION:{" "}
+          <SessionTitle
+            sessionId={sessionId}
+            name={sessionName}
+            onRename={setSessionName}
+          />
+        </span>
         <span>MODEL: <span className="text-primary">kimi-k2.5</span></span>
         <span>TOKENS: <span className="text-primary">{loopState.totalTokens?.toLocaleString() ?? "0"}</span></span>
       </div>
@@ -129,11 +284,22 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
         wsState={wsState}
         sessionId={sessionId}
         onError={(msg) => toast(msg, "error")}
+        taskCount={loopState.tasks.size}
         theme={theme}
         onThemeToggle={onThemeToggle}
+        onLogout={onLogout}
+        soundEnabled={sound.enabled}
+        onSoundToggle={sound.toggle}
       />
 
       <div className="flex-1 flex overflow-hidden">
+        {/* Session history sidebar -- leftmost */}
+        <SessionSidebar
+          activeSessionId={sessionId}
+          onSelectSession={handleSelectSession}
+          onDeleteSession={handleDeleteSession}
+        />
+
         {/* Collapsible chat sidebar */}
         <div
           className="flex flex-col bg-card border-r border-border shrink-0 overflow-hidden transition-all duration-200"
@@ -149,8 +315,13 @@ export function Dashboard({ theme, onThemeToggle }: DashboardProps) {
                   onReviewTasks={handleReviewTasks}
                   onClearError={chatbot.clearError}
                   onUndo={chatbot.undoLastMessage}
+                  onClearChat={chatbot.clearChat}
                   ralphItLoading={ralphItLoading}
                   mode="sidebar"
+                  user={user}
+                  onRunTool={chatbot.runTool}
+                  onClearToolResult={chatbot.clearToolResult}
+                  onRetry={chatbot.retryMessage}
                 />
               </div>
               {/* Collapse toggle at bottom */}

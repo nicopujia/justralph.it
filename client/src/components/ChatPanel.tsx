@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,18 +8,54 @@ import {
   Code,
   ListTodo,
   BarChart2,
+  Wrench,
   Sun,
   Moon,
+  Copy,
+  Check,
+  LogOut,
+  Download,
+  Trash2,
+  Volume2,
+  VolumeX,
+  AlertCircle,
+  RotateCcw,
+  GitBranch,
+  Pin,
+  PinOff,
 } from "lucide-react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as Popover from "@radix-ui/react-popover";
 import type { Theme } from "@/hooks/useTheme";
 import { API_URL } from "@/lib/config";
 import { ConfidenceMeter } from "./ConfidenceMeter";
+import { ToolsetPanel } from "./ToolsetPanel";
+import { ToolSuggestion } from "./ToolSuggestion";
 import { useToast } from "./Toast";
-import type { ChatState } from "@/hooks/useChatbot";
+import { MarkdownMessage } from "./MarkdownMessage";
+import type { ChatState, ToolName, TokenUsage } from "@/hooks/useChatbot";
+import { TypingIndicator } from "./TypingIndicator";
+import { SuggestionChips, SuggestionChipsSidebar } from "./SuggestionChips";
+import { ExpandableDetails } from "./ExpandableDetails";
+import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { BranchSwitcher } from "./BranchSwitcher";
+import type { Branch } from "@/hooks/useBranching";
+import { usePinnedMessages, msgId } from "@/hooks/usePinnedMessages";
+
+/** Renders a muted relative timestamp below a message. Renders nothing if no timestamp. */
+function MessageTimestamp({ timestamp }: { timestamp: number | undefined }) {
+  const label = useRelativeTime(timestamp);
+  if (!label) return null;
+  return (
+    <span className="block text-[10px] text-zinc-500 mt-0.5 leading-none select-none">
+      {label}
+    </span>
+  );
+}
 
 const SLOW_THRESHOLD_MS = 15_000;
 
-type RightTab = "confidence" | "tasks" | "code";
+type RightTab = "confidence" | "tasks" | "code" | "tools";
 
 type ChatPanelProps = {
   state: ChatState;
@@ -37,7 +73,236 @@ type ChatPanelProps = {
   onThemeToggle?: () => void;
   /** Undo the last user+assistant message pair. */
   onUndo?: () => void;
+  /** Called to log out and return to WelcomePage. */
+  onLogout?: () => void;
+  /** Clear all messages in the current session (keeps session alive). */
+  onClearChat?: () => Promise<void>;
+  /** Tool callbacks */
+  onRunTool?: (tool: ToolName, context?: string) => void;
+  onClearToolResult?: () => void;
+  /** Sound notification state/toggle. */
+  soundEnabled?: boolean;
+  onSoundToggle?: () => void;
+  /** Retry a failed message -- called with (content, originalTimestamp). */
+  onRetry?: (content: string, timestamp: number) => void;
+  /** Authenticated user (passed through, not used directly in rendering). */
+  user?: { login: string; name: string; avatar_url: string };
+  /** Branch management props. */
+  branches?: Branch[];
+  activeBranchId?: string;
+  /** Called with the 0-based index of the user message to branch from. */
+  onBranchFrom?: (msgIndex: number) => void;
+  onBranchSwitch?: (id: string) => void;
 };
+
+/**
+ * Inline error indicator + retry button for a failed user message.
+ * Shown below the message text when msg.status === "error".
+ */
+function MessageErrorRow({
+  content,
+  timestamp,
+  onRetry,
+  compact = false,
+}: {
+  content: string;
+  timestamp: number | undefined;
+  onRetry?: (content: string, timestamp: number) => void;
+  compact?: boolean;
+}) {
+  if (!onRetry || timestamp === undefined) return null;
+  const iconClass = compact ? "size-3" : "size-3.5";
+  const textClass = compact ? "text-[10px]" : "text-xs";
+  return (
+    <span className={["flex items-center gap-1 mt-0.5", textClass].join(" ")}>
+      <AlertCircle className={[iconClass, "text-destructive shrink-0"].join(" ")} />
+      <span className="text-destructive uppercase tracking-wider">SEND FAILED</span>
+      <button
+        onClick={() => onRetry(content, timestamp)}
+        title="Retry sending this message"
+        className="flex items-center gap-0.5 text-destructive hover:text-destructive/80 border border-destructive/50 hover:border-destructive px-1 py-0.5 transition-colors ml-0.5"
+      >
+        <RotateCcw className={iconClass} />
+        <span className="uppercase tracking-wider">RETRY</span>
+      </button>
+    </span>
+  );
+}
+
+/**
+ * Shows estimated/actual token count below an assistant message.
+ * Click to expand into input/output breakdown when both values are available.
+ */
+function TokenBadge({ usage }: { usage: TokenUsage }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasBreakdown = usage.inputTokens !== undefined;
+
+  const label = `~${usage.outputTokens.toLocaleString()} tokens${usage.estimated ? "" : ""}`;
+
+  if (!hasBreakdown) {
+    return (
+      <span className="text-xs text-zinc-500 select-none">
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setExpanded((v) => !v)}
+      title={expanded ? "Hide breakdown" : "Show input/output breakdown"}
+      className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors text-left"
+    >
+      {expanded ? (
+        <span>
+          in: {usage.inputTokens!.toLocaleString()} / out: {usage.outputTokens.toLocaleString()} tokens
+        </span>
+      ) : (
+        label
+      )}
+    </button>
+  );
+}
+
+/** Copy button: shows Copy icon, switches to Check for 2s after click. */
+function CopyButton({ text, size = "default" }: { text: string; size?: "default" | "sm" }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable -- silently ignore
+    }
+  };
+
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy message"
+      className="shrink-0 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+    >
+      {copied ? <Check className={iconClass} /> : <Copy className={iconClass} />}
+    </button>
+  );
+}
+
+/** Branch button: shown on user messages on hover, forks the conversation from that point. */
+function BranchButton({
+  onClick,
+  size = "default",
+}: {
+  onClick: () => void;
+  size?: "default" | "sm";
+}) {
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+  return (
+    <button
+      onClick={onClick}
+      title="Branch from here"
+      className="shrink-0 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+    >
+      <GitBranch className={iconClass} />
+    </button>
+  );
+}
+
+/** Pin button: toggles pin state. Always visible when pinned; shows on hover otherwise. */
+function PinButton({
+  pinned,
+  onToggle,
+  size = "default",
+}: {
+  pinned: boolean;
+  onToggle: () => void;
+  size?: "default" | "sm";
+}) {
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+  return (
+    <button
+      onClick={onToggle}
+      title={pinned ? "Unpin message" : "Pin message"}
+      className={[
+        "shrink-0 transition-opacity",
+        pinned
+          ? "text-primary opacity-100"
+          : "text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100",
+      ].join(" ")}
+    >
+      {pinned ? <PinOff className={iconClass} /> : <Pin className={iconClass} />}
+    </button>
+  );
+}
+
+/**
+ * Header button that opens a popover listing pinned messages.
+ * Clicking an entry closes the popover and scrolls to the message.
+ */
+function PinsDropdown({
+  pinnedMessages,
+  onScrollTo,
+  size = "default",
+}: {
+  pinnedMessages: { id: string; label: string }[];
+  onScrollTo: (id: string) => void;
+  size?: "default" | "sm";
+}) {
+  const count = pinnedMessages.length;
+  const btnClass =
+    size === "sm"
+      ? "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors disabled:opacity-30"
+      : "flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors disabled:opacity-30";
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          className={btnClass}
+          disabled={count === 0}
+          title={count === 0 ? "No pinned messages" : `${count} pinned`}
+        >
+          <Pin className={iconClass} />
+          {size !== "sm" && <span>PINS{count > 0 ? ` (${count})` : ""}</span>}
+          {size === "sm" && count > 0 && <span>{count}</span>}
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          className="z-50 w-72 bg-card border border-border shadow-xl font-mono"
+        >
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-xs font-bold uppercase tracking-wider text-foreground">
+              PINNED MESSAGES
+            </p>
+          </div>
+          <ul className="max-h-64 overflow-y-auto divide-y divide-border">
+            {pinnedMessages.map(({ id, label }) => (
+              <li key={id}>
+                <Popover.Close asChild>
+                  <button
+                    onClick={() => onScrollTo(id)}
+                    className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:text-primary hover:bg-muted/30 transition-colors truncate"
+                    title={label}
+                  >
+                    <Pin className="inline size-2.5 mr-1.5 text-primary" />
+                    {label}
+                  </button>
+                </Popover.Close>
+              </li>
+            ))}
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
 
 /** Shared file upload handler used in both modes. */
 function FileInput({
@@ -98,6 +363,7 @@ function RightTabPanel({
   ralphItLoading,
   slowLoad,
   busy,
+  onRunTool,
 }: {
   state: ChatState;
   onRalphIt: () => void;
@@ -105,6 +371,7 @@ function RightTabPanel({
   ralphItLoading: boolean;
   slowLoad: boolean;
   busy: boolean;
+  onRunTool?: (tool: ToolName, context?: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<RightTab>("confidence");
 
@@ -112,6 +379,7 @@ function RightTabPanel({
     { id: "confidence", label: "CONFIDENCE", icon: <BarChart2 className="size-3" /> },
     { id: "tasks", label: "TASKS", icon: <ListTodo className="size-3" /> },
     { id: "code", label: "CODE", icon: <Code className="size-3" /> },
+    { id: "tools", label: "TOOLS", icon: <Wrench className="size-3" /> },
   ];
 
   return (
@@ -177,6 +445,19 @@ function RightTabPanel({
             CODE CHANGES WILL APPEAR WHEN THE LOOP STARTS.
           </p>
         )}
+        {activeTab === "tools" && onRunTool && (
+          <ToolsetPanel
+            state={state}
+            onRunTool={onRunTool}
+            toolLoading={state.toolLoading}
+            activeTool={state.toolResult?.tool ?? null}
+          />
+        )}
+        {activeTab === "tools" && !onRunTool && (
+          <p className="text-xs text-muted-foreground uppercase tracking-wider text-center py-8">
+            TOOLS NOT AVAILABLE.
+          </p>
+        )}
       </div>
 
       {/* Action button */}
@@ -210,6 +491,60 @@ function RightTabPanel({
   );
 }
 
+/** Trash icon button with Radix AlertDialog confirmation before clearing. */
+function ClearChatButton({
+  onConfirm,
+  size = "default",
+  disabled = false,
+}: {
+  onConfirm: () => Promise<void>;
+  size?: "default" | "sm";
+  disabled?: boolean;
+}) {
+  const iconClass = size === "sm" ? "size-3" : "size-3.5";
+  const btnClass =
+    size === "sm"
+      ? "shrink-0 text-muted-foreground hover:text-destructive opacity-60 hover:opacity-100 transition-colors disabled:pointer-events-none disabled:opacity-30"
+      : "shrink-0 text-muted-foreground hover:text-destructive transition-colors disabled:pointer-events-none disabled:opacity-30";
+
+  return (
+    <AlertDialog.Root>
+      <AlertDialog.Trigger asChild>
+        <button className={btnClass} title="Clear chat" disabled={disabled}>
+          <Trash2 className={iconClass} />
+        </button>
+      </AlertDialog.Trigger>
+
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 bg-black/60 z-50" />
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-card border border-border p-6 font-mono shadow-xl">
+          <AlertDialog.Title className="text-sm font-bold uppercase tracking-wider text-foreground mb-2">
+            CLEAR CHAT?
+          </AlertDialog.Title>
+          <AlertDialog.Description className="text-xs text-muted-foreground uppercase tracking-wider mb-6">
+            ALL MESSAGES WILL BE DELETED AND CONFIDENCE SCORES RESET. THE SESSION WILL REMAIN ACTIVE.
+          </AlertDialog.Description>
+          <div className="flex gap-3 justify-end">
+            <AlertDialog.Cancel asChild>
+              <button className="border border-border text-muted-foreground hover:text-foreground hover:border-foreground uppercase tracking-wider text-xs font-bold px-4 py-2 transition-colors">
+                CANCEL
+              </button>
+            </AlertDialog.Cancel>
+            <AlertDialog.Action asChild>
+              <button
+                onClick={onConfirm}
+                className="border border-destructive bg-transparent text-destructive hover:bg-destructive hover:text-destructive-foreground uppercase tracking-wider text-xs font-bold px-4 py-2 transition-colors"
+              >
+                CLEAR
+              </button>
+            </AlertDialog.Action>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
+}
+
 export function ChatPanel({
   state,
   onSend,
@@ -221,10 +556,46 @@ export function ChatPanel({
   onUndo,
   theme,
   onThemeToggle,
+  onLogout,
+  onClearChat,
+  onRunTool,
+  onClearToolResult,
+  soundEnabled,
+  onSoundToggle,
+  onRetry,
+  branches = [],
+  activeBranchId = "main",
+  onBranchFrom,
+  onBranchSwitch,
+  user,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sidebarTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
+
+  // Pinned messages -- keyed by sessionId in localStorage
+  const { isPinned, togglePin } = usePinnedMessages(state.sessionId);
+
+  /** Scroll the message with the given DOM id into view. */
+  const scrollToMessage = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  /** Grow textarea to scrollHeight, capped by max-height CSS. */
+  const autoResize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  /** Reset textarea to single-line height after send. */
+  const resetHeight = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = "auto";
+  };
 
   // Timeout indicator: shown if ralphItLoading has been true >15s
   const [slowLoad, setSlowLoad] = useState(false);
@@ -264,21 +635,58 @@ export function ChatPanel({
     const msg = input.trim();
     if (!msg || state.loading) return;
     setInput("");
+    resetHeight(textareaRef.current);
+    resetHeight(sidebarTextareaRef.current);
     onSend(msg);
   };
 
   const busy = state.loading || ralphItLoading;
+
+  /** Build ordered list of pinned messages for PinsDropdown, preserving message order. */
+  const pinnedList = state.messages
+    .map((msg, i) => {
+      const id = msgId(msg.role, msg.content);
+      if (!isPinned(id)) return null;
+      const label =
+        msg.content.length > 60 ? msg.content.slice(0, 60) + "..." : msg.content;
+      return { id: `msg-${i}`, label };
+    })
+    .filter((x): x is { id: string; label: string } => x !== null);
 
   // ----------------------------- sidebar mode -----------------------------
   if (mode === "sidebar") {
     return (
       <div className="h-full flex flex-col bg-card border-r border-border overflow-hidden">
         {/* Compact header */}
-        <div className="px-3 py-3 border-b border-border shrink-0">
+        <div className="px-3 py-3 border-b border-border shrink-0 flex items-center justify-between">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             CHAT
           </h2>
+          <div className="flex items-center gap-2">
+            <PinsDropdown
+              pinnedMessages={pinnedList}
+              onScrollTo={scrollToMessage}
+              size="sm"
+            />
+            {onClearChat && (
+              <ClearChatButton
+                onConfirm={onClearChat}
+                size="sm"
+                disabled={busy || state.messages.length === 0}
+              />
+            )}
+          </div>
         </div>
+
+        {/* Branch switcher (only shown when branches exist) */}
+        {onBranchSwitch && (
+          <BranchSwitcher
+            branches={branches}
+            activeBranchId={activeBranchId}
+            onSwitch={onBranchSwitch}
+            size="sm"
+          />
+        )}
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-1">
@@ -294,10 +702,19 @@ export function ChatPanel({
                 : -1;
             const showUndo =
               onUndo && msg.role === "user" && i === lastUserIdx && state.messages.length >= 2;
+            const canBranch = onBranchFrom && msg.role === "user";
+            const isError = msg.status === "error";
+            const id = msgId(msg.role, msg.content);
+            const pinned = isPinned(id);
             return (
               <div
                 key={i}
-                className="border-b border-border py-2 flex items-start gap-1"
+                id={`msg-${i}`}
+                className={[
+                  "group border-b py-2 flex items-start gap-1",
+                  isError ? "border-destructive/40 bg-destructive/5" : "border-border",
+                  pinned ? "border-l-2 border-l-primary pl-1" : "",
+                ].join(" ")}
               >
                 {showUndo && (
                   <button
@@ -308,27 +725,46 @@ export function ChatPanel({
                     <Undo2 className="size-3" />
                   </button>
                 )}
-                <p
-                  className={[
-                    "text-xs whitespace-pre-wrap break-words",
-                    msg.role === "user" ? "text-primary" : "text-foreground",
-                  ].join(" ")}
-                >
-                  <span className={msg.role === "user" ? "text-primary" : "text-foreground"}>
-                    {msg.role === "user" ? "> " : "$ "}
-                  </span>
-                  {msg.content}
-                </p>
+                <div className="flex-1 min-w-0">
+                  {msg.role === "user" ? (
+                    <p className={["text-xs whitespace-pre-wrap break-words", isError ? "text-destructive/80" : "text-primary"].join(" ")}>
+                      <span className={isError ? "text-destructive/80" : "text-primary"}>&gt; </span>
+                      {msg.content}
+                    </p>
+                  ) : (
+                    <div>
+                      <span className="text-xs font-mono text-foreground">$ </span>
+                      <MarkdownMessage content={msg.content} className="text-xs" />
+                    </div>
+                  )}
+                  {isError && (
+                    <MessageErrorRow
+                      content={msg.content}
+                      timestamp={msg.timestamp}
+                      onRetry={onRetry}
+                      compact
+                    />
+                  )}
+                  <MessageTimestamp timestamp={msg.timestamp} />
+                  {msg.role === "assistant" && msg.tokenUsage && (
+                    <span className="block mt-0.5 font-mono">
+                      <TokenBadge usage={msg.tokenUsage} />
+                    </span>
+                  )}
+                  {msg.role === "assistant" && msg.metadata && (
+                    <ExpandableDetails metadata={msg.metadata} compact />
+                  )}
+                </div>
+                {canBranch && (
+                  <BranchButton onClick={() => onBranchFrom(i)} size="sm" />
+                )}
+                <PinButton pinned={pinned} onToggle={() => togglePin(id)} size="sm" />
+                <CopyButton text={msg.content} size="sm" />
               </div>
             );
           })}
           {state.loading && (
-            <div className="py-2 border-b border-border">
-              <span className="text-xs text-foreground">
-                $ PROCESSING...<span className="animate-blink">_</span>
-                <span className="text-muted-foreground ml-2">{elapsedSeconds}s</span>
-              </span>
-            </div>
+            <TypingIndicator elapsedSeconds={elapsedSeconds} compact />
           )}
         </div>
 
@@ -357,15 +793,20 @@ export function ChatPanel({
 
         {/* Input */}
         <div className="border-t border-border p-2 shrink-0">
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-end">
             <FileInput sessionId={state.sessionId} onSend={onSend} size="sm" />
-            <input
+            <textarea
+              ref={sidebarTextareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+              rows={1}
+              onChange={(e) => {
+                setInput(e.target.value);
+                autoResize(e.target);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
               placeholder="MSG..."
               disabled={busy}
-              className="flex-1 h-7 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 outline-none focus:border-primary transition-colors"
+              className="flex-1 text-xs bg-transparent border border-border text-primary placeholder:text-muted-foreground px-2 py-1 outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"
             />
             <button
               onClick={handleSend}
@@ -375,6 +816,11 @@ export function ChatPanel({
               <Send className="size-3" />
             </button>
           </div>
+          {input.length > 0 && (
+            <p className="text-xs text-zinc-500 mt-1 text-right">
+              {input.length} chars / {input.trim().split(/\s+/).length} words
+            </p>
+          )}
         </div>
       </div>
     );
@@ -395,17 +841,58 @@ export function ChatPanel({
               DESCRIBE YOUR PROJECT. RALPH BUILDS IT.
             </p>
           </div>
-          {onThemeToggle && (
-            <button
-              onClick={onThemeToggle}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              title={theme === "dark" ? "Light mode" : "Dark mode"}
-              className="shrink-0 text-primary hover:opacity-70 transition-opacity"
-            >
-              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            <PinsDropdown
+              pinnedMessages={pinnedList}
+              onScrollTo={scrollToMessage}
+            />
+            {onSoundToggle && (
+              <button
+                onClick={onSoundToggle}
+                aria-label={soundEnabled ? "Disable sound notifications" : "Enable sound notifications"}
+                title={soundEnabled ? "Sound: ON" : "Sound: OFF"}
+                className="text-primary hover:opacity-70 transition-opacity"
+              >
+                {soundEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+              </button>
+            )}
+            {onThemeToggle && (
+              <button
+                onClick={onThemeToggle}
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                title={theme === "dark" ? "Light mode" : "Dark mode"}
+                className="text-primary hover:opacity-70 transition-opacity"
+              >
+                {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </button>
+            )}
+            {onClearChat && (
+              <ClearChatButton
+                onConfirm={onClearChat}
+                disabled={busy || state.messages.length === 0}
+              />
+            )}
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                title="Log out"
+                aria-label="Log out"
+                className="p-1 border border-border hover:border-destructive text-muted-foreground hover:text-destructive transition-colors"
+              >
+                <LogOut className="size-4" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Branch switcher (only shown when branches exist) */}
+        {onBranchSwitch && (
+          <BranchSwitcher
+            branches={branches}
+            activeBranchId={activeBranchId}
+            onSwitch={onBranchSwitch}
+          />
+        )}
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-2">
@@ -422,10 +909,19 @@ export function ChatPanel({
                 : -1;
             const showUndo =
               onUndo && msg.role === "user" && i === lastUserIdx && state.messages.length >= 2;
+            const canBranch = onBranchFrom && msg.role === "user";
+            const isError = msg.status === "error";
+            const id = msgId(msg.role, msg.content);
+            const pinned = isPinned(id);
             return (
               <div
                 key={i}
-                className="border-b border-border py-3 flex items-start gap-2"
+                id={`msg-${i}`}
+                className={[
+                  "group border-b py-3 flex items-start gap-2",
+                  isError ? "border-destructive/40 bg-destructive/5" : "border-border",
+                  pinned ? "border-l-2 border-l-primary pl-2" : "",
+                ].join(" ")}
               >
                 {showUndo && (
                   <button
@@ -436,42 +932,75 @@ export function ChatPanel({
                     <Undo2 className="size-3.5" />
                   </button>
                 )}
-                <p
-                  className={[
-                    "text-sm whitespace-pre-wrap break-words w-full",
-                    msg.role === "user" ? "text-primary" : "text-foreground",
-                  ].join(" ")}
-                >
-                  <span className="font-bold mr-1">
-                    {msg.role === "user" ? "> " : "$ "}
-                  </span>
-                  {msg.content}
-                </p>
+                <div className="flex-1 min-w-0">
+                  {msg.role === "user" ? (
+                    <p className={["text-sm whitespace-pre-wrap break-words", isError ? "text-destructive/80" : "text-primary"].join(" ")}>
+                      <span className={["font-bold mr-1", isError ? "text-destructive/80" : ""].join(" ")}>&gt; </span>
+                      {msg.content}
+                    </p>
+                  ) : (
+                    <div>
+                      <span className="text-sm font-bold mr-1 font-mono text-foreground">$ </span>
+                      <MarkdownMessage content={msg.content} />
+                    </div>
+                  )}
+                  {isError && (
+                    <MessageErrorRow
+                      content={msg.content}
+                      timestamp={msg.timestamp}
+                      onRetry={onRetry}
+                    />
+                  )}
+                  <MessageTimestamp timestamp={msg.timestamp} />
+                  {msg.role === "assistant" && msg.tokenUsage && (
+                    <span className="block mt-0.5 font-mono">
+                      <TokenBadge usage={msg.tokenUsage} />
+                    </span>
+                  )}
+                  {msg.role === "assistant" && msg.metadata && (
+                    <ExpandableDetails metadata={msg.metadata} />
+                  )}
+                </div>
+                {canBranch && (
+                  <BranchButton onClick={() => onBranchFrom(i)} />
+                )}
+                <PinButton pinned={pinned} onToggle={() => togglePin(id)} />
+                <CopyButton text={msg.content} />
               </div>
             );
           })}
           {state.loading && (
-            <div className="py-3 border-b border-border">
-              <span className="text-sm text-foreground">
-                $ PROCESSING...<span className="animate-blink">_</span>
-                <span className="text-muted-foreground text-xs ml-2">{elapsedSeconds}s</span>
-              </span>
-            </div>
+            <TypingIndicator elapsedSeconds={elapsedSeconds} />
           )}
         </div>
 
+        {/* Tool suggestion banner */}
+        {state.toolResult && onClearToolResult && (
+          <ToolSuggestion
+            result={state.toolResult}
+            onUse={(text) => { setInput(text); onClearToolResult(); }}
+            onEdit={(text) => { setInput(text); onClearToolResult(); }}
+            onDismiss={onClearToolResult}
+          />
+        )}
+
         {/* Input bar */}
         <div className="border-t border-border p-4 shrink-0">
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-end">
             <FileInput sessionId={state.sessionId} onSend={onSend} />
-            <span className="text-primary font-bold text-sm shrink-0">&gt;</span>
-            <input
+            <span className="text-primary font-bold text-sm shrink-0 pb-2">&gt;</span>
+            <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+              rows={1}
+              onChange={(e) => {
+                setInput(e.target.value);
+                autoResize(e.target);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
               placeholder="DESCRIBE YOUR PROJECT..."
               disabled={busy}
-              className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
+              className="flex-1 bg-transparent border border-border text-primary placeholder:text-muted-foreground px-3 py-2 text-sm outline-none focus:border-primary transition-colors resize-none overflow-y-auto max-h-[200px] leading-5"
             />
             <button
               onClick={handleSend}
@@ -481,6 +1010,11 @@ export function ChatPanel({
               <Send className="size-4" />
             </button>
           </div>
+          {input.length > 0 && (
+            <p className="text-xs text-zinc-500 mt-2 text-right">
+              {input.length} chars / {input.trim().split(/\s+/).length} words
+            </p>
+          )}
         </div>
       </div>
 
@@ -493,6 +1027,7 @@ export function ChatPanel({
           ralphItLoading={ralphItLoading}
           slowLoad={slowLoad}
           busy={busy}
+          onRunTool={onRunTool}
         />
       </div>
     </div>

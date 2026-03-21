@@ -1,4 +1,5 @@
 import { useState } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import type { Confidence, Relevance } from "@/hooks/useChatbot";
 
 const DIMENSION_LABELS: Record<keyof Confidence, string> = {
@@ -9,6 +10,17 @@ const DIMENSION_LABELS: Record<keyof Confidence, string> = {
   deployment: "DEPLOYMENT",
   testing: "TESTING",
   edge_cases: "EDGE CASES",
+};
+
+// Human-readable descriptions shown in tooltips per dimension.
+const DIMENSION_DESCRIPTIONS: Record<keyof Confidence, string> = {
+  functional: "What the software does -- features, user stories, core behavior",
+  technical_stack: "Languages, frameworks, infrastructure choices",
+  data_model: "Database schema, entities, relationships",
+  auth: "Authentication and authorization approach",
+  deployment: "Hosting, CI/CD, environment setup",
+  testing: "Testing strategy, coverage expectations",
+  edge_cases: "Error handling, validation, boundary conditions",
 };
 
 type ConfidenceMeterProps = {
@@ -50,69 +62,112 @@ export function ConfidenceMeter({
   onDimensionClick,
 }: ConfidenceMeterProps) {
   const dims = Object.entries(confidence) as [keyof Confidence, number][];
-  // Track which dimension is hovered for tooltip
+  // Track which dimension is hovered for the "ASK" hint
   const [hoveredDim, setHoveredDim] = useState<string | null>(null);
 
   return (
-    <div className="space-y-3 font-mono">
-      {/* Overall readiness */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between text-xs tracking-wider">
-          <span className="text-muted-foreground uppercase">READINESS</span>
-          {ready ? (
-            <span className="text-primary uppercase">READY</span>
-          ) : (
-            <span className="text-primary tabular-nums">{Math.round(weightedReadiness)}%</span>
-          )}
-        </div>
-        <VuBlocks score={weightedReadiness} />
-      </div>
-
-      {/* Phase + question count */}
-      <div className="flex justify-between text-xs tracking-wider">
-        <span className="text-muted-foreground">PHASE {phase}/4</span>
-        <span className="text-muted-foreground">
-          Q:{String(questionCount).padStart(2, "0")}/{questionCount < 10 ? "10 MIN" : "10"}
-        </span>
-      </div>
-
-      <div className="h-px bg-border" />
-
-      {/* Per-dimension VU meters */}
-      {dims.map(([key, value]) => {
-        const rel = relevance[key as keyof Relevance] ?? 1.0;
-        const isIrrelevant = rel <= 0.3;
-        const isHovered = hoveredDim === key;
-        const clickable = !!onDimensionClick;
-
-        return (
-          <div
-            key={key}
-            className={`space-y-1 px-1 -mx-1 transition-colors ${
-              clickable ? "cursor-crosshair" : ""
-            } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""}`}
-            style={{ opacity: isIrrelevant ? 0.35 : 1 }}
-            onClick={() => clickable && onDimensionClick(key)}
-            onMouseEnter={() => clickable && setHoveredDim(key)}
-            onMouseLeave={() => setHoveredDim(null)}
-          >
-            <div className="flex justify-between items-center text-xs tracking-wider">
-              <span className="flex items-center gap-1 text-muted-foreground">
-                {DIMENSION_LABELS[key]}
-                {isIrrelevant && (
-                  <span className="text-muted-foreground ml-1">(N/A)</span>
-                )}
-                {/* "Ask about this" hint -- only visible on hover */}
-                {isHovered && clickable && !isIrrelevant && (
-                  <span className="text-primary text-[10px]">ASK</span>
-                )}
-              </span>
-              <span className="text-primary tabular-nums">{value}%</span>
-            </div>
-            <VuBlocks score={value} />
+    <Tooltip.Provider delayDuration={300}>
+      <div className="space-y-3 font-mono">
+        {/* Overall readiness */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs tracking-wider">
+            <span className="text-muted-foreground uppercase">READINESS</span>
+            {ready ? (
+              <span className="text-primary uppercase">READY</span>
+            ) : (
+              <span className="text-primary tabular-nums">{Math.round(weightedReadiness)}%</span>
+            )}
           </div>
-        );
-      })}
-    </div>
+          <VuBlocks score={weightedReadiness} />
+        </div>
+
+        {/* Phase + question count */}
+        <div className="flex justify-between text-xs tracking-wider">
+          <span className="text-muted-foreground">PHASE {phase}/4</span>
+          <span className="text-muted-foreground">
+            Q:{String(questionCount).padStart(2, "0")}/{questionCount < 10 ? "10 MIN" : "10"}
+          </span>
+        </div>
+
+        <div className="h-px bg-border" />
+
+        {/* Per-dimension VU meters */}
+        {dims.map(([key, value]) => {
+          const rel = relevance[key as keyof Relevance] ?? 1.0;
+          const isIrrelevant = rel <= 0.3;
+          const isHovered = hoveredDim === key;
+          const clickable = !!onDimensionClick;
+
+          return (
+            <div
+              key={key}
+              className={`space-y-1 px-1 -mx-1 transition-colors ${
+                clickable ? "cursor-crosshair" : ""
+              } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""}`}
+              style={{ opacity: isIrrelevant ? 0.35 : 1 }}
+              onClick={() => clickable && onDimensionClick(key)}
+              onMouseEnter={() => clickable && setHoveredDim(key)}
+              onMouseLeave={() => setHoveredDim(null)}
+            >
+              <div className="flex justify-between items-center text-xs tracking-wider">
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  {DIMENSION_LABELS[key]}
+                  {isIrrelevant && (
+                    <span className="text-muted-foreground ml-1">(N/A)</span>
+                  )}
+                  {/* "Ask about this" hint -- only visible on hover */}
+                  {isHovered && clickable && !isIrrelevant && (
+                    <span className="text-primary text-[10px]">ASK</span>
+                  )}
+                  {/* Info tooltip -- explains what this dimension measures */}
+                  <DimensionTooltip dimension={key} />
+                </span>
+                <span className="text-primary tabular-nums">{value}%</span>
+              </div>
+              <VuBlocks score={value} />
+            </div>
+          );
+        })}
+      </div>
+    </Tooltip.Provider>
+  );
+}
+
+// Small info icon that reveals a tooltip explaining the dimension.
+// Stops click propagation so it doesn't trigger the parent "ASK" handler.
+function DimensionTooltip({ dimension }: { dimension: keyof Confidence }) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center text-muted-foreground opacity-50 hover:opacity-100 transition-opacity focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Info: ${DIMENSION_LABELS[dimension]}`}
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <circle cx="5" cy="5" r="4.5" stroke="currentColor" strokeWidth="1" fill="none" />
+            <rect x="4.4" y="4" width="1.2" height="3.5" rx="0.3" />
+            <circle cx="5" cy="2.8" r="0.6" />
+          </svg>
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content
+          side="right"
+          sideOffset={6}
+          className="z-50 max-w-[200px] border border-border bg-popover px-2.5 py-1.5 font-mono text-[10px] leading-tight tracking-wide text-popover-foreground shadow-md"
+        >
+          {DIMENSION_DESCRIPTIONS[dimension]}
+          <Tooltip.Arrow className="fill-border" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }
