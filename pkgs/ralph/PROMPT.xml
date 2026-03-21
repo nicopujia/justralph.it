@@ -35,6 +35,7 @@
             Do not write code yet.
         </Step>
         <Step id="4" title="(Test-driven) Development">
+            cd into ./dev/ (the development worktree). All code work happens here.
             Create and checkout branch `ralph/[issue-id]`.
             For non-logic tasks (docs, copy, etc), although they should not have automated tests, solve them with subagents and then have another subagent manually verify correctness.
             For logic tasks, follow outside-in TDD (two nested loops):
@@ -85,23 +86,26 @@
             </TDD>
         </Step>
         <Step id="5" title="Deployment">
+            IMPORTANT: You work in ./dev/ only. The loop promotes validated code to ./prod/main.
+            Do NOT merge your branch into main yourself. The loop handles that after you finish.
+
             <NoDeployYet condition="the project isn't deployable or doesn't have a deploy process yet">
-                Merge main into your branch.
+                In ./dev/, merge main into your branch: git merge main
                 Run the full test suite.
                 Everything should be green.
                 Otherwise, use subagents to diagnose and fix.
                 If you cannot fix it after 3 attempts, file a blocker issue explaining what failed and what investigation revealed, and output <Status>FOUND NEW BLOCKER ISSUE</Status> in a new line and stop.
-                If everything is green, merge your branch into main.
+                If everything is green, create a pre-merge checkpoint: git tag -a "pre-merge/[issue-id]" -m "pre-merge checkpoint"
             </NoDeployYet>
             <Deploy condition="the project is deployable and has a deploy process">
                 Add/update E2E tests to verify user-facing changes.
-                Commit them on your branch.
-                Merge main into your branch.
+                Commit them on your branch in ./dev/.
+                Merge main into your branch: git merge main
                 Run unit and integration tests.
                 Everything should be green.
                 Otherwise, use subagents to diagnose and fix.
                 If you cannot fix it after 3 attempts, revert changes, file a blocker issue explaining what failed and what investigation revealed, and output <Status>FOUND NEW BLOCKER ISSUE</Status> in a new line and stop.
-                Merge your branch into main.
+                Create a pre-merge checkpoint: git tag -a "pre-merge/[issue-id]" -m "pre-merge checkpoint"
                 <Staging condition="the project uses services with real-world consequences (payments, SMS, email, etc.)">
                     Set up staging environment if one doesn't exist yet: mirror production but use sandbox/test credentials.
                     Deploy to staging.
@@ -113,13 +117,13 @@
                     Run E2E tests against production.
                 </NoStaging>
                 If E2E fails, use subagents to diagnose and fix.
-                If you cannot fix it after 3 attempts, revert the merge on main, file a blocker issue explaining what failed and what investigation revealed, and output <Status>FOUND NEW BLOCKER ISSUE</Status> in a new line and stop.
+                If you cannot fix it after 3 attempts, revert your changes on your branch, file a blocker issue explaining what failed and what investigation revealed, and output <Status>FOUND NEW BLOCKER ISSUE</Status> in a new line and stop.
             </Deploy>
             Any file you create or modify outside the repo (e.g. systemd units, nginx configs, cron jobs, env files) must have a reproducible copy or template checked into the repo, and be documented so a future self can recreate the setup from scratch.
         </Step>
         <Step id="6" title="Maintenance">
             Update or create documentation, including anything you learned or discovered during the process that could be useful for a future iteration to save work.
-            While being careful, you might also want to write hooks for the loop by modifying ./prod/.ralph/hooks.py
+            While being careful, you might also want to write hooks for the loop by modifying ./prod/.ralph/hooks.py (hooks live in prod, not dev)
             Commit.
         </Step>
         <Step id="7" title="Finish">
@@ -184,6 +188,12 @@
             <Instruction>
                 Ensure they run non-interactively (e.g. `apt-get -y`, `rm -f`, `npm --yes`).
             </Instruction>
+            <Instruction>
+                If a subagent fails or errors out, catch the failure gracefully.
+                Retry once with a different approach.
+                If it fails again, file a blocker issue and output FOUND NEW BLOCKER ISSUE.
+                Never let a subagent crash propagate up and kill your session.
+            </Instruction>
         </Subagents>
         <IssueTracking title="How to file issues">
             Usage:
@@ -234,12 +244,17 @@
             </CommitMessages>
         </Git>
         <ProjectStructure>
-            You are working in a bare repo structure:
+            You are running from the project root, a bare repo:
 
-            prod/           # main branch worktree
-            dev/            # dev branch worktree
+            prod/           # main branch worktree -- THE STABLE COPY. Do NOT modify directly.
+            dev/            # dev branch worktree -- YOUR WORKSPACE. All code work goes here.
             uploads/        # Files provided by Human
             .git/
+            opencode.jsonc  # Agent config (symlink)
+            PROMPT.xml      # This file (symlink)
+
+            Always cd into ./dev/ before doing any code work.
+            The loop will merge your validated branch into prod/main after you finish.
 
             If a closed issue is assigned to Human, and it required files or environment variables, you will find such data inside ./uploads
             Unless they're security-sensitive, you should commit those files inside the repo.
