@@ -4,7 +4,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from ..config import BRANCH_PREFIX, MAIN_BRANCH, RALPH_DIR_NAME
+from ..config import BRANCH_PREFIX, DONE_TAG_PREFIX, MAIN_BRANCH, PRE_ITER_TAG_PREFIX, RALPH_DIR_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -222,12 +222,12 @@ def reset_git_state(issue_id: str, cwd: Path | None = None) -> None:
 
 def pre_iter_tag(issue_id: str, iteration: int) -> str:
     """Tag name for a pre-iteration checkpoint."""
-    return f"pre-iter/{issue_id}/{iteration}"
+    return f"{PRE_ITER_TAG_PREFIX}/{issue_id}/{iteration}"
 
 
 def done_tag(issue_id: str) -> str:
     """Tag name for a completed issue."""
-    return f"done/{issue_id}"
+    return f"{DONE_TAG_PREFIX}/{issue_id}"
 
 
 def create_tag(name: str, message: str = "", cwd: Path | None = None) -> None:
@@ -251,12 +251,13 @@ def tag_exists(name: str, cwd: Path | None = None) -> bool:
 def rollback_to_tag(tag_name: str, cwd: Path | None = None) -> None:
     """Hard-reset HEAD to the given tag.
 
-    Ensures on main first, then resets to the tag's commit.
+    Aborts any in-progress merge, ensures on main, then resets.
 
     Args:
         tag_name: Tag to reset to.
         cwd: Directory to run from (should be a worktree).
     """
+    _run("merge", "--abort", cwd=cwd, check=False)  # no-op if not merging
     ensure_on_main(cwd=cwd)
     _run("reset", "--hard", tag_name, cwd=cwd)
     logger.info("Rolled back to tag %s in %s", tag_name, cwd or "cwd")
@@ -272,6 +273,24 @@ def get_latest_tag(pattern: str, cwd: Path | None = None) -> str | None:
     result = _run("tag", "-l", pattern, "--sort=-creatordate", cwd=cwd, check=False)
     tags = result.stdout.strip().splitlines()
     return tags[0] if tags else None
+
+
+def cleanup_issue_tags(issue_id: str, cwd: Path | None = None) -> None:
+    """Delete pre-iter tags for a completed issue.
+
+    Called after a done tag is created -- pre-iter checkpoints are
+    no longer needed for rollback.
+
+    Args:
+        issue_id: The completed issue ID.
+        cwd: Directory to run from.
+    """
+    pattern = f"{PRE_ITER_TAG_PREFIX}/{issue_id}/*"
+    result = _run("tag", "-l", pattern, cwd=cwd, check=False)
+    for tag in result.stdout.strip().splitlines():
+        if tag:
+            _run("tag", "-d", tag, cwd=cwd, check=False)
+    logger.info("Cleaned up pre-iter tags for %s", issue_id)
 
 
 # -- worktree health -------------------------------------------------------
@@ -303,11 +322,17 @@ def is_worktree_clean(cwd: Path | None = None) -> bool:
 def sync_to_branch(target_branch: str, cwd: Path | None = None) -> None:
     """Reset current worktree to match a branch (e.g. sync dev to main).
 
+    Resets HEAD to the target's commit and cleans untracked files.
+    The worktree stays on its own branch (e.g. dev stays on dev)
+    but gets main's content.
+
     Args:
         target_branch: Branch to sync to.
         cwd: Worktree directory.
     """
+    _run("merge", "--abort", cwd=cwd, check=False)  # clean up any stuck merge
     _run("reset", "--hard", target_branch, cwd=cwd)
+    _run("clean", "-fd", cwd=cwd)  # remove untracked files/dirs
     logger.info("Synced worktree to %s in %s", target_branch, cwd or "cwd")
 
 
