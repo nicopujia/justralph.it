@@ -22,3 +22,6 @@ class CustomHooks(Hooks):
 
     def extra_args_kwargs(self, cfg, issue):
         return (), {}
+
+    def on_agent_output(self, line):
+        pass

@@ -93,6 +93,9 @@ class Hooks(ABC):
             Tuple of (positional_args, keyword_args) forwarded to Agent
         """
 
+    def on_agent_output(self, line: str) -> None:
+        """Called for each line of agent stdout. Override for streaming to UI."""
+
 
 def load_hooks(cfg: Config) -> Hooks:
     """Dynamically import and instantiate CustomHooks from .ralph/hooks.py.

@@ -15,6 +15,7 @@ from bd import Issue
 
 from ..config import LOGS_DIR, PROD_WORKTREE, RALPH_DIR, RALPH_DIR_NAME, Config
 from ..core.agent import Agent, AgentStatus
+from ..core.events import Event, EventBus, EventType
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
 from ..core.state import State
@@ -80,6 +81,7 @@ class Loop(Command):
     help = "Run the main agent loop"
     config = LoopConfig
     cfg: LoopConfig
+    event_bus: "EventBus | None" = None  # set externally before run() for server usage
 
     def configure_parser(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -133,6 +135,7 @@ class Loop(Command):
         i = self._state.check_crash_recovery()
 
         self._hooks.pre_loop(self.cfg)
+        self._emit(EventType.LOOP_STARTED)
 
         if not self.cfg.max_iters:
             logger.warning("Skipping entire loop: max_iters is 0")
@@ -163,6 +166,7 @@ class Loop(Command):
                     break
 
         self._hooks.post_loop(self.cfg, i)
+        self._emit(EventType.LOOP_STOPPED, iterations=i)
         return False
 
     # -- signal and resource checks ----------------------------------------
@@ -188,6 +192,7 @@ class Loop(Command):
         total_disk, used_disk, _ = shutil.disk_usage("/")
         disk = round(used_disk / total_disk * 100, 2)
         logger.info("CPU: %s%% | RAM: %s%% | Disk: %s%%", cpu, ram, disk)
+        self._emit(EventType.RESOURCE_CHECK, cpu=cpu, ram=ram, disk=disk)
 
         threshold = self.cfg.vm_res_threshold
         if cpu > threshold or ram > threshold or disk > threshold:
@@ -210,6 +215,7 @@ class Loop(Command):
 
         self._check_all_done()
         logger.info("No ready issues. Waiting...")
+        self._emit(EventType.LOOP_WAITING)
         while True:
             self._check_signals()
             issue = bd.get_next_ready_issue()
@@ -237,6 +243,7 @@ class Loop(Command):
         extra_kwargs.setdefault("cwd", str(self.cfg.base_dir))
         agent = Agent(issue, self.cfg.model, iteration, *extra_args, **extra_kwargs)
         agent.claim_issue()
+        self._emit(EventType.ISSUE_CLAIMED, issue_id=issue.id, title=issue.title)
         reset_git_state(issue.id, cwd=self.cfg.base_dir / PROD_WORKTREE)
         return agent
 
@@ -244,6 +251,7 @@ class Loop(Command):
         """Run the agent and handle its outcome."""
         iter_handler = self._add_iteration_log(iteration)
         self._hooks.pre_iter(self.cfg, issue, iteration)
+        self._emit(EventType.ITER_STARTED, issue_id=issue.id, iteration=iteration)
         self._state.save(issue.id, iteration)
 
         iter_error: Exception | None = None
@@ -258,11 +266,15 @@ class Loop(Command):
             self._remove_iteration_log(iter_handler)
 
     def _run_agent(self, agent: Agent) -> None:
-        """Stream agent output to the logger."""
+        """Stream agent output to the logger and event bus."""
         logger.info("Starting agent")
         for line in agent.run(timeout=self.cfg.subprocess_timeout):
-            logger.info("[agent] %s", line.rstrip())
+            stripped = line.rstrip()
+            logger.info("[agent] %s", stripped)
+            self._hooks.on_agent_output(stripped)
+            self._emit(EventType.AGENT_OUTPUT, line=stripped, issue_id=agent.issue.id)
         logger.info("Agent finished: %s", agent.status)
+        self._emit(EventType.AGENT_STATUS, status=str(agent.status), issue_id=agent.issue.id)
 
     def _handle_status(self, agent: Agent, issue: Issue) -> None:
         """Act on the agent's final status."""
@@ -270,12 +282,15 @@ class Loop(Command):
             case AgentStatus.DONE:
                 logger.info("Marking issue %s as done", issue.id)
                 bd.close_issue(issue.id)
+                self._emit(EventType.ISSUE_DONE, issue_id=issue.id)
             case AgentStatus.HELP:
                 logger.warning("Ralph needs help on issue %s", issue.id)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
+                self._emit(EventType.ISSUE_HELP, issue_id=issue.id)
             case AgentStatus.BLOCKED:
                 logger.info("Issue %s is blocked", issue.id)
                 self._state.cleanup_failed_iteration(status=bd.IssueStatus.BLOCKED)
+                self._emit(EventType.ISSUE_BLOCKED, issue_id=issue.id)
             case _:
                 logger.warning(
                     "Unexpected status %s for issue %s",
@@ -295,6 +310,7 @@ class Loop(Command):
             self._consecutive_failures,
         )
         self._state.cleanup_failed_iteration()
+        self._emit(EventType.ITER_FAILED, error=str(exc))
 
         if (
             self.cfg.max_retries >= 0
@@ -309,6 +325,13 @@ class Loop(Command):
             backoff = min(2**self._consecutive_failures, MAX_BACKOFF_SECONDS)
             logger.info("Backing off for %ss before retrying", backoff)
             time.sleep(backoff)
+
+    # -- event helpers -----------------------------------------------------
+
+    def _emit(self, event_type: EventType, **data) -> None:
+        """Emit an event to the bus if one is attached."""
+        if self.event_bus is not None:
+            self.event_bus.emit(Event(event_type, data=data))
 
     # -- logging helpers ---------------------------------------------------
 
