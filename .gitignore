@@ -1,2 +1,6 @@
 .DS_Store
 *.egg-info
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
