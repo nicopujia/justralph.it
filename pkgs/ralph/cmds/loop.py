@@ -12,7 +12,7 @@ import bd
 import psutil
 from bd import Issue
 
-from ..config import LOGS_DIR, RALPH_DIR, RALPH_DIR_NAME, Config
+from ..config import LOGS_DIR, PROD_WORKTREE, RALPH_DIR, RALPH_DIR_NAME, Config
 from ..core.agent import Agent, AgentStatus
 from ..core.exceptions import RestartRequested, StopRequested
 from ..core.hooks import load_hooks
@@ -103,7 +103,8 @@ class Loop(Command):
         file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(file_handler)
 
-        self._state = State(self.cfg.state_file)
+        prod_dir = self.cfg.base_dir / PROD_WORKTREE
+        self._state = State(self.cfg.state_file, prod_dir=prod_dir)
         self._hooks = load_hooks(self.cfg)
         self._consecutive_failures = 0
 
@@ -212,7 +213,7 @@ class Loop(Command):
         extra_kwargs.setdefault("cwd", str(self.cfg.base_dir))
         agent = Agent(issue, self.cfg.model, iteration, *extra_args, **extra_kwargs)
         agent.claim_issue()
-        reset_git_state(issue.id)
+        reset_git_state(issue.id, cwd=self.cfg.base_dir / PROD_WORKTREE)
         return agent
 
     def _process_issue(self, agent: Agent, issue: Issue, iteration: int) -> None:

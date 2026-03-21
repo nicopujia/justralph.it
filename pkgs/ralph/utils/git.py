@@ -128,69 +128,56 @@ def _prune_empty_dirs(root: Path, keep: set[str]) -> None:
             pass
 
 
-def cleanup_branch(issue_id: str) -> None:
+def hard_reset(cwd: Path | None = None) -> None:
+    """Run ``git reset --hard`` to discard uncommitted changes.
+
+    Args:
+        cwd: Directory to run in (should be a worktree, not bare root).
+    """
+    _run("reset", "--hard", cwd=cwd)
+    logger.info("Ran git reset --hard in %s", cwd or "cwd")
+
+
+def cleanup_branch(issue_id: str, cwd: Path | None = None) -> None:
     """Delete the ralph/[issue-id] branch if it exists.
 
     Args:
         issue_id: The issue ID (e.g., 'bd-123')
+        cwd: Directory to run git commands from.
     """
     branch_name = f"{BRANCH_PREFIX}{issue_id}"
-    try:
-        # Check if branch exists
-        result = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            logger.info("Branch %s exists; deleting it", branch_name)
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            logger.info("Deleted branch %s", branch_name)
-        else:
-            logger.debug("Branch %s does not exist; nothing to clean up", branch_name)
-    except subprocess.CalledProcessError as e:
-        logger.warning("Failed to delete branch %s: %s", branch_name, e.stderr)
+    result = _run("rev-parse", "--verify", branch_name, cwd=cwd, check=False)
+    if result.returncode == 0:
+        logger.info("Branch %s exists; deleting it", branch_name)
+        _run("branch", "-D", branch_name, cwd=cwd)
+        logger.info("Deleted branch %s", branch_name)
+    else:
+        logger.debug("Branch %s does not exist; nothing to clean up", branch_name)
 
 
-def ensure_on_main() -> None:
-    """Ensure the current branch is main. Checkout main if not already on it."""
-    try:
-        # Check current branch
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        current_branch = result.stdout.strip()
+def ensure_on_main(cwd: Path | None = None) -> None:
+    """Ensure the current branch is main. Checkout main if not already on it.
 
-        if current_branch != MAIN_BRANCH:
-            logger.info("Currently on branch %s; checking out main", current_branch)
-            subprocess.run(
-                ["git", "checkout", MAIN_BRANCH],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            logger.info("Checked out main")
-        else:
-            logger.debug("Already on main branch")
-    except subprocess.CalledProcessError as e:
-        logger.error("Failed to checkout main: %s", e.stderr)
-        raise
+    Args:
+        cwd: Directory to run git commands from (should be a worktree).
+    """
+    result = _run("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd)
+    current_branch = result.stdout.strip()
+
+    if current_branch != MAIN_BRANCH:
+        logger.info("Currently on branch %s; checking out main", current_branch)
+        _run("checkout", MAIN_BRANCH, cwd=cwd)
+        logger.info("Checked out main")
+    else:
+        logger.debug("Already on main branch")
 
 
-def reset_git_state(issue_id: str) -> None:
+def reset_git_state(issue_id: str, cwd: Path | None = None) -> None:
     """Reset git state: ensure on main and delete issue branch.
 
     Args:
         issue_id: The issue ID (e.g., 'bd-123')
+        cwd: Directory to run git commands from (should be a worktree).
     """
-    ensure_on_main()
-    cleanup_branch(issue_id)
+    ensure_on_main(cwd=cwd)
+    cleanup_branch(issue_id, cwd=cwd)

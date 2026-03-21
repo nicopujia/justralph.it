@@ -2,12 +2,11 @@
 
 import json
 import logging
-import subprocess
 from pathlib import Path
 
 import bd
 
-from ..utils.git import reset_git_state
+from ..utils.git import hard_reset, reset_git_state
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +22,9 @@ class State:
     previous run crashed mid-iteration.
     """
 
-    def __init__(self, file: Path) -> None:
+    def __init__(self, file: Path, prod_dir: Path | None = None) -> None:
         self._file = file
+        self._prod_dir = prod_dir
         self.issue_id: str | None = None
 
     def save(self, issue_id: str, iteration: int) -> None:
@@ -68,14 +68,8 @@ class State:
         )
 
         try:
-            subprocess.run(
-                ["git", "reset", "--hard"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            logger.info("Ran git reset --hard")
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            hard_reset(cwd=self._prod_dir)
+        except Exception as e:
             logger.error("git reset --hard failed: %s", e)
 
         if self.issue_id:
@@ -95,7 +89,7 @@ class State:
         if not self.issue_id:
             return
         logger.info("Cleaning up failed iteration for issue %s", self.issue_id)
-        reset_git_state(self.issue_id)
+        reset_git_state(self.issue_id, cwd=self._prod_dir)
         try:
             bd.update_issue(self.issue_id, status=status, assignee="")
             logger.info(
