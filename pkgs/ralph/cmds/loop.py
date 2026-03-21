@@ -343,6 +343,7 @@ class Loop(Command):
         # Save state FIRST so cleanup_failed_iteration can find the issue_id
         # if hooks or logging throw before the agent runs
         self._state.save(issue.id, iteration)
+        iter_handler = None
         iter_handler = self._add_iteration_log(iteration)
         self._hooks.pre_iter(self.cfg, issue, iteration)
         self._emit(EventType.ITER_STARTED, issue_id=issue.id, iteration=iteration)
@@ -356,7 +357,8 @@ class Loop(Command):
             raise
         finally:
             self._hooks.post_iter(self.cfg, issue, iteration, agent.status, iter_error)
-            self._remove_iteration_log(iter_handler)
+            if iter_handler is not None:
+                self._remove_iteration_log(iter_handler)
 
     def _run_agent(self, agent: Agent) -> None:
         """Stream agent output to the logger and event bus."""
