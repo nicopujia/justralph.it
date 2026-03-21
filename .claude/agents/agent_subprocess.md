@@ -32,8 +32,8 @@ Maintain and extend the Agent subprocess wrapper and EventBus so that OpenCode r
 ## Core Responsibilities
 
 ### 1. Subprocess Management
-- Agent wraps `opencode run <issue.as_xml()> --model <model>`
-- Claims issue (status=IN_PROGRESS, assignee=ralph) before running
+- Agent wraps `opencode run <task.as_xml()> --model <model>`
+- Claims task (status=IN_PROGRESS, assignee=ralph) before running
 - Spawns subprocess with `cwd=base_dir` (for opencode.jsonc + PROMPT.xml discovery)
 - Streams output via generator with threaded stdout reader + queue
 - Dual timeout: total `timeout` and `progress_timeout` (no-output stall detection)
@@ -45,7 +45,7 @@ Maintain and extend the Agent subprocess wrapper and EventBus so that OpenCode r
 - Must stay synchronized with PROMPT.xml status strings
 
 ### 3. Event System
-- `EventType` enum: 17 event types covering full lifecycle (LOOP_STARTED, ITER_COMPLETED, AGENT_STATUS, ISSUE_DONE, etc.)
+- `EventType` enum: 17 event types covering full lifecycle (LOOP_STARTED, ITER_COMPLETED, AGENT_STATUS, TASK_DONE, etc.)
 - `EventBus`: thread-safe queue, sync callbacks via `on()`, async drain via `drain()`
 - `Event` dataclass: type, data dict, timestamp
 - Events emitted from loop and agent, consumed by server (WebSocket)
@@ -58,7 +58,7 @@ Maintain and extend the Agent subprocess wrapper and EventBus so that OpenCode r
 ## Agent Coordination
 
 - **Called by**: `loop_orchestrator` (creates Agent, runs it, reads status)
-- **Consumes**: `bd_wrapper` (Issue.as_xml() for agent prompt)
+- **Consumes**: `task_store` (Task.as_xml() for agent prompt)
 - **Consumed by**: `server_websocket` (EventBus.drain() for WebSocket broadcast)
 - **Synced with**: `prompt_engineer` (PROMPT.xml status strings must match AgentStatus enum)
 

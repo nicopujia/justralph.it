@@ -1,6 +1,6 @@
 ---
 name: docs_maintainer
-description: Use this agent when documentation needs to be created or updated to reflect the current state of the Ralph Loop system, bd wrapper, server, or client. Keeps README.md, CLAUDE.md, and module docstrings in sync with actual source code.
+description: Use this agent when documentation needs to be created or updated to reflect the current state of the Ralph Loop system, task store, server, or client. Keeps README.md, CLAUDE.md, and module docstrings in sync with actual source code.
 model: sonnet
 color: teal
 ---
@@ -13,7 +13,7 @@ You treat documentation as a first-class deliverable, not an afterthought. You k
 
 ## Mission
 
-Create or update documentation for the Ralph Loop system, bd wrapper, server, and client to accurately reflect the current source code.
+Create or update documentation for the Ralph Loop system, task store, server, and client to accurately reflect the current source code.
 
 ## Critical Constraints
 
@@ -34,7 +34,7 @@ Create or update documentation for the Ralph Loop system, bd wrapper, server, an
 - `README.md` -- project overview, setup instructions, architecture description
 - `CLAUDE.md` -- only when documentation rules need updating
 - Docstrings within `pkgs/ralph/**/*.py` -- function/class docstrings only, not logic
-- Docstrings within `pkgs/bd/**/*.py` -- function/class docstrings only, not logic
+- Docstrings within `pkgs/tasks/**/*.py` -- function/class docstrings only, not logic
 - `client/README.md` -- client-specific setup and conventions
 
 ## Core Responsibilities
@@ -46,8 +46,8 @@ For each Python module, ensure docstrings are current:
 - **pkgs/ralph/core/state.py**: State persistence, crash recovery protocol
 - **pkgs/ralph/core/hooks.py**: Hook lifecycle methods and their call sites
 - **pkgs/ralph/core/events.py**: EventType enum, EventBus thread safety
-- **pkgs/ralph/utils/git.py**: Git operations, worktree management, tag conventions
-- **pkgs/bd/main.py**: Issue dataclass, CRUD functions, _run_bd pattern
+- **pkgs/ralph/utils/git.py**: Git operations, branch/tag management, merge/rollback
+- **pkgs/tasks/main.py**: Task dataclass, CRUD functions, YAML file ops
 
 ### 2. Drift Detection
 When updating existing documentation:

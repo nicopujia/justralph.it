@@ -18,7 +18,7 @@ Maintain and refine PROMPT.xml and opencode.jsonc so that Ralph produces high-qu
 ## Critical Constraints
 
 - **Status string sync**: PROMPT.xml status output format MUST match `AgentStatus` values in `pkgs/ralph/core/agent.py`. If you change one, you must change the other.
-- **Worktree awareness**: Ralph works in `./dev/`, the loop merges to `./prod/main`. PROMPT.xml must never instruct Ralph to touch prod directly.
+- **Branch safety**: The loop merges Ralph's validated branch into main. PROMPT.xml must never instruct Ralph to merge into main directly.
 - **No hallucinated tools**: only reference tools and commands that OpenCode actually provides.
 
 ## Reads First (Before Every Task)
@@ -27,7 +27,7 @@ Maintain and refine PROMPT.xml and opencode.jsonc so that Ralph produces high-qu
 2. `pkgs/ralph/PROMPT.xml` -- current system prompt
 3. `pkgs/ralph/opencode.jsonc` -- OpenCode configuration
 4. `pkgs/ralph/core/agent.py` -- AgentStatus enum and status parsing logic
-5. `pkgs/bd/main.py` -- Issue.as_xml() format (what Ralph receives as input)
+5. `pkgs/tasks/main.py` -- Task.as_xml() format (what Ralph receives as input)
 
 ## Allowed to Edit
 
@@ -49,7 +49,7 @@ PROMPT.xml contains 7 workflow steps:
 Each step must be clear, actionable, and reference real tools.
 
 ### 2. Status String Synchronization
-- PROMPT.xml tells Ralph to output: `<Status>COMPLETED ASSIGNED ISSUE</Status>`
+- PROMPT.xml tells Ralph to output: `<Status>COMPLETED ASSIGNED TASK</Status>`
 - `AgentStatus` enum in `agent.py` maps these strings to: DONE, HELP, BLOCKED
 - If you add a new status: update PROMPT.xml output instructions AND AgentStatus enum
 - Test parsing: the last non-empty line must match the expected format
@@ -68,14 +68,14 @@ Each step must be clear, actionable, and reference real tools.
 ## Agent Coordination
 
 - **Synced with**: `agent_subprocess` (AgentStatus enum must match PROMPT.xml status strings)
-- **Referenced by**: `config_init` (symlinks PROMPT.xml and opencode.jsonc to worktrees)
+- **Referenced by**: `config_init` (symlinks PROMPT.xml to project root)
 
 ## Operating Protocol
 
 ### Phase 1: Discovery
 1. Read PROMPT.xml fully -- understand all 7 workflow steps and reminders
 2. Read `agent.py` -- understand how status strings are parsed
-3. Read `Issue.as_xml()` in `bd/main.py` -- understand what Ralph receives as input
+3. Read `Task.as_xml()` in `tasks/main.py` -- understand what Ralph receives as input
 4. Identify the change and which sections are affected
 
 ### Phase 2: Execution
@@ -88,14 +88,14 @@ Each step must be clear, actionable, and reference real tools.
 1. Verify status strings in PROMPT.xml match AgentStatus enum values exactly
 2. Verify all referenced tools and commands exist in OpenCode
 3. Verify workflow steps don't instruct Ralph to modify prod directly
-4. Verify Issue.as_xml() format matches what PROMPT.xml expects to receive
+4. Verify Task.as_xml() format matches what PROMPT.xml expects to receive
 
 ## Anti-Patterns
 
 - Do not change status strings in PROMPT.xml without updating AgentStatus enum
 - Do not add workflow steps that bypass TDD (step 4)
 - Do not reference tools that OpenCode doesn't provide
-- Do not instruct Ralph to work in prod -- always dev/ worktree
+- Do not instruct Ralph to merge into main -- the loop handles promotion
 
 ## Output Contract
 

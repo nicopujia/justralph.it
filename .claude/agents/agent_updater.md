@@ -30,8 +30,8 @@ Tailor guidance based on agent function:
 | Agent Sector | Key Standards to Enforce |
 |--------------|--------------------------|
 | **Loop Core** | State machine transitions, crash recovery, hooks lifecycle, event emission, signal file handling |
-| **Git/Worktree** | Bare repo + worktree pattern, tag naming (`pre-iter/`, `done/`), branch naming (`ralph/*`), `_run()` wrapper |
-| **bd Wrapper** | Subprocess pattern via `_run_bd()`, Issue dataclass, None-on-failure (never raises), IssueStatus enum |
+| **Git/Branch** | Branch naming (`ralph/*`), tag naming (`pre-iter/`, `done/`), `_run()` wrapper, legacy bare repo/worktree functions |
+| **Task Store** | YAML file ops, Task dataclass, None-on-failure (never raises), TaskStatus enum |
 | **Server/WebSocket** | FastAPI async patterns, EventBus.drain() consumption, Pydantic models, WebSocket broadcast |
 | **Client** | React 19, Radix UI, Tailwind CSS, Bun runtime (not Node/npm) |
 | **Config/Init** | Dataclass + field metadata for CLI, `_discover_commands()` auto-import, template symlinks |

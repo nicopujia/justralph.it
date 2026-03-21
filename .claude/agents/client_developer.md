@@ -52,10 +52,10 @@ Maintain and extend the React 19 frontend code: components, state management, We
 - Handle connection lifecycle: connect, reconnect on disconnect, error handling
 - Display streaming agent output as it arrives
 
-### 3. REST API Integration
-- Issue list/detail views via `/api/issues` endpoints
-- Issue creation/update forms
-- Loop status display
+### 3. API Integration
+- Loop control: POST /api/loop/start, /api/loop/stop, /api/loop/restart
+- Loop status: GET /api/loop/status
+- Task CRUD: TODO (pending pkgs/tasks/ implementation)
 
 ### 4. Build Configuration
 - Bun.serve for dev server with HMR
