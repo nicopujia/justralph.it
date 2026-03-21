@@ -53,7 +53,7 @@ export type Relevance = {
   edge_cases: number;
 };
 
-export type ToolName = "brainstorm" | "expand" | "refine" | "architect";
+export type ToolName = "brainstorm" | "expand" | "refine" | "architect" | "modify";
 export type ToolResult = { content: string; mode: "edit" | "inject"; tool: ToolName; elapsed_ms?: number; model?: string };
 
 export type ChatState = {
@@ -82,6 +82,56 @@ const API = API_URL;
 
 const LS_KEY = "ralph_session_id";
 
+/**
+ * Parse a history message from the API. Assistant messages may arrive as:
+ * - Already parsed by the backend (content is text, metadata is object)
+ * - Legacy JSON string (content is a JSON blob with .message inside)
+ * This normalizes both cases into a proper ChatMessage.
+ */
+function _parseHistoryMessage(m: { role: string; content: string; created_at?: number; metadata?: Record<string, unknown> }): ChatMessage {
+  const base: ChatMessage = {
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    timestamp: m.created_at ? m.created_at * 1000 : undefined,
+  };
+
+  if (m.role !== "assistant") return base;
+
+  // If backend already parsed and provided metadata, use it
+  if (m.metadata) {
+    const md = m.metadata as Record<string, any>;
+    base.metadata = {
+      confidence: md.confidence ?? EMPTY_CONFIDENCE,
+      relevance: md.relevance ?? EMPTY_RELEVANCE,
+      phase: md.phase ?? 1,
+      questionCount: md.question_count ?? 0,
+      weightedReadiness: md.weighted_readiness ?? 0,
+      rawResponse: md,
+    };
+    return base;
+  }
+
+  // Fallback: try parsing content as JSON (legacy double-encoded messages)
+  try {
+    const parsed = JSON.parse(m.content);
+    if (typeof parsed === "object" && parsed !== null && "message" in parsed) {
+      base.content = parsed.message;
+      base.metadata = {
+        confidence: parsed.confidence ?? EMPTY_CONFIDENCE,
+        relevance: parsed.relevance ?? EMPTY_RELEVANCE,
+        phase: parsed.phase ?? 1,
+        questionCount: parsed.question_count ?? 0,
+        weightedReadiness: parsed.weighted_readiness ?? 0,
+        rawResponse: parsed,
+      };
+    }
+  } catch {
+    // Not JSON -- leave content as-is
+  }
+
+  return base;
+}
+
 const EMPTY_CONFIDENCE: Confidence = {
   functional: 0,
   technical_stack: 0,
@@ -107,6 +157,7 @@ const EMPTY_TOOL_USAGE: Record<ToolName, number> = {
   expand: 0,
   refine: 0,
   architect: 0,
+  modify: 0,
 };
 
 export function useChatbot() {
@@ -144,35 +195,47 @@ export function useChatbot() {
         }
         const session = await verifyResp.json();
 
-        // Fetch chat history if available
-        const histResp = await fetch(
-          `${API}/api/sessions/${saved}/chat/history`,
-        );
+        // Fetch chat history + live state in parallel
+        const [histResp, stateResp] = await Promise.all([
+          fetch(`${API}/api/sessions/${saved}/chat/history`),
+          fetch(`${API}/api/sessions/${saved}/chat/state`),
+        ]);
         if (!histResp.ok) {
           // Session exists but no history endpoint -- restore just the id
           setState((s) => ({ ...s, sessionId: saved }));
           return;
         }
         const hist = await histResp.json();
+        // Live state is the authoritative source for confidence/readiness
+        const liveState = stateResp.ok ? await stateResp.json() : null;
+
+        // Parse history messages (handles both new parsed format and legacy JSON strings)
+        const parsedMessages = (hist.messages ?? []).map(_parseHistoryMessage);
+
+        // Priority: liveState (authoritative) > hist top-level > hist.state > session > default
+        const st = hist.state ?? {};
+        const confidence = liveState?.confidence ?? hist.confidence ?? st.confidence ?? EMPTY_CONFIDENCE;
+        const relevance = liveState?.relevance ?? hist.relevance ?? st.relevance ?? EMPTY_RELEVANCE;
 
         setState((s) => ({
           ...s,
           sessionId: saved,
-          messages: hist.messages ?? s.messages,
-          confidence: hist.confidence ?? session.confidence ?? s.confidence,
-          relevance: hist.relevance ?? session.relevance ?? s.relevance,
-          ready: hist.ready ?? session.ready ?? s.ready,
+          messages: parsedMessages.length > 0 ? parsedMessages : s.messages,
+          confidence,
+          relevance,
+          ready: liveState?.ready ?? hist.ready ?? st.ready ?? session.ready ?? s.ready,
           weightedReadiness:
-            hist.weighted_readiness ??
-            session.weighted_readiness ??
-            s.weightedReadiness,
+            liveState?.weighted_readiness ?? hist.weighted_readiness ?? st.weighted_readiness ??
+            session.weighted_readiness ?? s.weightedReadiness,
           questionCount:
-            hist.question_count ?? session.question_count ?? s.questionCount,
-          // If session was running, set phase to 2
+            liveState?.question_count ?? hist.question_count ?? st.question_count ??
+            session.question_count ?? s.questionCount,
           phase:
             session.status === "running"
               ? 2
-              : (hist.phase ?? session.phase ?? s.phase),
+              : (liveState?.phase ?? hist.phase ?? st.phase ?? session.phase ?? s.phase),
+          tasks: hist.tasks ?? st.tasks ?? s.tasks,
+          project: hist.project ?? st.project ?? s.project,
         }));
       } catch {
         // Network error -- leave state as-is, don't clear localStorage
@@ -397,27 +460,34 @@ export function useChatbot() {
    */
   const loadSession = useCallback(async (sessionId: string) => {
     try {
-      const [sessionResp, histResp] = await Promise.all([
+      const [sessionResp, histResp, stateResp] = await Promise.all([
         fetch(`${API}/api/sessions/${sessionId}`),
         fetch(`${API}/api/sessions/${sessionId}/chat/history`),
+        fetch(`${API}/api/sessions/${sessionId}/chat/state`),
       ]);
       if (!sessionResp.ok) return;
       const session = await sessionResp.json();
       const hist = histResp.ok ? await histResp.json() : {};
+      const liveState = stateResp.ok ? await stateResp.json() : null;
+
+      const parsedMessages = (hist.messages ?? []).map(_parseHistoryMessage);
+      const st = hist.state ?? {};
+      const confidence = liveState?.confidence ?? hist.confidence ?? st.confidence ?? session.confidence ?? EMPTY_CONFIDENCE;
+      const relevance = liveState?.relevance ?? hist.relevance ?? st.relevance ?? session.relevance ?? EMPTY_RELEVANCE;
 
       localStorage.setItem(LS_KEY, sessionId);
       setState((s) => ({
         ...s,
         sessionId,
-        messages: hist.messages ?? [],
-        confidence: hist.confidence ?? session.confidence ?? EMPTY_CONFIDENCE,
-        relevance: hist.relevance ?? session.relevance ?? EMPTY_RELEVANCE,
-        ready: hist.ready ?? session.ready ?? false,
-        tasks: null,
-        project: null,
-        weightedReadiness: hist.weighted_readiness ?? session.weighted_readiness ?? 0,
-        questionCount: hist.question_count ?? session.question_count ?? 0,
-        phase: hist.phase ?? session.phase ?? 1,
+        messages: parsedMessages,
+        confidence,
+        relevance,
+        ready: liveState?.ready ?? hist.ready ?? st.ready ?? session.ready ?? false,
+        tasks: hist.tasks ?? st.tasks ?? null,
+        project: hist.project ?? st.project ?? null,
+        weightedReadiness: liveState?.weighted_readiness ?? hist.weighted_readiness ?? st.weighted_readiness ?? session.weighted_readiness ?? 0,
+        questionCount: liveState?.question_count ?? hist.question_count ?? st.question_count ?? session.question_count ?? 0,
+        phase: liveState?.phase ?? hist.phase ?? st.phase ?? session.phase ?? 1,
         loading: false,
         error: null,
         toolLoading: false,
