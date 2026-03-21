@@ -23,6 +23,7 @@ from ..utils.git import (
     init_bare,
     is_bare,
     is_repo,
+    push,
 )
 from . import Command
 
@@ -96,6 +97,7 @@ class Init(Command):
 
         if self.cfg.remote:
             add_remote(root, "origin", self.cfg.remote)
+            push(cwd=root)
 
         logger.info("Initialized %s", root)
 

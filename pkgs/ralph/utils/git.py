@@ -140,6 +140,18 @@ def add_remote(repo: Path, name: str, url: str) -> None:
     logger.info("Added remote %s -> %s", name, url)
 
 
+def push(branch: str = MAIN_BRANCH, remote: str = "origin", cwd: Path | None = None) -> None:
+    """Push a branch to a remote.
+
+    Args:
+        branch: Branch to push.
+        remote: Remote name.
+        cwd: Directory to run from (worktree or bare root).
+    """
+    _run("push", "-u", remote, branch, cwd=cwd)
+    logger.info("Pushed %s to %s", branch, remote)
+
+
 def hard_reset(cwd: Path | None = None) -> None:
     """Run ``git reset --hard`` to discard uncommitted changes.
 

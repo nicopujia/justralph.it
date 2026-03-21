@@ -102,6 +102,12 @@ class Loop(Command):
             )
             raise SystemExit(1)
 
+        # Preflight: ensure required binaries are available
+        for binary in ("opencode", "bd"):
+            if not shutil.which(binary):
+                print(f"Error: '{binary}' not found on PATH.", file=sys.stderr)
+                raise SystemExit(1)
+
         file_handler = logging.FileHandler(filename=self.cfg.log_file)
         file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(file_handler)
