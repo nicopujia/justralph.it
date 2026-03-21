@@ -292,9 +292,9 @@ async def api_chat(session_id: str, req: ChatRequest):
 
     When confidence threshold is met, response includes generated tasks + project metadata.
     """
-    _require_session(session_id)
+    session = _require_session(session_id)
     try:
-        result = await chatbot_chat(session_id, req.message)
+        result = await chatbot_chat(session_id, req.message, session_dir=session.base_dir)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return result

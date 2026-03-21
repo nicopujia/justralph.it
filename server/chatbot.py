@@ -1,21 +1,21 @@
-"""Ralphy chatbot: LLM-powered requirement extraction with confidence scoring.
+"""Ralphy chatbot: requirement extraction via OpenCode.
 
-Asks questions iteratively until confidence across all requirement dimensions
-reaches threshold. Then generates structured tasks for the Ralph Loop.
+Each chat message spawns `opencode run` with the Ralphy system prompt.
+Uses the same runtime, model, and API config as the loop agents.
+No separate API key needed.
 """
 
 import json
 import logging
-import os
+import shutil
+import subprocess
 from dataclasses import dataclass, field
-
-import httpx
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "moonshotai/kimi-k2"
-CONFIDENCE_THRESHOLD = 90  # all dimensions must reach this %
+OPENCODE_CMD = "opencode"
+DEFAULT_MODEL = "opencode/kimi-k2.5"
 
 DIMENSIONS = [
     "functional",       # what does it do?
@@ -26,6 +26,79 @@ DIMENSIONS = [
     "testing",          # test strategy, coverage expectations
     "edge_cases",       # error handling, constraints, limits
 ]
+
+# -- Validation constants ---
+MAX_DELTA = 20
+SHORT_MSG_LEN = 30
+SHORT_MSG_DELTA = 5
+EMA_ALPHA = 0.7
+
+BASE_WEIGHTS: dict[str, float] = {
+    "functional": 2.0,
+    "technical_stack": 1.5,
+    "data_model": 1.5,
+    "auth": 1.0,
+    "deployment": 1.0,
+    "testing": 1.0,
+    "edge_cases": 1.0,
+}
+READINESS_THRESHOLD = 85
+MIN_DIM_SCORE = 70
+MIN_QUESTIONS = 10
+RELEVANCE_CUTOFF = 0.3
+
+
+def _get_phase(user_msg_count: int) -> int:
+    if user_msg_count <= 3:
+        return 1
+    if user_msg_count <= 7:
+        return 2
+    if user_msg_count <= 10:
+        return 3
+    return 4
+
+
+def _phase_cap(user_msg_count: int) -> int:
+    if user_msg_count <= 3:
+        return 40
+    if user_msg_count <= 7:
+        return 70
+    if user_msg_count <= 10:
+        return 90
+    return 100
+
+
+def _clamp_score(new: int, prev: int, phase_max: int, msg_len: int) -> int:
+    clamped = min(new, phase_max)
+    max_d = SHORT_MSG_DELTA if msg_len < SHORT_MSG_LEN else MAX_DELTA
+    if clamped > prev + max_d:
+        clamped = prev + max_d
+    return max(0, min(100, clamped))
+
+
+def _smooth(new: int, prev: int) -> int:
+    if new <= prev:
+        return new
+    return round(EMA_ALPHA * new + (1 - EMA_ALPHA) * prev)
+
+
+def _compute_readiness(confidence: dict[str, int], relevance: dict[str, float]) -> float:
+    num = sum(confidence.get(d, 0) * BASE_WEIGHTS[d] * relevance.get(d, 1.0) for d in DIMENSIONS)
+    den = sum(BASE_WEIGHTS[d] * relevance.get(d, 1.0) for d in DIMENSIONS)
+    return num / den if den else 0.0
+
+
+def _is_ready(state: "ChatState") -> bool:
+    if state.user_msg_count < MIN_QUESTIONS:
+        return False
+    if state.weighted_readiness < READINESS_THRESHOLD:
+        return False
+    for d in DIMENSIONS:
+        if state.relevance.get(d, 1.0) > RELEVANCE_CUTOFF:
+            if state.confidence.get(d, 0) < MIN_DIM_SCORE:
+                return False
+    return True
+
 
 SYSTEM_PROMPT = """\
 You are Ralphy, an expert software architect and requirement extractor.
@@ -39,89 +112,76 @@ coding agent (Ralph) to implement.
 1. The user gives you an initial idea.
 2. You ask ONE focused question at a time, targeting the weakest dimension.
 3. After each answer, you reassess confidence across all dimensions.
-4. When ALL dimensions reach {threshold}% confidence, you generate tasks.
+4. Set ready=true when you believe all relevant requirements are thoroughly \
+covered. The server validates independently.
+
+## Progressive questioning
+
+Match question depth to conversation phase:
+- Questions 1-3 (big picture): What does it do? Who uses it? What tech stack?
+- Questions 4-7 (specifics): Data model, auth needs, deployment target, integrations.
+- Questions 8-10 (edge cases): Error handling, testing strategy, constraints, scale.
+- Questions 11+ (finalize): Fill gaps, verify consistency, resolve contradictions.
+
+Do NOT jump ahead. You MUST ask at least 10 substantive questions before setting ready=true.
 
 ## Confidence dimensions (0-100 each)
 
 - **functional**: What the software does. Features, user stories, main flows.
 - **technical_stack**: Language, framework, database, key libraries.
 - **data_model**: Entities, fields, relationships, storage format.
-- **auth**: Authentication, authorization, user roles. (Score 90+ if the project has no auth needs.)
-- **deployment**: How/where it runs. Local, VPS, cloud. Environment variables, ports.
-- **testing**: Test strategy. Unit, integration, E2E. What must be tested.
-- **edge_cases**: Error handling, input validation, rate limits, constraints.
+- **auth**: Authentication, authorization, user roles. (Score 90+ if no auth needed.)
+- **deployment**: How/where it runs. Local, VPS, cloud.
+- **testing**: Test strategy. Unit, integration, E2E.
+- **edge_cases**: Error handling, input validation, constraints.
+
+## Relevance
+
+Rate 0.0 for dimensions irrelevant to this project (e.g., auth for a CLI tool). \
+Rate 1.0 for critical dimensions. Reassess each turn.
 
 ## Response format
 
-You MUST respond with valid JSON (no markdown, no code fences):
+You MUST respond with valid JSON only (no markdown, no code fences):
 
 {{
-  "message": "Your question or response to the user (markdown OK inside this string)",
+  "message": "Your question or response (markdown OK inside this string)",
   "confidence": {{
-    "functional": <0-100>,
-    "technical_stack": <0-100>,
-    "data_model": <0-100>,
-    "auth": <0-100>,
-    "deployment": <0-100>,
-    "testing": <0-100>,
-    "edge_cases": <0-100>
+    "functional": <0-100>, "technical_stack": <0-100>, "data_model": <0-100>,
+    "auth": <0-100>, "deployment": <0-100>, "testing": <0-100>, "edge_cases": <0-100>
+  }},
+  "relevance": {{
+    "functional": <0.0-1.0>, "technical_stack": <0.0-1.0>, "data_model": <0.0-1.0>,
+    "auth": <0.0-1.0>, "deployment": <0.0-1.0>, "testing": <0.0-1.0>, "edge_cases": <0.0-1.0>
   }},
   "ready": false
 }}
 
-When ALL dimensions >= {threshold}, set "ready": true and add a "tasks" field:
+When requirements are thoroughly covered, set "ready": true and add:
 
 {{
-  "message": "I have enough information. Here are the tasks I'll create for Ralph:",
-  "confidence": {{ ... all >= {threshold} ... }},
+  "message": "Here are the tasks:",
+  "confidence": {{ ... }},
+  "relevance": {{ ... }},
   "ready": true,
   "tasks": [
-    {{
-      "title": "Short imperative title",
-      "body": "Acceptance: ...\\nDesign: ...\\nNotes: ...",
-      "priority": 1,
-      "parent": null
-    }},
-    {{
-      "title": "Second task (depends on first)",
-      "body": "Acceptance: ...",
-      "priority": 2,
-      "parent": "task-001"
-    }}
+    {{ "title": "...", "body": "Acceptance: ...\\nDesign: ...", "priority": 1, "parent": null }},
+    {{ "title": "...", "body": "...", "priority": 2, "parent": "task-001" }}
   ],
   "project": {{
-    "name": "project-name",
-    "language": "Python",
-    "framework": "FastAPI",
+    "name": "project-name", "language": "Python", "framework": "FastAPI",
     "description": "One-line description",
-    "test_command": "uv run pytest",
-    "lint_command": "uv run ruff check ."
+    "test_command": "uv run pytest", "lint_command": "uv run ruff check ."
   }}
 }}
 
-## Task quality rules
+## Rules
 
-- Tasks must be sequential and dependency-ordered (parent field)
-- Each task must have clear acceptance criteria in the body
-- Tasks must be atomic: one testable unit of work
-- First tasks should set up project structure and core data models
-- Later tasks build features on top
-- Include a final task for documentation and cleanup
-- Priority: 1 = do first, higher = do later
-
-## Behavior rules
-
-- Ask ONE question at a time. Never ask multiple questions in one message.
-- Be specific. "What database?" not "Tell me about the technical details."
-- If the user's answer is vague, ask a follow-up to clarify.
+- ONE question at a time. Be specific.
 - Don't assume. If unsure, ask.
-- Score auth at 90+ if the project genuinely doesn't need authentication.
-- Score dimensions honestly -- don't inflate to reach threshold faster.
-- Before setting ready=true, verify there are ZERO contradictions in the requirements.
-  If you spot a contradiction, ask the user to resolve it. Never generate tasks with ambiguity.
-- The task list you generate is what an autonomous AI agent will implement without
-  human oversight. Every gap or ambiguity becomes a bug. Be thorough.
-""".format(threshold=CONFIDENCE_THRESHOLD)
+- Score honestly. The server validates independently.
+- Before ready=true: verify ZERO contradictions. Every gap becomes a bug.
+"""
 
 
 @dataclass
@@ -130,19 +190,28 @@ class ChatState:
 
     messages: list[dict] = field(default_factory=list)
     confidence: dict[str, int] = field(default_factory=lambda: {d: 0 for d in DIMENSIONS})
+    relevance: dict[str, float] = field(default_factory=lambda: {d: 1.0 for d in DIMENSIONS})
     ready: bool = False
     tasks: list[dict] | None = None
     project: dict | None = None
+    weighted_readiness: float = 0.0
+    session_dir: Path | None = None
+
+    @property
+    def user_msg_count(self) -> int:
+        return sum(1 for m in self.messages if m["role"] == "user")
 
     def to_dict(self) -> dict:
         return {
             "confidence": self.confidence,
+            "relevance": self.relevance,
             "ready": self.ready,
-            "threshold": CONFIDENCE_THRESHOLD,
+            "weighted_readiness": round(self.weighted_readiness, 1),
+            "question_count": self.user_msg_count,
+            "phase": _get_phase(self.user_msg_count),
         }
 
 
-# Per-session chat states
 _chat_states: dict[str, ChatState] = {}
 
 
@@ -152,81 +221,80 @@ def get_chat_state(session_id: str) -> ChatState:
     return _chat_states[session_id]
 
 
-async def chat(session_id: str, user_message: str, *, model: str = DEFAULT_MODEL) -> dict:
-    """Send a user message, get LLM response with confidence scores.
-
-    Returns dict with: message, confidence, ready, tasks (if ready), project (if ready).
-    """
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
+async def chat(session_id: str, user_message: str, *, session_dir: Path | None = None, model: str = DEFAULT_MODEL) -> dict:
+    """Send a user message to Ralphy via OpenCode, get response + confidence scores."""
+    if not shutil.which(OPENCODE_CMD):
         raise RuntimeError(
-            "OPENROUTER_API_KEY not set. "
-            "Export it: export OPENROUTER_API_KEY=sk-or-..."
+            f"'{OPENCODE_CMD}' not found on PATH. "
+            "Install OpenCode: https://opencode.ai/docs/installation"
         )
 
     state = get_chat_state(session_id)
+    if session_dir:
+        state.session_dir = session_dir
 
-    # Build conversation
     state.messages.append({"role": "user", "content": user_message})
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        *state.messages,
-    ]
+    # Build the full prompt for opencode: system prompt + conversation history
+    conversation = f"{SYSTEM_PROMPT}\n\n## Conversation so far\n\n"
+    for msg in state.messages:
+        role = "User" if msg["role"] == "user" else "Ralphy"
+        conversation += f"**{role}:** {msg['content']}\n\n"
+    conversation += "Now respond as Ralphy with valid JSON:"
 
-    # Call OpenRouter (try json_object format, fall back to raw)
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.3,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        # Try with json_object format first
-        resp = await client.post(
-            OPENROUTER_URL, headers=headers,
-            json={**payload, "response_format": {"type": "json_object"}},
+    # Spawn opencode run -- uses whatever model opencode.jsonc is configured with
+    cwd = str(state.session_dir) if state.session_dir else None
+    try:
+        result = subprocess.run(
+            [OPENCODE_CMD, "run", conversation, "--model", model, "--format", "json"],
+            capture_output=True, text=True, timeout=120,
+            cwd=cwd,
         )
-        # If model doesn't support json_object, retry without it
-        if resp.status_code == 400:
-            logger.info("Model doesn't support json_object format, retrying without")
-            resp = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+        output = result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("OpenCode timed out (120s)")
+    except FileNotFoundError:
+        raise RuntimeError("OpenCode not found on PATH")
 
-    if resp.status_code != 200:
-        error = resp.text
-        logger.error("OpenRouter error %d: %s", resp.status_code, error)
-        raise RuntimeError(f"LLM API error: {resp.status_code}")
+    if not output:
+        output = result.stderr.strip() if result.stderr else ""
+        if not output:
+            raise RuntimeError("OpenCode returned no output")
 
-    data = resp.json()
-    content = data["choices"][0]["message"]["content"]
+    # Parse response -- opencode --format json wraps in a JSON envelope
+    content = _extract_content(output)
 
-    # Parse LLM response
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
-        logger.error("LLM returned non-JSON: %s", content[:200])
-        # Wrap raw text as a message
-        parsed = {
-            "message": content,
-            "confidence": state.confidence,
-            "ready": False,
-        }
+        logger.warning("LLM returned non-JSON: %s", content[:200])
+        parsed = {"message": content, "confidence": state.confidence, "ready": False}
 
     # Update state
     assistant_msg = parsed.get("message", "")
-    state.messages.append({"role": "assistant", "content": content})
+    state.messages.append({"role": "assistant", "content": json.dumps(parsed)})
+
+    # Validate and apply confidence
+    user_msg_len = len(user_message)
+    phase_max = _phase_cap(state.user_msg_count)
 
     if "confidence" in parsed:
         for dim in DIMENSIONS:
-            val = parsed["confidence"].get(dim)
-            if isinstance(val, (int, float)):
-                state.confidence[dim] = int(val)
+            raw = parsed["confidence"].get(dim)
+            if not isinstance(raw, (int, float)):
+                continue
+            prev = state.confidence[dim]
+            clamped = _clamp_score(int(raw), prev, phase_max, user_msg_len)
+            state.confidence[dim] = _smooth(clamped, prev)
 
-    state.ready = parsed.get("ready", False)
+    if "relevance" in parsed:
+        for dim in DIMENSIONS:
+            rel = parsed["relevance"].get(dim)
+            if isinstance(rel, (int, float)):
+                state.relevance[dim] = max(0.0, min(1.0, float(rel)))
+
+    state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
+    state.ready = _is_ready(state)
 
     if state.ready:
         state.tasks = parsed.get("tasks")
@@ -235,7 +303,25 @@ async def chat(session_id: str, user_message: str, *, model: str = DEFAULT_MODEL
     return {
         "message": assistant_msg,
         "confidence": state.confidence,
+        "relevance": state.relevance,
         "ready": state.ready,
+        "weighted_readiness": state.weighted_readiness,
+        "question_count": state.user_msg_count,
+        "phase": _get_phase(state.user_msg_count),
         "tasks": state.tasks,
         "project": state.project,
     }
+
+
+def _extract_content(output: str) -> str:
+    """Extract the LLM's response text from opencode's --format json output."""
+    # opencode --format json wraps response in a JSON object
+    try:
+        data = json.loads(output)
+        # opencode returns {response: "...", ...} or similar
+        if isinstance(data, dict):
+            return data.get("response", data.get("content", data.get("output", output)))
+        return output
+    except json.JSONDecodeError:
+        # Raw text output -- use as-is
+        return output
