@@ -146,9 +146,9 @@ def update_issue(
     assignee: str | None = None,
 ) -> None:
     args = ["update", issue_id]
-    if status:
+    if status is not None:
         args.extend(["--status", status])
-    if assignee:
+    if assignee is not None:
         args.extend(["--assignee", assignee])
     result = _run_bd(*args)
     if result is None:
