@@ -4,12 +4,10 @@ import logging
 import subprocess
 from pathlib import Path
 
-from ..config import BRANCH_PREFIX, DONE_TAG_PREFIX, MAIN_BRANCH, PRE_ITER_TAG_PREFIX, RALPH_DIR_NAME
+from ..config import BRANCH_PREFIX, DONE_TAG_PREFIX, MAIN_BRANCH, PRE_ITER_TAG_PREFIX
 
 logger = logging.getLogger(__name__)
 
-BARE_HEAD_REF = "refs/heads/_bare"
-GIT_BARE_CONFIG_KEY = "core.bare"
 INITIAL_COMMIT_MSG = "initial commit"
 
 
@@ -26,106 +24,6 @@ def is_repo(path: Path) -> bool:
     """Return True if *path* is inside a git repository."""
     return _run("rev-parse", "--git-dir", cwd=path, check=False).returncode == 0
 
-
-def is_bare(path: Path) -> bool:
-    """Return True if the repo at *path* is bare."""
-    result = _run("config", "--get", GIT_BARE_CONFIG_KEY, cwd=path, check=False)
-    return result.stdout.strip().lower() == "true"
-
-
-def init_bare(path: Path) -> None:
-    """Create a bare repo at *path/.git* with an initial empty commit.
-
-    After this call the repo is bare, has a single ``main`` branch with
-    one empty commit, and HEAD points to a placeholder ref so that no
-    branch is "checked out" at the root (allowing worktrees to own them).
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    _run("init", cwd=path)
-    _run("commit", "--allow-empty", "-m", INITIAL_COMMIT_MSG, cwd=path)
-    _run("branch", "-M", MAIN_BRANCH, cwd=path)
-    _run("config", GIT_BARE_CONFIG_KEY, "true", cwd=path)
-    _run("symbolic-ref", "HEAD", BARE_HEAD_REF, cwd=path)
-    logger.info("Initialized bare repo at %s", path)
-
-
-def convert_to_bare(path: Path) -> None:
-    """Convert an existing (non-bare) repo at *path* to bare.
-
-    Tracked files in the root working tree are removed so that worktrees
-    become the only working copies.
-    """
-    _run("config", GIT_BARE_CONFIG_KEY, "true", cwd=path)
-    _run("symbolic-ref", "HEAD", BARE_HEAD_REF, cwd=path)
-
-    # Remove tracked files left over from the old working tree
-    result = _run("ls-files", cwd=path, check=False)
-    for name in result.stdout.splitlines():
-        f = path / name
-        if f.is_file():
-            f.unlink()
-    # Remove now-empty directories (excluding .git, .ralph, worktrees)
-    _prune_empty_dirs(path, keep={".git", RALPH_DIR_NAME})
-    logger.info("Converted %s to bare repo", path)
-
-
-def add_worktree(repo: Path, name: str, branch: str, new_branch: bool = False) -> Path:
-    """Add a worktree at *repo/name* on *branch*.
-
-    Args:
-        repo: Root of the bare repo.
-        name: Subdirectory name for the worktree.
-        branch: Branch to check out (or create if *new_branch*).
-        new_branch: If True, create *branch* from the current HEAD.
-
-    Returns:
-        Path to the new worktree directory.
-    """
-    wt_path = repo / name
-    if new_branch:
-        _run("worktree", "add", "-b", branch, str(wt_path), MAIN_BRANCH, cwd=repo)
-    else:
-        _run("worktree", "add", str(wt_path), branch, cwd=repo)
-    logger.info("Added worktree %s on branch %s", wt_path, branch)
-    return wt_path
-
-
-def has_worktree(repo: Path, name: str) -> bool:
-    """Return True if a worktree named *name* already exists."""
-    result = _run("worktree", "list", "--porcelain", cwd=repo, check=False)
-    target = str((repo / name).resolve())
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree ") and line.split(" ", 1)[1] == target:
-            return True
-    return False
-
-
-def reset_branch(repo: Path, branch: str, target: str) -> None:
-    """Reset *branch* to point at the same commit as *target*.
-
-    Useful for syncing a worktree branch (e.g. dev) with another (e.g. main)
-    without checking it out.
-
-    Args:
-        repo: Root of the bare repo.
-        branch: Branch to reset.
-        target: Branch or ref to reset *branch* to.
-    """
-    _run("branch", "-f", branch, target, cwd=repo)
-    logger.info("Reset branch %s to %s", branch, target)
-
-
-def _prune_empty_dirs(root: Path, keep: set[str]) -> None:
-    """Remove empty directories under *root*, skipping *keep* names."""
-    for d in sorted(root.rglob("*"), reverse=True):
-        if not d.is_dir():
-            continue
-        if d.name in keep or any(p.name in keep for p in d.relative_to(root).parents):
-            continue
-        try:
-            d.rmdir()  # only succeeds if empty
-        except OSError:
-            pass
 
 
 def has_remote(repo: Path, name: str) -> bool:
@@ -172,14 +70,14 @@ def hard_reset(cwd: Path | None = None) -> None:
     logger.info("Ran git reset --hard in %s", cwd or "cwd")
 
 
-def cleanup_branch(issue_id: str, cwd: Path | None = None) -> None:
-    """Delete the ralph/[issue-id] branch if it exists.
+def cleanup_branch(task_id: str, cwd: Path | None = None) -> None:
+    """Delete the ralph/[task-id] branch if it exists.
 
     Args:
-        issue_id: The issue ID (e.g., 'bd-123')
+        task_id: The task ID (e.g., 'task-001')
         cwd: Directory to run git commands from.
     """
-    branch_name = f"{BRANCH_PREFIX}{issue_id}"
+    branch_name = f"{BRANCH_PREFIX}{task_id}"
     result = _run("rev-parse", "--verify", branch_name, cwd=cwd, check=False)
     if result.returncode == 0:
         logger.info("Branch %s exists; deleting it", branch_name)
@@ -206,35 +104,35 @@ def ensure_on_main(cwd: Path | None = None) -> None:
         logger.debug("Already on main branch")
 
 
-def reset_git_state(issue_id: str, cwd: Path | None = None) -> None:
-    """Reset git state: ensure on main and delete issue branch.
+def reset_git_state(task_id: str, cwd: Path | None = None) -> None:
+    """Reset git state: ensure on main and delete task branch.
 
     Args:
-        issue_id: The issue ID (e.g., 'bd-123')
+        task_id: The task ID (e.g., 'task-001')
         cwd: Directory to run git commands from (should be a worktree).
     """
     ensure_on_main(cwd=cwd)
-    cleanup_branch(issue_id, cwd=cwd)
+    cleanup_branch(task_id, cwd=cwd)
 
 
 # -- tagging ---------------------------------------------------------------
 
 
-def pre_iter_tag(issue_id: str, iteration: int) -> str:
+def pre_iter_tag(task_id: str, iteration: int) -> str:
     """Tag name for a pre-iteration checkpoint."""
-    return f"{PRE_ITER_TAG_PREFIX}/{issue_id}/{iteration}"
+    return f"{PRE_ITER_TAG_PREFIX}/{task_id}/{iteration}"
 
 
-def done_tag(issue_id: str) -> str:
-    """Tag name for a completed issue."""
-    return f"{DONE_TAG_PREFIX}/{issue_id}"
+def done_tag(task_id: str) -> str:
+    """Tag name for a completed task."""
+    return f"{DONE_TAG_PREFIX}/{task_id}"
 
 
 def create_tag(name: str, message: str = "", cwd: Path | None = None) -> None:
     """Create an annotated git tag.
 
     Args:
-        name: Tag name (e.g. 'pre-iter/bd-123/0').
+        name: Tag name (e.g. 'pre-iter/task-001/0').
         message: Annotation message. Defaults to tag name.
         cwd: Directory to run from (should be a worktree).
     """
@@ -275,22 +173,22 @@ def get_latest_tag(pattern: str, cwd: Path | None = None) -> str | None:
     return tags[0] if tags else None
 
 
-def cleanup_issue_tags(issue_id: str, cwd: Path | None = None) -> None:
-    """Delete pre-iter tags for a completed issue.
+def cleanup_task_tags(task_id: str, cwd: Path | None = None) -> None:
+    """Delete pre-iter tags for a completed task.
 
     Called after a done tag is created -- pre-iter checkpoints are
     no longer needed for rollback.
 
     Args:
-        issue_id: The completed issue ID.
+        task_id: The completed task ID.
         cwd: Directory to run from.
     """
-    pattern = f"{PRE_ITER_TAG_PREFIX}/{issue_id}/*"
+    pattern = f"{PRE_ITER_TAG_PREFIX}/{task_id}/*"
     result = _run("tag", "-l", pattern, cwd=cwd, check=False)
     for tag in result.stdout.strip().splitlines():
         if tag:
             _run("tag", "-d", tag, cwd=cwd, check=False)
-    logger.info("Cleaned up pre-iter tags for %s", issue_id)
+    logger.info("Cleaned up pre-iter tags for %s", task_id)
 
 
 # -- worktree health -------------------------------------------------------
@@ -307,40 +205,11 @@ def has_changes_since(ref: str, cwd: Path | None = None) -> bool:
     return bool(result.stdout.strip())
 
 
-def is_worktree_clean(cwd: Path | None = None) -> bool:
-    """Return True if worktree has no uncommitted changes and is on main."""
-    status = _run("status", "--porcelain", cwd=cwd, check=False)
-    if status.stdout.strip():
-        return False
-    branch = _run("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd, check=False)
-    return branch.stdout.strip() == MAIN_BRANCH
-
-
-# -- dev/prod promotion ----------------------------------------------------
-
-
-def sync_to_branch(target_branch: str, cwd: Path | None = None) -> None:
-    """Reset current worktree to match a branch (e.g. sync dev to main).
-
-    Resets HEAD to the target's commit and cleans untracked files.
-    The worktree stays on its own branch (e.g. dev stays on dev)
-    but gets main's content.
-
-    Args:
-        target_branch: Branch to sync to.
-        cwd: Worktree directory.
-    """
-    _run("merge", "--abort", cwd=cwd, check=False)  # clean up any stuck merge
-    _run("reset", "--hard", target_branch, cwd=cwd)
-    _run("clean", "-fd", cwd=cwd)  # remove untracked files/dirs
-    logger.info("Synced worktree to %s in %s", target_branch, cwd or "cwd")
-
-
 def merge_from(source_branch: str, cwd: Path | None = None) -> bool:
     """Merge source_branch into the current branch.
 
     Args:
-        source_branch: Branch to merge (e.g. 'ralph/bd-123').
+        source_branch: Branch to merge (e.g. 'ralph/task-001').
         cwd: Worktree directory (should be on main).
 
     Returns:
