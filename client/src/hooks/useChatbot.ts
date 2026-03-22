@@ -255,9 +255,15 @@ export function useChatbot() {
   }, []);
 
   const createSession = useCallback(async () => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    // Pass auth token so backend can auto-create GitHub repo with user's OAuth token
+    const authToken = localStorage.getItem("ralph_token");
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
     const resp = await fetch(`${API}/api/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({}),
     });
     const data = await resp.json();
@@ -385,6 +391,36 @@ export function useChatbot() {
       return null;
     }
   }, [state.sessionId]);
+
+  /** Force ralph-it with draft tasks, bypassing readiness check. */
+  const forceRalphIt = useCallback(async () => {
+    if (!state.sessionId || !state.draftTasks?.length) return null;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const resp = await fetch(
+        `${API}/api/sessions/${state.sessionId}/ralph-it`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tasks: state.draftTasks, force: true }),
+        },
+      );
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: "Server error" }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      setState((s) => ({ ...s, loading: false }));
+      return data;
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      }));
+      return null;
+    }
+  }, [state.sessionId, state.draftTasks]);
 
   /** Clear the transient error after it has been consumed by the UI. */
   const clearError = useCallback(() => {
@@ -640,6 +676,7 @@ export function useChatbot() {
     state,
     sendMessage,
     ralphIt,
+    forceRalphIt,
     reconcile,
     createSession,
     clearError,

@@ -68,6 +68,8 @@ type ChatPanelProps = {
   state: ChatState;
   onSend: (message: string) => void;
   onRalphIt: () => void;
+  /** Force build with draft tasks, bypassing readiness check. */
+  onForceRalphIt?: () => void;
   /** Called when user wants to review generated tasks before starting loop. */
   onReviewTasks?: () => void;
   /** Called when user clicks RALPH.IT to trigger reconciliation. */
@@ -454,9 +456,11 @@ function RightTabPanel({
   busy,
   onRunTool,
   onDimensionClick,
+  onForceRalphIt,
 }: {
   state: ChatState;
   onRalphIt: () => void;
+  onForceRalphIt?: () => void;
   onReviewTasks?: () => void;
   ralphItLoading: boolean;
   slowLoad: boolean;
@@ -587,6 +591,22 @@ function RightTabPanel({
           </p>
         </div>
       )}
+
+      {/* Force build: visible when tasks exist but readiness not met */}
+      {!state.ready && onForceRalphIt && state.draftTasks && state.draftTasks.length > 0 && (
+        <div className="p-4 border-t border-border shrink-0">
+          <button
+            onClick={onForceRalphIt}
+            disabled={busy}
+            className="w-full py-2 text-xs font-mono uppercase tracking-widest border border-[#FFaa00] text-[#FFaa00] bg-[#FFaa00]/5 hover:bg-[#FFaa00]/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            BUILD WITH {state.draftTasks.length} DRAFT TASKS
+          </button>
+          <p className="text-[9px] text-muted-foreground mt-1 text-center font-mono">
+            Readiness: {Math.round(state.weightedReadiness ?? 0)}% -- some details may be incomplete
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -649,6 +669,7 @@ export function ChatPanel({
   state,
   onSend,
   onRalphIt,
+  onForceRalphIt,
   onReviewTasks,
   onClearError,
   ralphItLoading = false,
@@ -1027,6 +1048,19 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Force build (sidebar): visible when tasks exist but not ready */}
+        {!state.ready && onForceRalphIt && state.draftTasks && state.draftTasks.length > 0 && (
+          <div className="px-2 pb-2 shrink-0">
+            <button
+              onClick={onForceRalphIt}
+              disabled={busy}
+              className="w-full py-1.5 text-[10px] font-mono uppercase tracking-widest border border-[#FFaa00] text-[#FFaa00] bg-[#FFaa00]/5 hover:bg-[#FFaa00]/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              BUILD ({state.draftTasks.length})
+            </button>
+          </div>
+        )}
+
         {/* Tool suggestion banner (sidebar) */}
         {state.toolResult && onClearToolResult && (
           <ToolSuggestion
@@ -1391,6 +1425,7 @@ export function ChatPanel({
         <RightTabPanel
           state={state}
           onRalphIt={onRalphIt}
+          onForceRalphIt={onForceRalphIt}
           onReviewTasks={onReviewTasks}
           ralphItLoading={ralphItLoading}
           slowLoad={slowLoad}

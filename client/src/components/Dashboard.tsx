@@ -256,6 +256,16 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
     // errors are surfaced via chatbot.state.error -> ChatPanel -> toast
   }, [chatbot]);
 
+  // Force ralph-it: bypass readiness, use draft tasks directly
+  const handleForceRalphIt = useCallback(async () => {
+    setRalphItLoading(true);
+    const result = await chatbot.forceRalphIt();
+    setRalphItLoading(false);
+    if (result?.status === "ralph_it_started") {
+      setPhase("loop");
+    }
+  }, [chatbot]);
+
   // Reconcile tasks and transition to preview phase
   const handleReconcile = useCallback(async () => {
     const result = await chatbot.reconcile();
@@ -326,6 +336,7 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
               state={displayState}
               onSend={handleBranchSend}
               onRalphIt={handleRalphIt}
+              onForceRalphIt={handleForceRalphIt}
               onReviewTasks={handleReviewTasks}
               onReconcile={handleReconcile}
               onClearError={chatbot.clearError}
@@ -472,6 +483,7 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                   state={chatbot.state}
                   onSend={chatbot.sendMessage}
                   onRalphIt={handleRalphIt}
+                  onForceRalphIt={handleForceRalphIt}
                   onReviewTasks={handleReviewTasks}
                   onReconcile={handleReconcile}
                   onClearError={chatbot.clearError}

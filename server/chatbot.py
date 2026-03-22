@@ -50,8 +50,8 @@ BASE_WEIGHTS: dict[str, float] = {
     "testing": 1.0,
     "edge_cases": 1.0,
 }
-READINESS_THRESHOLD = 60
-MIN_DIM_SCORE = 70
+READINESS_THRESHOLD = 50
+MIN_DIM_SCORE = 50
 RELEVANCE_CUTOFF = 0.3
 
 # Questions-per-dimension for adaptive questioning.

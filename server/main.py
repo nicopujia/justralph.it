@@ -99,6 +99,16 @@ async def lifespan(app: FastAPI):
     global _broadcast_task
     db.init_db()
     load_sessions_from_db()
+
+    # Verify OpenCode is available (required for Ralph Loop)
+    import shutil
+    from pathlib import Path
+    oc = shutil.which("opencode") or str(Path.home() / ".opencode" / "bin" / "opencode")
+    if Path(oc).exists():
+        logger.info("OpenCode found: %s", oc)
+    else:
+        logger.error("OpenCode NOT FOUND -- loop will fail! Install: https://opencode.ai")
+
     _broadcast_task = asyncio.create_task(_broadcast_events())
     yield
     _broadcast_task.cancel()
@@ -211,9 +221,25 @@ class CreateSessionRequest(BaseModel):
 
 
 @app.post("/api/sessions", status_code=201)
-def api_create_session(req: CreateSessionRequest):
-    """Create a new isolated session with git repo + ralph scaffolding."""
-    session = create_session(github_url=req.github_url, github_token=req.github_token)
+def api_create_session(req: CreateSessionRequest, request: Request):
+    """Create a new isolated session with git repo + ralph scaffolding.
+
+    If authenticated (Bearer token), auto-creates a GitHub repo using the user's
+    OAuth token. The token is embedded in the remote URL for push auth.
+    """
+    github_token = req.github_token
+    github_url = req.github_url
+
+    # Auto-extract github_token from authenticated user if not provided
+    if not github_token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            session_token = auth.removeprefix("Bearer ").strip()
+            user_session = get_user_session(session_token)
+            if user_session:
+                github_token = user_session.get("github_token", "")
+
+    session = create_session(github_url=github_url, github_token=github_token)
     return session.to_dict()
 
 
@@ -808,6 +834,7 @@ class RalphItRequest(BaseModel):
     # Optional override: user-edited tasks from the preview step.
     # If omitted, the server uses chatbot-generated tasks.
     tasks: list[dict] | None = None
+    force: bool = False  # bypass readiness check -- user wants to build now
 
 
 @app.post("/api/sessions/{session_id}/reconcile")
@@ -856,12 +883,12 @@ def api_ralph_it(session_id: str, req: RalphItRequest = RalphItRequest()):
     """'Just Ralph It' trigger: create tasks from chatbot output + start loop.
 
     Precondition: chatbot must be in ready state (confidence threshold met).
-    Accepts optional body `{ "tasks": [...] }` to use user-edited tasks instead.
+    Accepts optional body `{ "tasks": [...], "force": true }` to bypass readiness.
     """
     session = _require_session(session_id)
     chat_state = get_chat_state(session_id)
 
-    if not chat_state.ready:
+    if not req.force and not chat_state.ready:
         raise HTTPException(
             status_code=400,
             detail="Chatbot confidence threshold not met yet",

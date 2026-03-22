@@ -81,7 +81,11 @@ _sessions: dict[str, Session] = {}
 
 
 def _create_github_repo(session_id: str, github_token: str) -> str:
-    """Create a GitHub repo via API, return clone_url or empty string on failure."""
+    """Create a GitHub repo via API, return auth-embedded clone URL.
+
+    Returns URL with token embedded (https://token@github.com/user/repo.git)
+    so git push works without separate credential setup.
+    """
     repo_name = f"ralph-{session_id[:8]}"
     try:
         resp = httpx.post(
@@ -95,7 +99,13 @@ def _create_github_repo(session_id: str, github_token: str) -> str:
         )
         if resp.status_code in (200, 201):
             clone_url = resp.json().get("clone_url", "")
-            logger.info("Created GitHub repo %s -> %s", repo_name, clone_url)
+            # Embed token in URL for push auth: https://token@github.com/user/repo.git
+            if clone_url and github_token:
+                clone_url = clone_url.replace(
+                    "https://github.com/",
+                    f"https://{github_token}@github.com/",
+                )
+            logger.info("Created GitHub repo %s -> %s", repo_name, clone_url[:40] + "...")
             return clone_url
         logger.warning(
             "GitHub repo creation failed (%s): %s", resp.status_code, resp.text
@@ -151,14 +161,18 @@ def create_session(
     if oc_src.exists() and not oc_dst.exists():
         oc_dst.symlink_to(oc_src)
 
+    # Strip token from URL for display/storage (git remote already has it)
+    import re
+    display_url = re.sub(r"https://[^@]+@github\.com/", "https://github.com/", github_url)
+
     session = Session(
         id=session_id,
         base_dir=base_dir,
-        github_url=github_url,
+        github_url=display_url,
         status="ready",
     )
     _sessions[session_id] = session
-    db.save_session(session_id, str(base_dir), github_url, "ready", session.created_at)
+    db.save_session(session_id, str(base_dir), display_url, "ready", session.created_at)
     logger.info("Session %s ready at %s", session_id, base_dir)
     return session
 
