@@ -191,9 +191,9 @@ export function ToolsetPanel({
 
   return (
     <div className="space-y-3 font-mono">
-      <div className="flex items-center justify-between text-xs tracking-wider">
-        <span className="text-muted-foreground uppercase">TOOLSET</span>
-        <span className="text-muted-foreground text-[10px]">
+      <div className="space-y-1 text-xs tracking-wider">
+        <span className="text-muted-foreground uppercase block">TOOLSET</span>
+        <span className="text-muted-foreground text-[10px] block break-words leading-relaxed">
           {weakDims ? `WEAK: ${weakDims}` : "NO DATA YET"}
         </span>
       </div>
@@ -211,15 +211,18 @@ export function ToolsetPanel({
           return (
             <div
               key={tool.id}
-              className="w-full text-left border border-border/50 px-3 py-1.5 opacity-40 flex items-center justify-between"
+              className="w-full text-left border border-border/50 px-3 py-2 opacity-40"
             >
-              <span className="flex items-center gap-2 text-xs tracking-wider">
-                <span className="text-primary">{tool.icon}</span>
-                <span>{tool.label}</span>
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                [LOCKED] {getGateReason(tool.id, state)}
-              </span>
+              <div className="flex items-center gap-2 text-xs tracking-wider">
+                <span className="text-primary shrink-0">{tool.icon}</span>
+                <span className="truncate">{tool.label}</span>
+                <span className="text-[10px] text-muted-foreground ml-auto shrink-0 whitespace-nowrap">
+                  [LOCKED]
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5 pl-5">
+                {getGateReason(tool.id, state)}
+              </p>
             </div>
           );
         }
@@ -245,39 +248,37 @@ export function ToolsetPanel({
                   : "border-border/50 opacity-40 cursor-not-allowed"
             }`}
           >
-            <div className="flex items-center justify-between text-xs tracking-wider">
-              <span className="flex items-center gap-2">
-                <span className="text-primary">{tool.icon}</span>
-                <span>{tool.label}</span>
-                {/* Change 7: keyboard shortcut hint */}
-                <span className="text-muted-foreground/40 text-[9px] ml-auto">
-                  {TOOL_SHORTCUTS[tool.id]}
-                </span>
+            <div className="flex items-center gap-2 text-xs tracking-wider flex-wrap">
+              <span className="text-primary shrink-0">{tool.icon}</span>
+              <span className="shrink-0">{tool.label}</span>
+              <span className="text-muted-foreground/40 text-[9px]">
+                {TOOL_SHORTCUTS[tool.id]}
               </span>
-              <span
-                className={`text-[10px] ${
-                  isRunning
-                    ? "text-primary"
+              <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                <span
+                  className={`text-[10px] ${
+                    isRunning
+                      ? "text-primary"
+                      : enabled
+                        ? "text-[var(--color-success)]"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {isRunning
+                    ? `RUNNING... ${elapsed}s`
                     : enabled
-                      ? "text-[var(--color-success)]"
-                      : "text-muted-foreground"
-                }`}
-              >
-                {isRunning
-                  ? `RUNNING... ${elapsed}s`
-                  : enabled
-                    ? "[READY]"
-                    : "[LOCKED]"}
-              </span>
-              {/* Change 2: mode badge */}
-              <span
-                className={`text-[10px] ml-1 ${
-                  TOOL_MODES[tool.id] === "inject"
-                    ? "text-[var(--color-terminal-text)]"
-                    : "text-[var(--color-warning)]"
-                }`}
-              >
-                {TOOL_MODES[tool.id] === "inject" ? "INJECT" : "EDIT"}
+                      ? "[READY]"
+                      : "[LOCKED]"}
+                </span>
+                <span
+                  className={`text-[10px] ${
+                    TOOL_MODES[tool.id] === "inject"
+                      ? "text-[var(--color-terminal-text)]"
+                      : "text-[var(--color-warning)]"
+                  }`}
+                >
+                  {TOOL_MODES[tool.id] === "inject" ? "INJECT" : "EDIT"}
+                </span>
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">

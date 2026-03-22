@@ -12,6 +12,9 @@
         <Step id="1" title="Planning">
             The project is already planned -- that is not your task.
             Understand it, though.
+            A &lt;Context&gt; block is prepended before your &lt;Task&gt; assignment.
+            It contains project metadata, completed tasks, remaining tasks, and a diff summary of recent work.
+            Read it first -- it saves you from rediscovering what is already known.
             Which are the goals and what is scope?
             Which aren't, and what's out of scope?
             Who will use it?

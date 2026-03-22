@@ -10,6 +10,9 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
+
+import yaml
 
 import tasks
 
@@ -270,11 +273,103 @@ class RalphyRunner:
             and (not t.parent or t.parent in done_ids)
         )
 
+    # -- timeout scaling -------------------------------------------------------
+
+    # Multipliers for max_task_duration and progress_timeout based on complexity label
+    _COMPLEXITY_SCALE: dict[str, tuple[float, float]] = {
+        "low": (0.33, 0.5),      # 5min total, 1min progress (default 15min/2min)
+        "medium": (1.0, 1.0),    # use configured defaults
+        "high": (1.5, 1.5),      # 22.5min total, 3min progress
+    }
+
+    def _task_timeouts(self, task: tasks.Task) -> tuple[float, float]:
+        """Return (max_task_duration, progress_timeout) scaled by task complexity."""
+        complexity = "medium"
+        for label in task.labels:
+            if label.startswith("complexity:"):
+                complexity = label.split(":", 1)[1]
+                break
+        dur_scale, prog_scale = self._COMPLEXITY_SCALE.get(complexity, (1.0, 1.0))
+        return (
+            self.cfg.max_task_duration * dur_scale,
+            self.cfg.progress_timeout * prog_scale,
+        )
+
+    # -- context building ------------------------------------------------------
+
+    def _build_context_xml(self, task: tasks.Task) -> str:
+        """Build project context XML so the agent starts with full awareness.
+
+        Includes: project metadata, completed tasks, remaining tasks,
+        and a diff summary of the most recently completed task.
+        """
+        parts: list[str] = ["<Context>"]
+
+        # 1. Project metadata from .ralphy/config.yaml
+        config_path = self.cfg.project_dir / ".ralphy" / "config.yaml"
+        if config_path.exists():
+            try:
+                cfg = yaml.safe_load(config_path.read_text()) or {}
+                proj = cfg.get("project", {})
+                if proj:
+                    parts.append("  <Project>")
+                    for k, v in proj.items():
+                        if v:
+                            tag = k.replace("_", " ").title().replace(" ", "")
+                            parts.append(f"    <{tag}>{xml_escape(str(v))}</{tag}>")
+                    parts.append("  </Project>")
+            except Exception:
+                pass
+
+        # 2. Task graph: completed + remaining
+        all_tasks = tasks.list_tasks(cwd=self.cfg.project_dir)
+        done = [t for t in all_tasks if t.status == tasks.TaskStatus.DONE]
+        remaining = [t for t in all_tasks if t.status != tasks.TaskStatus.DONE and t.id != task.id]
+
+        if done:
+            parts.append("  <CompletedTasks>")
+            for t in done:
+                parts.append(f'    <Done id="{xml_escape(t.id)}">{xml_escape(t.title)}</Done>')
+            parts.append("  </CompletedTasks>")
+
+        if remaining:
+            parts.append("  <RemainingTasks>")
+            for t in remaining:
+                parts.append(f'    <Pending id="{xml_escape(t.id)}" priority="{t.priority}">{xml_escape(t.title)}</Pending>')
+            parts.append("  </RemainingTasks>")
+
+        # 3. Diff summary from last completed task
+        diff_stat = self._last_task_diff_stat()
+        if diff_stat:
+            parts.append("  <PreviousTaskChanges>")
+            parts.append(f"    {xml_escape(diff_stat)}")
+            parts.append("  </PreviousTaskChanges>")
+
+        parts.append("</Context>\n")
+        return "\n".join(parts)
+
+    def _last_task_diff_stat(self) -> str:
+        """Get git diff --stat for the last commit (previous task's work)."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--stat", "HEAD~1", "HEAD"],
+                capture_output=True, text=True, cwd=self.cfg.project_dir,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return ""
+
     # -- task processing -------------------------------------------------------
 
     def _process_task(self, task: tasks.Task, iteration: int) -> None:
         """Claim task, run agent, handle result."""
         self._state.save(task.id, iteration)
+
+        # Build context so agent starts with full project awareness
+        context_xml = self._build_context_xml(task)
 
         # Claim
         agent = Agent(
@@ -282,6 +377,7 @@ class RalphyRunner:
             self.cfg.model,
             iteration,
             tasks_cwd=self.cfg.project_dir,
+            context_xml=context_xml,
             cwd=str(self.cfg.project_dir),
         )
         agent.claim_task()
@@ -292,14 +388,15 @@ class RalphyRunner:
             self._hooks.pre_iter(self.cfg, task, iteration)
         self._emit(EventType.ITER_STARTED, task_id=task.id, iteration=iteration)
 
-        # Run agent
+        # Run agent with complexity-scaled timeouts
+        max_dur, prog_timeout = self._task_timeouts(task)
         error: Exception | None = None
         task_start = time.monotonic()
         output_line_count = 0
         try:
             for line in agent.run(
-                timeout=self.cfg.max_task_duration,
-                progress_timeout=self.cfg.progress_timeout,
+                timeout=max_dur,
+                progress_timeout=prog_timeout,
             ):
                 stripped = line.rstrip()
                 output_line_count += 1

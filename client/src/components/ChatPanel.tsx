@@ -25,6 +25,7 @@ import {
   PinOff,
   SquarePen,
   History,
+  GripVertical,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -108,6 +109,14 @@ type ChatPanelProps = {
   wsStatus?: WSState;
   /** Called when a confidence dimension bar is clicked. */
   onDimensionClick?: (dimension: string) => void;
+  /** External draft message to populate the input (e.g. from dimension click). */
+  draftMessage?: string;
+  /** Called after the draft has been consumed (set to input). */
+  onDraftConsumed?: () => void;
+  /** Right panel width in px (full mode only). */
+  rightPanelWidth?: number;
+  /** Drag handler for right panel resize (full mode only). */
+  onRightPanelResize?: (e: React.MouseEvent) => void;
 };
 
 /**
@@ -656,12 +665,27 @@ export function ChatPanel({
   onNewChat,
   wsStatus,
   onDimensionClick,
+  draftMessage,
+  onDraftConsumed,
+  rightPanelWidth,
+  onRightPanelResize,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sidebarTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
+
+  // Consume external draft message (e.g. from dimension click) into input
+  useEffect(() => {
+    if (draftMessage) {
+      setInput(draftMessage);
+      onDraftConsumed?.();
+      // Focus the textarea
+      textareaRef.current?.focus();
+      sidebarTextareaRef.current?.focus();
+    }
+  }, [draftMessage, onDraftConsumed]);
 
   // Pinned messages -- keyed by sessionId in localStorage
   const { isPinned, togglePin } = usePinnedMessages(state.sessionId);
@@ -1341,8 +1365,21 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* RIGHT column: tabbed panel (w-80) */}
-      <div className="w-80 shrink-0 flex flex-col overflow-hidden">
+      {/* Drag handle for right panel resize */}
+      {onRightPanelResize && (
+        <div
+          className="w-1 shrink-0 cursor-col-resize flex items-center justify-center hover:bg-primary/20 active:bg-primary/30 transition-colors group"
+          onMouseDown={onRightPanelResize}
+        >
+          <GripVertical className="size-3 text-muted-foreground group-hover:text-primary transition-colors" />
+        </div>
+      )}
+
+      {/* RIGHT column: tabbed panel */}
+      <div
+        className="shrink-0 flex flex-col overflow-hidden"
+        style={{ width: rightPanelWidth ?? 420 }}
+      >
         <RightTabPanel
           state={state}
           onRalphIt={onRalphIt}

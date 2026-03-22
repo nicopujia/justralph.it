@@ -11,17 +11,21 @@ from server.chatbot import (
     EMA_ALPHA,
     MAX_DELTA,
     MIN_DIM_SCORE,
-    MIN_QUESTIONS,
+    QUESTIONS_PER_DIM_INITIAL,
+    QUESTION_REDUCTION_FACTOR,
     READINESS_THRESHOLD,
+    RELEVANCE_CUTOFF,
     SHORT_MSG_DELTA,
     SHORT_MSG_LEN,
     ChatState,
+    _build_question_guidance,
     _clamp_score,
     _compute_readiness,
     _extract_content,
     _get_phase,
     _is_ready,
     _phase_cap,
+    _questions_for_dim,
     _smooth,
     _strip_code_fences,
 )
@@ -32,23 +36,22 @@ from server.chatbot import (
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("count,expected", [
-    (1, 1),
-    (2, 1),
-    (3, 1),
-    (4, 2),
-    (7, 2),
-    (8, 3),
-    (10, 3),
-    (11, 4),
-    (50, 4),
+@pytest.mark.parametrize("chars,expected", [
+    (50, 1),     # tiny input
+    (150, 1),    # boundary
+    (151, 2),    # crosses into phase 2
+    (500, 2),    # boundary
+    (501, 3),    # crosses into phase 3
+    (1000, 3),   # boundary
+    (1001, 4),   # full phase
+    (5000, 4),
 ])
-def test_get_phase(count: int, expected: int):
-    assert _get_phase(count) == expected
+def test_get_phase(chars: int, expected: int):
+    assert _get_phase(total_chars=chars) == expected
 
 
-def test_get_phase_zero_returns_phase_1():
-    assert _get_phase(0) == 1
+def test_get_phase_zero_chars_returns_phase_1():
+    assert _get_phase(total_chars=0) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -56,22 +59,22 @@ def test_get_phase_zero_returns_phase_1():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("count,expected", [
-    (1, 40),
-    (3, 40),
-    (4, 70),
-    (7, 70),
-    (8, 90),
-    (10, 90),
-    (11, 100),
-    (100, 100),
+@pytest.mark.parametrize("chars,expected", [
+    (50, 60),    # tiny
+    (150, 60),   # boundary
+    (151, 80),   # moderate
+    (500, 80),   # boundary
+    (501, 95),   # solid
+    (1000, 95),  # boundary
+    (1001, 100), # uncapped
+    (5000, 100),
 ])
-def test_phase_cap(count: int, expected: int):
-    assert _phase_cap(count) == expected
+def test_phase_cap(chars: int, expected: int):
+    assert _phase_cap(total_chars=chars) == expected
 
 
-def test_phase_cap_zero_returns_40():
-    assert _phase_cap(0) == 40
+def test_phase_cap_zero_returns_60():
+    assert _phase_cap(total_chars=0) == 60
 
 
 # ---------------------------------------------------------------------------
@@ -80,21 +83,20 @@ def test_phase_cap_zero_returns_40():
 
 
 def test_clamp_score_enforces_phase_max():
-    # prev=30, new=80, phase_max=40, long message (delta=20 allows up to 50)
-    # delta allows 50, but phase_max caps at 40 -- phase_max wins
+    # phase_max caps the score even if delta allows higher
     result = _clamp_score(80, 30, 40, 100)
     assert result == 40
 
 
 def test_clamp_score_enforces_max_delta_for_long_message():
-    # prev=10, max_delta=20, so max allowed is 30
-    result = _clamp_score(50, 10, 100, SHORT_MSG_LEN + 1)
+    # prev + MAX_DELTA is the ceiling for long messages
+    result = _clamp_score(200, 10, 100, SHORT_MSG_LEN + 1)
     assert result == 10 + MAX_DELTA
 
 
 def test_clamp_score_enforces_short_msg_delta_for_short_message():
-    # prev=10, short_delta=5, so max allowed is 15
-    result = _clamp_score(50, 10, 100, SHORT_MSG_LEN - 1)
+    # prev + SHORT_MSG_DELTA is the ceiling for short messages
+    result = _clamp_score(200, 10, 100, SHORT_MSG_LEN - 1)
     assert result == 10 + SHORT_MSG_DELTA
 
 
@@ -109,7 +111,7 @@ def test_clamp_score_not_below_zero():
 
 
 def test_clamp_score_phase_max_and_delta_both_apply():
-    # phase_max=40, prev=25, delta=20 -> prev+delta=45 > phase_max=40, so clamped to 40
+    # phase_max wins when it's lower than prev+delta
     result = _clamp_score(80, 25, 40, SHORT_MSG_LEN + 1)
     assert result == 40
 
@@ -137,10 +139,9 @@ def test_smooth_equal_score_returns_new():
 
 
 def test_smooth_increasing_score_applies_ema():
-    # new=100, prev=0: result = round(0.7*100 + 0.3*0) = 70
     result = _smooth(100, 0)
-    assert result == round(EMA_ALPHA * 100 + (1 - EMA_ALPHA) * 0)
-    assert result == 70
+    expected = round(EMA_ALPHA * 100 + (1 - EMA_ALPHA) * 0)
+    assert result == expected
 
 
 def test_smooth_increasing_score_ema_formula():
@@ -207,11 +208,11 @@ def test_compute_readiness_empty_denominator_returns_zero():
 
 def _make_ready_state() -> ChatState:
     """Construct a ChatState that passes all readiness checks."""
-    # Need >= MIN_QUESTIONS user messages
-    messages = []
-    for i in range(MIN_QUESTIONS):
-        messages.append({"role": "user", "content": f"message {i}"})
-        messages.append({"role": "assistant", "content": f"response {i}"})
+    # Provide enough content to be meaningful (no min question count anymore)
+    messages = [
+        {"role": "user", "content": "Build me a full-stack todo app with auth, tests, and deployment."},
+        {"role": "assistant", "content": "Got it, let me assess the requirements."},
+    ]
     conf = {d: 90 for d in DIMENSIONS}
     rel = {d: 1.0 for d in DIMENSIONS}
     state = ChatState(
@@ -228,12 +229,11 @@ def test_is_ready_passes_all_conditions():
     assert _is_ready(state) is True
 
 
-def test_is_ready_false_when_not_enough_questions():
+def test_is_ready_true_even_with_few_messages():
+    """Readiness is based on score thresholds, not message count."""
     state = _make_ready_state()
-    # Remove messages until user count < MIN_QUESTIONS
-    state.messages = state.messages[:2]  # only 1 user message
-    assert state.user_msg_count < MIN_QUESTIONS
-    assert _is_ready(state) is False
+    assert state.user_msg_count == 1
+    assert _is_ready(state) is True
 
 
 def test_is_ready_false_when_readiness_below_threshold():
@@ -445,10 +445,10 @@ def test_is_ready_at_exact_threshold():
     # weighted_readiness == READINESS_THRESHOLD (85) and all dims at exactly
     # MIN_DIM_SCORE (70). The guards use `< READINESS_THRESHOLD` and
     # `< MIN_DIM_SCORE`, so exact values should pass and return True.
-    messages = []
-    for i in range(MIN_QUESTIONS):
-        messages.append({"role": "user", "content": f"msg {i}"})
-        messages.append({"role": "assistant", "content": f"resp {i}"})
+    messages = [
+        {"role": "user", "content": "A detailed project description."},
+        {"role": "assistant", "content": "Acknowledged."},
+    ]
     conf = {d: MIN_DIM_SCORE for d in DIMENSIONS}
     rel = {d: 1.0 for d in DIMENSIONS}
     state = ChatState(
@@ -458,3 +458,55 @@ def test_is_ready_at_exact_threshold():
         weighted_readiness=float(READINESS_THRESHOLD),
     )
     assert _is_ready(state) is True
+
+
+# ---------------------------------------------------------------------------
+# _questions_for_dim
+# ---------------------------------------------------------------------------
+
+
+def test_questions_for_dim_zero_confidence():
+    conf = {d: 0 for d in DIMENSIONS}
+    assert _questions_for_dim("functional", conf) == QUESTIONS_PER_DIM_INITIAL
+
+
+def test_questions_for_dim_high_confidence():
+    conf = {d: 90 for d in DIMENSIONS}
+    assert _questions_for_dim("functional", conf) == 0
+
+
+def test_questions_for_dim_medium_confidence():
+    conf = {d: 60 for d in DIMENSIONS}
+    result = _questions_for_dim("functional", conf)
+    expected = max(1, round(QUESTIONS_PER_DIM_INITIAL * (1 - QUESTION_REDUCTION_FACTOR)))
+    assert result == expected
+    assert result < QUESTIONS_PER_DIM_INITIAL
+
+
+# ---------------------------------------------------------------------------
+# _build_question_guidance
+# ---------------------------------------------------------------------------
+
+
+def test_build_question_guidance_all_zero():
+    conf = {d: 0 for d in DIMENSIONS}
+    rel = {d: 1.0 for d in DIMENSIONS}
+    guidance = _build_question_guidance(conf, rel)
+    total = QUESTIONS_PER_DIM_INITIAL * len(DIMENSIONS)
+    assert f"Total questions this turn: {total}" in guidance
+
+
+def test_build_question_guidance_skips_irrelevant():
+    conf = {d: 0 for d in DIMENSIONS}
+    rel = {d: 1.0 for d in DIMENSIONS}
+    rel["auth"] = 0.0
+    guidance = _build_question_guidance(conf, rel)
+    assert "auth**: SKIP" in guidance
+
+
+def test_build_question_guidance_covered_dimensions():
+    conf = {d: 95 for d in DIMENSIONS}
+    rel = {d: 1.0 for d in DIMENSIONS}
+    guidance = _build_question_guidance(conf, rel)
+    assert "COVERED" in guidance
+    assert "Total questions this turn: 0" in guidance

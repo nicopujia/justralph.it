@@ -32,10 +32,12 @@ DIMENSIONS = [
 ]
 
 # -- Validation constants ---
-MAX_DELTA = 20
-SHORT_MSG_LEN = 30
-SHORT_MSG_DELTA = 5
-EMA_ALPHA = 0.7
+# Tuned for 3-4 message convergence with batch questions (21 Qs in turn 1).
+# Each turn carries a lot of information, so deltas and smoothing are generous.
+MAX_DELTA = 35               # large jumps OK -- each turn has 21+ answers
+SHORT_MSG_LEN = 80           # "short" means < 80 chars (raised from 30)
+SHORT_MSG_DELTA = 10         # even short messages can move scores
+EMA_ALPHA = 0.85             # fast response -- less smoothing
 
 BASE_WEIGHTS: dict[str, float] = {
     "functional": 2.0,
@@ -48,28 +50,67 @@ BASE_WEIGHTS: dict[str, float] = {
 }
 READINESS_THRESHOLD = 85
 MIN_DIM_SCORE = 70
-MIN_QUESTIONS = 10
 RELEVANCE_CUTOFF = 0.3
 
+# Questions-per-dimension for adaptive questioning.
+# Turn 1: 3 per sector.  Subsequent turns reduce based on confidence.
+QUESTIONS_PER_DIM_INITIAL = 3
+QUESTION_REDUCTION_FACTOR = 0.6  # 60% fewer Qs per dim when confidence >= 60
 
-def _get_phase(user_msg_count: int) -> int:
-    if user_msg_count <= 3:
-        return 1
-    if user_msg_count <= 7:
-        return 2
-    if user_msg_count <= 10:
-        return 3
-    return 4
+# Phase caps based on cumulative user content length (chars).
+# Aggressive ramp: the batch-question format means each answer is long.
+_PHASE_CHAR_THRESHOLDS: list[tuple[int, int, int]] = [
+    #  (max_chars, phase, cap)
+    (150,   1, 60),   # initial idea pitch -- cap 60
+    (500,   2, 80),   # first batch of answers -- cap 80
+    (1000,  3, 95),   # second round -- cap 95
+]
+_PHASE_FINAL = (4, 100)  # beyond 1000 chars -- uncapped
 
 
-def _phase_cap(user_msg_count: int) -> int:
-    if user_msg_count <= 3:
-        return 40
-    if user_msg_count <= 7:
-        return 70
-    if user_msg_count <= 10:
-        return 90
-    return 100
+def _get_phase(total_chars: int = 0) -> int:
+    """Determine conversation phase from content volume."""
+    for max_chars, phase, _ in _PHASE_CHAR_THRESHOLDS:
+        if total_chars <= max_chars:
+            return phase
+    return _PHASE_FINAL[0]
+
+
+def _phase_cap(total_chars: int = 0) -> int:
+    """Score cap based on how much content the user has provided."""
+    for max_chars, _, cap in _PHASE_CHAR_THRESHOLDS:
+        if total_chars <= max_chars:
+            return cap
+    return _PHASE_FINAL[1]
+
+
+def _questions_for_dim(dim: str, confidence: dict[str, int]) -> int:
+    """How many questions to ask for a dimension based on current confidence."""
+    score = confidence.get(dim, 0)
+    if score >= 90:
+        return 0   # covered
+    if score >= 60:
+        return max(1, round(QUESTIONS_PER_DIM_INITIAL * (1 - QUESTION_REDUCTION_FACTOR)))
+    return QUESTIONS_PER_DIM_INITIAL
+
+
+def _build_question_guidance(confidence: dict[str, int], relevance: dict[str, float]) -> str:
+    """Build per-dimension question count guidance for the system prompt."""
+    lines = []
+    total = 0
+    for dim in DIMENSIONS:
+        if relevance.get(dim, 1.0) <= RELEVANCE_CUTOFF:
+            lines.append(f"- **{dim}**: SKIP (not relevant)")
+            continue
+        n = _questions_for_dim(dim, confidence)
+        total += n
+        score = confidence.get(dim, 0)
+        if n == 0:
+            lines.append(f"- **{dim}**: COVERED ({score}%) -- no questions needed")
+        else:
+            lines.append(f"- **{dim}**: ask {n} question(s) ({score}% current)")
+    lines.insert(0, f"**Total questions this turn: {total}**\n")
+    return "\n".join(lines)
 
 
 def _clamp_score(new: int, prev: int, phase_max: int, msg_len: int) -> int:
@@ -93,8 +134,11 @@ def _compute_readiness(confidence: dict[str, int], relevance: dict[str, float]) 
 
 
 def _is_ready(state: "ChatState") -> bool:
-    if state.user_msg_count < MIN_QUESTIONS:
-        return False
+    """Ready when weighted readiness >= 85% and all relevant dimensions >= 70%.
+
+    No minimum question count -- if the user provides enough detail in one
+    prompt to hit the threshold, that's valid.
+    """
     if state.weighted_readiness < READINESS_THRESHOLD:
         return False
     for d in DIMENSIONS:
@@ -208,8 +252,8 @@ Return ONLY the improved text. No preamble, no explanation, no quotes.""",
     "architect": {
         "mode": "inject",
         "model": None,  # use default (bigger model)
-        "gate": lambda s: _get_phase(s.user_msg_count) >= 2,
-        "gate_reason": "Need Phase 2+ (4+ messages) for architecture suggestions",
+        "gate": lambda s: _get_phase(_total_user_chars(s)) >= 2,
+        "gate_reason": "Need Phase 2+ (200+ chars of conversation) for architecture suggestions",
         "system": """\
 You are a system design advisor.
 
@@ -378,57 +422,64 @@ async def run_tool(
 SYSTEM_PROMPT = """\
 You are Ralphy, an expert software architect and requirement extractor.
 
-Your job: ask the user questions about their project idea until you have enough
-information to create a complete, unambiguous task list for an autonomous AI
-coding agent (Ralph) to implement.
+Your job: gather enough requirements from the user to create a complete,
+unambiguous task list for an autonomous AI coding agent (Ralph) to implement.
+You achieve this in 3-4 exchanges maximum by asking BATCH questions.
 
 ## How you work
 
-1. The user gives you an initial idea.
-2. You ask ONE focused question at a time, targeting the weakest dimension.
-3. After each answer, you reassess confidence across all dimensions.
-4. Set ready=true when you believe all relevant requirements are thoroughly \
-covered. The server validates independently.
+1. The user describes their project idea (or greets you).
+2. If the user has NOT described a project yet (e.g., just said "hello" or
+   asked a generic question), respond conversationally and ask them to
+   describe their project. Do NOT ask alignment questions yet.
+   Keep all confidence scores at 0 until a real project is described.
+3. Once a project idea is on the table, respond with a BATCH of targeted
+   questions -- multiple questions per dimension, grouped by sector.
+4. After each answer, reassess confidence and ask FEWER follow-up questions,
+   focusing only on weak/ambiguous dimensions.
+5. Set ready=true when all relevant dimensions are covered.
 
-## Progressive questioning
+## Batch questioning strategy
 
-Match question depth to conversation phase:
-- Questions 1-3 (big picture): What does it do? Who uses it? What tech stack?
-- Questions 4-7 (specifics): Data model, auth needs, deployment target, integrations.
-- Questions 8-10 (edge cases): Error handling, testing strategy, constraints, scale.
-- Questions 11+ (finalize): Fill gaps, verify consistency, resolve contradictions.
+{question_guidance}
 
-Do NOT jump ahead. You MUST ask at least 10 substantive questions before setting ready=true.
+### Rules for question batches:
+- Group questions by dimension with clear headers (e.g., "**Functional:**").
+- Number each question within its group.
+- Ask concrete, specific questions -- not vague "tell me more".
+- If the user already answered something in their project description,
+  do NOT re-ask. Score that dimension accordingly and skip it.
+- After each user response, reduce questions by ~60% for dimensions where
+  confidence >= 60%. Ask 0 questions for dimensions >= 90%.
 
 ## Tool-generated messages
 
-Messages prefixed with [Tool: Name] are generated by the user's brainstorming tools.
-Treat them as additional context from the user, not as answers to your questions.
-Acknowledge the ideas briefly, then continue with your next focused question
-targeting the weakest dimension. Do not ask the user to elaborate on every
-tool-generated point -- pick the most impactful one.
+Messages prefixed with [Tool: Name] are generated by the user's brainstorming
+tools. Treat them as additional context. Acknowledge briefly, then continue
+with your batch questions targeting weak dimensions.
 
 ## Confidence dimensions (0-100 each)
 
 - **functional**: What the software does. Features, user stories, main flows.
 - **technical_stack**: Language, framework, database, key libraries.
 - **data_model**: Entities, fields, relationships, storage format.
-- **auth**: Authentication, authorization, user roles. (Score 90+ if no auth needed.)
+- **auth**: Authentication, authorization, user roles. (Score 90+ if not needed.)
 - **deployment**: How/where it runs. Local, VPS, cloud.
 - **testing**: Test strategy. Unit, integration, E2E.
 - **edge_cases**: Error handling, input validation, constraints.
 
 ## Relevance
 
-Rate 0.0 for dimensions irrelevant to this project (e.g., auth for a CLI tool). \
-Rate 1.0 for critical dimensions. Reassess each turn.
+Rate 0.0 for dimensions irrelevant to this project (e.g., auth for a CLI tool).
+Rate 1.0 for critical dimensions. Reassess each turn. Setting a dimension to
+0.0 removes it from readiness calculation entirely.
 
 ## Response format
 
 You MUST respond with valid JSON only (no markdown, no code fences):
 
 {{
-  "message": "Your question or response (markdown OK inside this string)",
+  "message": "Your response with batch questions (markdown OK inside)",
   "confidence": {{
     "functional": <0-100>, "technical_stack": <0-100>, "data_model": <0-100>,
     "auth": <0-100>, "deployment": <0-100>, "testing": <0-100>, "edge_cases": <0-100>
@@ -450,8 +501,28 @@ When requirements are thoroughly covered, set "ready": true and add:
   "contradictions": [],
   "ready": true,
   "tasks": [
-    {{ "title": "...", "body": "Acceptance: ...\\nDesign: ...", "priority": 1, "parent": null }},
-    {{ "title": "...", "body": "...", "priority": 2, "parent": "task-001" }}
+    {{
+      "title": "Short imperative title",
+      "acceptance_criteria": [
+        "Specific, testable condition 1",
+        "Specific, testable condition 2",
+        "Specific, testable condition 3"
+      ],
+      "design_notes": [
+        "Implementation constraint or approach"
+      ],
+      "estimated_complexity": "low",
+      "priority": 1,
+      "parent": null
+    }},
+    {{
+      "title": "Another task",
+      "acceptance_criteria": ["..."],
+      "design_notes": ["..."],
+      "estimated_complexity": "medium",
+      "priority": 2,
+      "parent": "task-001"
+    }}
   ],
   "project": {{
     "name": "project-name", "language": "Python", "framework": "FastAPI",
@@ -460,22 +531,28 @@ When requirements are thoroughly covered, set "ready": true and add:
   }}
 }}
 
+### Task field rules:
+- **acceptance_criteria**: 2-5 bullet points. Each MUST be testable (a human could
+  verify pass/fail). No vague language like "properly handles" or "works well".
+- **design_notes**: 0-3 constraints or approach hints. Optional but valuable.
+- **estimated_complexity**: "low" (config, docs, simple CRUD), "medium" (business
+  logic, integrations), "high" (complex algorithms, multi-service orchestration).
+- **parent**: reference as "task-NNN" matching the ID the server will assign
+  (task-001 for the first task, task-002 for the second, etc.).
+
 ## Rules
 
-- ONE question at a time. Be specific.
-- Don't assume. If unsure, ask.
+- Ask BATCH questions grouped by dimension. Not one at a time.
 - Score honestly. The server validates independently.
+- If the user greets you without a project idea, respond warmly and ask
+  them to describe what they want to build. Do NOT generate questions yet.
 - Before ready=true: verify ZERO contradictions. Every gap becomes a bug.
 - After each user answer, check for contradictions with previous answers.
-  If the user previously said one thing (e.g., "Python") and now says something
-  conflicting (e.g., "JavaScript"), DO NOT update confidence. Instead, set your
-  message to ask the user to clarify: "Earlier you mentioned Python, but now
-  you're saying JavaScript. Which one should I use?"
-- Include a "contradictions" field in your JSON response (array of strings).
-  Each string describes a detected contradiction. Empty array if none.
+  If conflicting info detected, ask for clarification instead of updating
+  confidence. List contradictions in the "contradictions" array.
 - If the user's message contains '[Attached: ...]', they have uploaded files.
-  Acknowledge the files by name and factor them into your understanding of
-  the project. Ask what role these files play if unclear.
+  Acknowledge the files and factor them into your understanding.
+- Don't assume. If ambiguous, ask. If clear, score high and move on.
 """
 
 
@@ -505,7 +582,7 @@ class ChatState:
             "ready": self.ready,
             "weighted_readiness": round(self.weighted_readiness, 1),
             "question_count": self.user_msg_count,
-            "phase": _get_phase(self.user_msg_count),
+            "phase": _get_phase(_total_user_chars(self)),
         }
 
 
@@ -553,9 +630,32 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     state.messages.append({"role": "user", "content": user_message})
     db.save_chat_message(session_id, "user", user_message)
 
-    # Build the full prompt for opencode: system prompt + conversation history
-    conversation = f"{SYSTEM_PROMPT}\n\n## Conversation so far\n\n"
-    for msg in state.messages:
+    # Build adaptive question guidance based on current confidence
+    question_guidance = _build_question_guidance(state.confidence, state.relevance)
+    system = SYSTEM_PROMPT.replace("{question_guidance}", question_guidance)
+
+    # Build the full prompt for opencode: system prompt + conversation history.
+    # Truncate to keep prompt manageable: always include the first user message
+    # (project description) + last N messages. Target ~8K chars of history.
+    MAX_HISTORY_CHARS = 8000
+    msgs = state.messages
+    if len(msgs) > 2:
+        first_user = [msgs[0]] if msgs[0]["role"] == "user" else []
+        rest = msgs[1:] if first_user else msgs
+        # Take from the end until we hit the char budget
+        trimmed: list[dict] = []
+        budget = MAX_HISTORY_CHARS - sum(len(m["content"]) for m in first_user)
+        for msg in reversed(rest):
+            cost = len(msg["content"])
+            if budget - cost < 0 and trimmed:
+                break
+            trimmed.append(msg)
+            budget -= cost
+        trimmed.reverse()
+        msgs = first_user + trimmed
+
+    conversation = f"{system}\n\n## Conversation so far\n\n"
+    for msg in msgs:
         role = "User" if msg["role"] == "user" else "Ralphy"
         conversation += f"**{role}:** {msg['content']}\n\n"
     conversation += "Now respond as Ralphy with valid JSON:"
@@ -601,7 +701,8 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
 
     # Validate and apply confidence
     user_msg_len = len(user_message)
-    phase_max = _phase_cap(state.user_msg_count)
+    chars = _total_user_chars(state)
+    phase_max = _phase_cap(chars)
 
     if "confidence" in parsed and not contradictions:
         for dim in DIMENSIONS:
@@ -631,14 +732,6 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         state.project,
     )
 
-    # Detect LLM-ready vs server-not-ready mismatch
-    llm_said_ready = parsed.get("ready", False)
-    if llm_said_ready and not state.ready:
-        assistant_msg = (
-            "I need a few more details to make sure everything is covered. "
-            "Let me ask another question..."
-        )
-
     if state.ready:
         state.tasks = parsed.get("tasks")
         state.project = parsed.get("project")
@@ -655,6 +748,13 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     # A3: Record timestamp after processing
     state.last_message_time = time.time()
 
+    # Compute questions remaining for frontend display
+    questions_remaining = sum(
+        _questions_for_dim(d, state.confidence)
+        for d in DIMENSIONS
+        if state.relevance.get(d, 1.0) > RELEVANCE_CUTOFF
+    )
+
     return {
         "message": assistant_msg,
         "confidence": state.confidence,
@@ -662,10 +762,11 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         "ready": state.ready,
         "weighted_readiness": state.weighted_readiness,
         "question_count": state.user_msg_count,
-        "phase": _get_phase(state.user_msg_count),
+        "phase": _get_phase(_total_user_chars(state)),
         "tasks": state.tasks,
         "project": state.project,
         "contradictions": contradictions,
+        "questions_remaining": questions_remaining,
     }
 
 
@@ -689,11 +790,13 @@ def undo_last_message(session_id: str) -> dict:
     state.project = None
 
     # Replay assistant messages to recalculate confidence
-    # Compute user_msg_count at each step for correct phase capping
-    user_count = 0
+    # Track the preceding user message length so replay matches live scoring.
+    replay_chars = 0
+    last_user_msg_len = SHORT_MSG_LEN + 1  # safe default
     for msg in state.messages:
         if msg["role"] == "user":
-            user_count += 1
+            last_user_msg_len = len(msg.get("content", ""))
+            replay_chars += last_user_msg_len
             continue
         # Assistant message -- try to parse its JSON content
         try:
@@ -705,15 +808,14 @@ def undo_last_message(session_id: str) -> dict:
         if parsed.get("contradictions"):
             continue
 
-        phase_max = _phase_cap(user_count)
+        phase_max = _phase_cap(replay_chars)
         if "confidence" in parsed:
             for dim in DIMENSIONS:
                 raw = parsed["confidence"].get(dim)
                 if not isinstance(raw, (int, float)):
                     continue
                 prev = state.confidence[dim]
-                # Use a default msg length for replay (not short)
-                clamped = _clamp_score(int(raw), prev, phase_max, SHORT_MSG_LEN + 1)
+                clamped = _clamp_score(int(raw), prev, phase_max, last_user_msg_len)
                 state.confidence[dim] = _smooth(clamped, prev)
 
         if "relevance" in parsed:
@@ -746,7 +848,7 @@ def undo_last_message(session_id: str) -> dict:
         "ready": state.ready,
         "weighted_readiness": round(state.weighted_readiness, 1),
         "question_count": state.user_msg_count,
-        "phase": _get_phase(state.user_msg_count),
+        "phase": _get_phase(_total_user_chars(state)),
         "message_count": len(state.messages),
     }
 

@@ -50,6 +50,7 @@ class Agent:
         i: int = 0,
         *args,
         tasks_cwd: Path | None = None,
+        context_xml: str = "",
         **kwargs,
     ) -> None:
         """Initialize the agent with a task to process.
@@ -60,6 +61,7 @@ class Agent:
             i: Iteration index for logging
             *args: Additional arguments passed to OpenCode
             tasks_cwd: Working directory for task CRUD calls
+            context_xml: Project context XML prepended to the task prompt
             **kwargs: Additional keyword arguments passed to subprocess.Popen
         """
         self.status = AgentStatus.IDLE
@@ -68,6 +70,7 @@ class Agent:
         self._model = model
         self._args = args
         self._tasks_cwd = tasks_cwd
+        self._context_xml = context_xml
         self._kwargs = kwargs
 
     def claim_task(self) -> None:
@@ -106,10 +109,12 @@ class Agent:
 
         self.status = AgentStatus.WORKING
         try:
+            # Build prompt: context (project + prior work) + task assignment
+            prompt = self._context_xml + self.task.as_xml() if self._context_xml else self.task.as_xml()
             args = [
                 OPENCODE_CMD,
                 "run",
-                self.task.as_xml(),
+                prompt,
                 "--model",
                 self._model,
                 "--agent",

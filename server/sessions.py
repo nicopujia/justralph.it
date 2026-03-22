@@ -57,6 +57,7 @@ class Session:
         uptime = None
         if running and self.loop_start_time:
             uptime = round(time.time() - self.loop_start_time, 2)
+        last_activity = self.last_heartbeat_at or self.created_at
         return {
             "id": self.id,
             "base_dir": str(self.base_dir),
@@ -71,6 +72,7 @@ class Session:
             "loop_state": self.loop_state,
             "current_task_id": self.current_task_id,
             "loop_elapsed_seconds": uptime,
+            "last_activity": last_activity,
         }
 
 

@@ -104,9 +104,9 @@ export function ConfidenceMeter({
           return (
             <div
               key={key}
-              className={`space-y-1 px-1 -mx-1 transition-colors ${
-                clickable ? "cursor-crosshair" : ""
-              } ${isHovered && clickable ? "border border-primary outline outline-primary" : ""} ${
+              className={`space-y-1 px-2 py-1 -mx-2 rounded-sm transition-colors ${
+                clickable ? "cursor-pointer" : ""
+              } ${isHovered && clickable ? "bg-primary/10" : ""} ${
                 isWeak && clickable ? "animate-pulse" : ""
               }`}
               style={{ opacity: isIrrelevant ? 0.35 : 1 }}
@@ -126,7 +126,7 @@ export function ConfidenceMeter({
                   )}
                   {/* "Ask about this" hint -- only visible on hover */}
                   {isHovered && clickable && !isIrrelevant && !isWeak && (
-                    <span className="text-primary text-[10px]">ASK</span>
+                    <span className="text-primary/60 text-[9px]">CLICK TO ASK</span>
                   )}
                   {/* Info tooltip -- explains what this dimension measures */}
                   <DimensionTooltip dimension={key} />

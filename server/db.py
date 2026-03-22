@@ -268,6 +268,20 @@ def get_session_by_share_token(token: str) -> dict | None:
     return dict(row) if row else None
 
 
+# -- Last chat timestamp -------------------------------------------------------
+
+
+def get_last_chat_timestamp(session_id: str) -> float | None:
+    """Return MAX(created_at) from chat_messages for session, or None."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT MAX(created_at) as ts FROM chat_messages WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    conn.close()
+    return row["ts"] if row and row["ts"] else None
+
+
 # -- Tool invocations ----------------------------------------------------------
 
 

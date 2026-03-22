@@ -165,15 +165,16 @@ class TestToolGating:
         assert TOOL_CONFIGS["refine"]["gate"](state)
 
     def test_architect_phase1(self):
-        # 1-3 messages = phase 1
-        state = _state_with_messages("a", "b", "c")
-        assert _get_phase(state.user_msg_count) == 1
+        # Short messages = phase 1 (below 150 chars total)
+        state = _state_with_messages("short msg")
+        assert _get_phase(_total_user_chars(state)) == 1
         assert not TOOL_CONFIGS["architect"]["gate"](state)
 
     def test_architect_phase2(self):
-        # 4+ messages = phase 2
-        state = _state_with_messages("a", "b", "c", "d")
-        assert _get_phase(state.user_msg_count) == 2
+        # Enough content (>150 chars) = phase 2+
+        long_msg = "x" * 151
+        state = _state_with_messages(long_msg)
+        assert _get_phase(_total_user_chars(state)) >= 2
         assert TOOL_CONFIGS["architect"]["gate"](state)
 
 
@@ -183,7 +184,7 @@ class TestToolGating:
 
 
 class TestToolConfigs:
-    @pytest.mark.parametrize("tool_id", ["brainstorm", "expand", "refine", "architect"])
+    @pytest.mark.parametrize("tool_id", ["brainstorm", "expand", "refine", "architect", "modify"])
     def test_has_required_keys(self, tool_id):
         config = TOOL_CONFIGS[tool_id]
         assert "mode" in config
@@ -206,6 +207,41 @@ class TestToolConfigs:
 
     def test_architect_is_inject(self):
         assert TOOL_CONFIGS["architect"]["mode"] == "inject"
+
+    def test_modify_is_inject(self):
+        assert TOOL_CONFIGS["modify"]["mode"] == "inject"
+
+
+# ---------------------------------------------------------------------------
+# Modify tool gating
+# ---------------------------------------------------------------------------
+
+
+class TestModifyToolGating:
+    def test_modify_gated_before_first_message(self):
+        """Gate should fail with 0 user messages."""
+        state = ChatState()
+        assert not TOOL_CONFIGS["modify"]["gate"](state)
+
+    def test_modify_unlocked_after_first_message(self):
+        """Gate should pass once there is at least 1 user message."""
+        state = _state_with_messages("hello")
+        assert TOOL_CONFIGS["modify"]["gate"](state)
+
+    def test_modify_gate_reason_is_string(self):
+        assert isinstance(TOOL_CONFIGS["modify"]["gate_reason"], str)
+        assert len(TOOL_CONFIGS["modify"]["gate_reason"]) > 0
+
+    def test_modify_config_has_all_required_keys(self):
+        config = TOOL_CONFIGS["modify"]
+        assert "mode" in config
+        assert config["mode"] in ("edit", "inject")
+        assert "gate" in config
+        assert callable(config["gate"])
+        assert "gate_reason" in config
+        assert isinstance(config["gate_reason"], str)
+        assert "system" in config
+        assert isinstance(config["system"], str)
 
 
 # ---------------------------------------------------------------------------
@@ -339,22 +375,22 @@ class TestConversationSummaryCap:
 
 class TestEdgeCases:
     def test_empty_session_gates_all_char_tools(self):
-        """Empty session should gate brainstorm, expand, and refine."""
+        """Empty session should gate brainstorm, expand, refine, and modify."""
         state = ChatState()
         assert not TOOL_CONFIGS["brainstorm"]["gate"](state)
         assert not TOOL_CONFIGS["expand"]["gate"](state)
         assert not TOOL_CONFIGS["refine"]["gate"](state)
+        assert not TOOL_CONFIGS["modify"]["gate"](state)
 
     def test_architect_gated_until_phase2(self):
-        """Architect needs at least 4 messages (phase 2)."""
-        for n in range(1, 4):
-            msgs = [f"msg{i}" for i in range(n)]
-            state = _state_with_messages(*msgs)
-            assert not TOOL_CONFIGS["architect"]["gate"](state), (
-                f"Should be gated at {n} messages"
-            )
+        """Architect needs phase 2+ (>150 chars total user content)."""
+        # Short content: should be gated
+        state = _state_with_messages("short msg")
+        assert not TOOL_CONFIGS["architect"]["gate"](state)
 
-        state = _state_with_messages("a", "b", "c", "d")
+        # Enough content: should unlock
+        long_msg = "x" * 151
+        state = _state_with_messages(long_msg)
         assert TOOL_CONFIGS["architect"]["gate"](state)
 
 

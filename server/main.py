@@ -47,6 +47,10 @@ _ws_clients: dict[str, set[WebSocket]] = {}  # session_id -> clients
 _global_ws: set[WebSocket] = set()  # clients not bound to a session
 _broadcast_task: asyncio.Task | None = None
 
+# Per-session ring buffer of last 50 serialized events for replay on reconnect.
+_EVENT_REPLAY_MAX = 50
+_event_replay_buffer: dict[str, list[str]] = {}  # session_id -> list[json_str]
+
 
 async def _broadcast_events() -> None:
     """Drain all session EventBuses every 100ms, broadcast to connected clients."""
@@ -56,14 +60,24 @@ async def _broadcast_events() -> None:
             if not events:
                 continue
 
+            # Serialize and buffer events for replay
+            serialized: list[str] = []
+            for event in events:
+                msg = json.dumps({"session_id": session.id, **event.to_dict()})
+                serialized.append(msg)
+
+            buf = _event_replay_buffer.setdefault(session.id, [])
+            buf.extend(serialized)
+            if len(buf) > _EVENT_REPLAY_MAX:
+                del buf[: len(buf) - _EVENT_REPLAY_MAX]
+
             # Session-scoped clients
             clients = _ws_clients.get(session.id, set()) | _global_ws
             if not clients:
                 continue
 
             dead: set[WebSocket] = set()
-            for event in events:
-                msg = json.dumps({"session_id": session.id, **event.to_dict()})
+            for msg in serialized:
                 for ws in clients.copy():
                     try:
                         await ws.send_text(msg)
@@ -115,7 +129,9 @@ async def ws_global(ws: WebSocket):
     _global_ws.add(ws)
     try:
         while True:
-            await ws.receive_text()
+            msg = await ws.receive_text()
+            if msg == "ping":
+                await ws.send_text("pong")
     except WebSocketDisconnect:
         pass
     finally:
@@ -124,16 +140,28 @@ async def ws_global(ws: WebSocket):
 
 @app.websocket("/ws/{session_id}")
 async def ws_session(ws: WebSocket, session_id: str):
-    """Session-scoped WebSocket: receives events from one session only."""
+    """Session-scoped WebSocket: receives events from one session only.
+
+    Replays the last 50 buffered events on connect so clients don't miss events
+    during disconnection.
+    """
     session = get_session(session_id)
     if not session:
         await ws.close(code=4004, reason="session not found")
         return
     await ws.accept()
     _ws_clients.setdefault(session_id, set()).add(ws)
+    # Replay buffered events so reconnecting clients catch up.
+    for msg in _event_replay_buffer.get(session_id, []):
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            break
     try:
         while True:
-            await ws.receive_text()
+            msg = await ws.receive_text()
+            if msg == "ping":
+                await ws.send_text("pong")
     except WebSocketDisconnect:
         pass
     finally:
@@ -467,7 +495,31 @@ def api_delete_session(session_id: str):
     delete_session(session)
     _chat_states.pop(session_id, None)
     _ws_clients.pop(session_id, None)
+    _event_replay_buffer.pop(session_id, None)
     return {"status": "deleted", "session_id": session_id}
+
+
+@app.post("/api/sessions/{session_id}/duplicate", status_code=201)
+def api_duplicate_session(session_id: str):
+    """Create a new session with the same chat history as the source."""
+    source = _require_session(session_id)
+    new_session = create_session()
+    messages = db.load_chat_messages(session_id)
+    for m in messages:
+        db.save_chat_message(new_session.id, m["role"], m["content"])
+    source_state = db.load_chat_state(session_id)
+    if source_state:
+        db.save_chat_state(
+            new_session.id,
+            confidence=source_state.get("confidence", {}),
+            relevance=source_state.get("relevance", {}),
+            ready=source_state.get("ready", False),
+            weighted_readiness=source_state.get("weighted_readiness", 0),
+            tasks=source_state.get("tasks"),
+            project=source_state.get("project"),
+        )
+    rename_session(new_session, f"Copy of {source.name or source.id[:8]}")
+    return new_session.to_dict()
 
 
 # -- Task CRUD endpoints ------------------------------------------------------
@@ -718,7 +770,7 @@ def api_chat_undo(session_id: str):
 
 
 class ToolRequest(BaseModel):
-    tool: Literal["brainstorm", "expand", "refine", "architect"]
+    tool: Literal["brainstorm", "expand", "refine", "architect", "modify"]
     context: str = ""  # optional freeform input (for refine tool)
 
 
@@ -774,6 +826,14 @@ def api_ralph_it(session_id: str, req: RalphItRequest = RalphItRequest()):
             detail="Chatbot confidence threshold not met yet",
         )
 
+    # Guard: reject if tasks already exist for this session (double-click protection)
+    existing = tasks.list_tasks(cwd=session.base_dir)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tasks already exist for this session ({len(existing)} tasks). Delete them first to re-create.",
+        )
+
     # Use override if provided, else fall back to chatbot-generated tasks
     task_list = req.tasks if req.tasks is not None else chat_state.tasks
 
@@ -782,6 +842,28 @@ def api_ralph_it(session_id: str, req: RalphItRequest = RalphItRequest()):
             status_code=400,
             detail="No tasks generated by chatbot",
         )
+
+    # Validate task quality before committing to the loop
+    warnings: list[str] = []
+    for i, t in enumerate(task_list):
+        title = t.get("title", "")
+        if not title:
+            raise HTTPException(status_code=400, detail=f"Task {i} has no title")
+        # Check for structured acceptance criteria (new format)
+        ac = t.get("acceptance_criteria")
+        body = t.get("body", "")
+        if ac and isinstance(ac, list):
+            if len(ac) < 2:
+                warnings.append(f"Task '{title}': only {len(ac)} acceptance criteria (recommend 2+)")
+        elif body:
+            # Legacy format: count bullet points in body
+            bullets = [ln for ln in body.splitlines() if ln.strip().startswith("- ")]
+            if len(bullets) < 2:
+                warnings.append(f"Task '{title}': fewer than 2 acceptance criteria in body")
+        else:
+            warnings.append(f"Task '{title}': no acceptance criteria or body")
+    if warnings:
+        logger.warning("Task quality warnings: %s", warnings)
 
     # Create tasks from the resolved list
     created = []
@@ -794,11 +876,26 @@ def api_ralph_it(session_id: str, req: RalphItRequest = RalphItRequest()):
                 "Task %d parent %r not yet created; clearing parent", i, parent
             )
             parent = ""
+
+        # Normalize structured format -> body string (backwards compat with task store)
+        body = t.get("body", "")
+        acceptance = t.get("acceptance_criteria")
+        design = t.get("design_notes")
+        if acceptance and isinstance(acceptance, list):
+            body = "Acceptance:\n" + "\n".join(f"- {c}" for c in acceptance)
+            if design and isinstance(design, list):
+                body += "\n\nDesign:\n" + "\n".join(f"- {n}" for n in design)
+
+        # Map complexity to labels for downstream timeout scaling
+        complexity = t.get("estimated_complexity", "medium")
+        labels = [f"complexity:{complexity}"] if complexity else []
+
         task = tasks.create_task(
             t["title"],
-            body=t.get("body"),
+            body=body or None,
             priority=t.get("priority", i + 1),
             parent=parent,
+            labels=labels or None,
             cwd=session.base_dir,
         )
         created.append(task.to_dict())

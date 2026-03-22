@@ -192,28 +192,58 @@ def test_task_as_xml_contains_required_tags():
     assert "<Title>Build API</Title>" in xml
 
 
-def test_task_as_xml_omits_empty_fields():
+def test_task_as_xml_omits_metadata_fields():
+    """as_xml only includes agent-relevant fields: id, title, body, parent."""
+    t = Task(id="task-001", title="X", labels=["bug"], assignee="alice", priority=1)
+    xml = t.as_xml()
+    assert "<Assignee>" not in xml
+    assert "<Labels>" not in xml
+    assert "<Priority>" not in xml
+    assert "<Status>" not in xml
+    assert "<ParallelGroup>" not in xml
+    assert "<CreatedAt>" not in xml
+
+
+def test_task_as_xml_omits_empty_body():
     t = Task(id="task-001", title="X")
     xml = t.as_xml()
     assert "<Body>" not in xml
-    assert "<Assignee>" not in xml
-    assert "<Labels>" not in xml
-    assert "<Parent>" not in xml
-    # parallel_group == 0 is omitted
-    assert "<ParallelGroup>" not in xml
+    assert "<AcceptanceCriteria>" not in xml
 
 
-def test_task_as_xml_renders_labels_as_items():
-    t = Task(id="task-001", title="X", labels=["bug", "p1"])
+def test_task_as_xml_structured_body():
+    """Body with Acceptance/Design sections is parsed into structured XML."""
+    t = Task(id="task-001", title="X", body="Acceptance:\n- POST /api returns 200\n- Returns 401 on bad auth\n\nDesign:\n- Use bcrypt")
     xml = t.as_xml()
-    assert "<Labels><Item>bug</Item><Item>p1</Item></Labels>" in xml
+    assert "<AcceptanceCriteria>" in xml
+    assert "<Criterion>POST /api returns 200</Criterion>" in xml
+    assert "<Criterion>Returns 401 on bad auth</Criterion>" in xml
+    assert "<DesignNotes>" in xml
+    assert "<Note>Use bcrypt</Note>" in xml
+    # Metadata NOT present
+    assert "<Status>" not in xml
 
 
-def test_task_as_xml_renders_datetime_as_isoformat():
+def test_task_as_xml_unstructured_body_becomes_acceptance():
+    """Body without section headers defaults to acceptance criteria."""
+    t = Task(id="task-001", title="X", body="Just do the thing")
+    xml = t.as_xml()
+    assert "<AcceptanceCriteria>" in xml
+    assert "<Criterion>Just do the thing</Criterion>" in xml
+
+
+def test_task_as_xml_includes_parent():
+    t = Task(id="task-002", title="X", parent="task-001")
+    xml = t.as_xml()
+    assert "<Parent>task-001</Parent>" in xml
+
+
+def test_task_as_xml_no_datetime():
+    """Timestamps are metadata -- not included in agent XML."""
     dt = datetime(2024, 3, 1, 10, 0, tzinfo=timezone.utc)
     t = Task(id="task-001", title="X", created_at=dt)
     xml = t.as_xml()
-    assert dt.isoformat() in xml
+    assert dt.isoformat() not in xml
 
 
 # ---------------------------------------------------------------------------

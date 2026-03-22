@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
+from xml.sax.saxutils import escape as xml_escape
 
 import yaml
 
@@ -50,25 +51,76 @@ class Task:
     updated_at: datetime | None = None
 
     def as_xml(self) -> str:
-        """Serialize to XML for injection into agent prompts.
+        """Serialize to XML for the agent prompt.
 
-        Empty/None fields are omitted.
+        Only includes fields the agent needs: Id, Title, and structured
+        body content (acceptance criteria + design notes). Metadata like
+        status, priority, assignee, timestamps are omitted -- they're
+        loop bookkeeping, not agent context.
         """
         lines: list[str] = ["<Task>"]
-        for f in self.__dataclass_fields__:
-            value = getattr(self, f)
-            if value is None or value == "" or value == [] or value == 0:
-                continue
-            tag = f.replace("_", " ").title().replace(" ", "")
-            if isinstance(value, list):
-                inner = "".join(f"<Item>{v}</Item>" for v in value)
-                lines.append(f"  <{tag}>{inner}</{tag}>")
-            elif isinstance(value, datetime):
-                lines.append(f"  <{tag}>{value.isoformat()}</{tag}>")
-            else:
-                lines.append(f"  <{tag}>{value}</{tag}>")
+        lines.append(f"  <Id>{xml_escape(self.id)}</Id>")
+        lines.append(f"  <Title>{xml_escape(self.title)}</Title>")
+
+        if self.body and self.body.strip():
+            # Parse structured body into separate XML sections
+            acceptance, design, notes = self._parse_body_sections()
+            if acceptance:
+                lines.append("  <AcceptanceCriteria>")
+                for criterion in acceptance:
+                    lines.append(f"    <Criterion>{xml_escape(criterion)}</Criterion>")
+                lines.append("  </AcceptanceCriteria>")
+            if design:
+                lines.append("  <DesignNotes>")
+                for note in design:
+                    lines.append(f"    <Note>{xml_escape(note)}</Note>")
+                lines.append("  </DesignNotes>")
+            if notes:
+                lines.append("  <AgentNotes>")
+                for note in notes:
+                    lines.append(f"    <Note>{xml_escape(note)}</Note>")
+                lines.append("  </AgentNotes>")
+            # Fallback: if no structured sections found, emit raw body
+            if not acceptance and not design and not notes:
+                lines.append(f"  <Body>{xml_escape(self.body)}</Body>")
+
+        if self.parent:
+            lines.append(f"  <Parent>{xml_escape(self.parent)}</Parent>")
+
         lines.append("</Task>")
         return "\n".join(lines)
+
+    def _parse_body_sections(self) -> tuple[list[str], list[str], list[str]]:
+        """Split the body into acceptance criteria, design notes, and agent notes.
+
+        Recognizes sections starting with "Acceptance:", "Design:", and lines
+        appended by the loop (error traces, help requests).
+        """
+        acceptance: list[str] = []
+        design: list[str] = []
+        notes: list[str] = []
+
+        current = acceptance  # default bucket
+        for line in self.body.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            lower = stripped.lower()
+            if lower.startswith("acceptance:") or lower == "acceptance":
+                current = acceptance
+                continue
+            if lower.startswith("design:") or lower == "design":
+                current = design
+                continue
+            if lower.startswith("agent ") or lower.startswith("error:") or lower.startswith("subprocess."):
+                current = notes
+
+            # Strip leading "- " bullet prefix
+            text = stripped[2:] if stripped.startswith("- ") else stripped
+            if text:
+                current.append(text)
+
+        return acceptance, design, notes
 
     @classmethod
     def parse(cls, data: dict) -> Self:

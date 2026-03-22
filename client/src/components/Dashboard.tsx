@@ -15,32 +15,33 @@ import { HelpPanel } from "./HelpPanel";
 import { RightPanel } from "./RightPanel";
 import { SessionSidebar, type SessionEntry } from "./SessionSidebar";
 import { SessionTitle } from "./SessionTitle";
-import { MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Terminal, GripVertical } from "lucide-react";
+import { MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Terminal, GripVertical, WifiOff } from "lucide-react";
+import { ErrorBoundary } from "./ErrorBoundary";
 import type { Theme } from "@/hooks/useTheme";
 
-const PANEL_STORAGE_KEY = "ralph_panel_width";
 const PANEL_MIN = 200;
-const PANEL_MAX = 500;
-const PANEL_DEFAULT = 280;
+const PANEL_DEFAULT = 320;
 
-function useResizablePanel() {
+function useResizablePanel(storageKey = "ralph_panel_width", defaultWidth = PANEL_DEFAULT) {
+  const getMax = () => Math.max(PANEL_MIN + 100, Math.floor(window.innerWidth * 0.7));
+
   const [width, setWidth] = useState<number>(() => {
     try {
-      const stored = localStorage.getItem(PANEL_STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         const val = Number(stored);
-        if (val >= PANEL_MIN && val <= PANEL_MAX) return val;
+        if (val >= PANEL_MIN && val <= getMax()) return val;
       }
     } catch { /* ignore */ }
-    return PANEL_DEFAULT;
+    return defaultWidth;
   });
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
 
   useEffect(() => {
-    try { localStorage.setItem(PANEL_STORAGE_KEY, String(width)); } catch { /* ignore */ }
-  }, [width]);
+    try { localStorage.setItem(storageKey, String(width)); } catch { /* ignore */ }
+  }, [width, storageKey]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -50,9 +51,9 @@ function useResizablePanel() {
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
-      // Dragging left increases panel width (panel is on the right)
+      const maxW = getMax();
       const delta = startX.current - ev.clientX;
-      const next = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startW.current + delta));
+      const next = Math.min(maxW, Math.max(PANEL_MIN, startW.current + delta));
       setWidth(next);
     };
     const onMouseUp = () => {
@@ -178,8 +179,10 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Terminal starts collapsed -- Code tab is primary
   const [terminalOpen, setTerminalOpen] = useState(false);
-  // Resizable right panel
-  const rightPanel = useResizablePanel();
+  // Resizable right panels (separate for chat vs loop phase)
+  // 30% larger defaults than original (280->370, 320->420)
+  const rightPanel = useResizablePanel("ralph_panel_width_loop", 370);
+  const chatRightPanel = useResizablePanel("ralph_panel_width_chat", 420);
   // Mobile: which panel is visible when stacked
   const [mobileTab, setMobileTab] = useState<"main" | "right">("main");
   // Separate loading flag for the ralph-it transition
@@ -280,7 +283,8 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
     }
   }, [chatbot, dispatch]);
 
-  // Dimension click -> send a focused chat message and open sidebar
+  // Dimension click -> populate the chat input (user decides when to send)
+  const [pendingDraft, setPendingDraft] = useState<string>("");
   const handleDimensionClick = useCallback((dim: string) => {
     const labels: Record<string, string> = {
       functional: "functional requirements and features",
@@ -292,11 +296,12 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
       edge_cases: "edge cases and error handling",
     };
     const score = (chatbot.state.confidence as Record<string, number>)[dim] ?? 0;
-    chatbot.sendMessage(
+    setPendingDraft(
       `What additional details can I provide about ${labels[dim] ?? dim}? Current coverage: ${score}%.`
     );
     setSidebarOpen(true);
-  }, [chatbot]);
+  }, [chatbot.state.confidence]);
+  const handleDraftConsumed = useCallback(() => setPendingDraft(""), []);
 
   // Phase 1: full-screen chat with history sidebar on far left
   if (phase === "chat") {
@@ -308,35 +313,41 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
           onDeleteSession={handleDeleteSession}
         />
         <div className="flex-1 overflow-hidden">
-          <ChatPanel
-            state={displayState}
-            onSend={handleBranchSend}
-            onRalphIt={handleRalphIt}
-            onReviewTasks={handleReviewTasks}
-            onClearError={chatbot.clearError}
-            onUndo={branching.isMainBranch ? chatbot.undoLastMessage : undefined}
-            onClearChat={chatbot.clearChat}
-            ralphItLoading={ralphItLoading}
-            mode="full"
-            theme={theme}
-            onThemeToggle={onThemeToggle}
-            onLogout={onLogout}
-            user={user}
-            soundEnabled={sound.enabled}
-            onSoundToggle={sound.toggle}
-            onRunTool={chatbot.runTool}
-            onClearToolResult={chatbot.clearToolResult}
-            onRetry={chatbot.retryMessage}
-            branches={branching.branches}
-            activeBranchId={branching.activeBranchId}
-            onBranchFrom={handleBranchFrom}
-            onBranchSwitch={branching.switchBranch}
-            onRewind={handleRewind}
-            loopActive={false}
-            onNewChat={chatbot.newChat}
-            wsStatus={wsState}
-            onDimensionClick={handleDimensionClick}
-          />
+          <ErrorBoundary panelName="Chat">
+            <ChatPanel
+              state={displayState}
+              onSend={handleBranchSend}
+              onRalphIt={handleRalphIt}
+              onReviewTasks={handleReviewTasks}
+              onClearError={chatbot.clearError}
+              onUndo={branching.isMainBranch ? chatbot.undoLastMessage : undefined}
+              onClearChat={chatbot.clearChat}
+              ralphItLoading={ralphItLoading}
+              mode="full"
+              theme={theme}
+              onThemeToggle={onThemeToggle}
+              onLogout={onLogout}
+              user={user}
+              soundEnabled={sound.enabled}
+              onSoundToggle={sound.toggle}
+              onRunTool={chatbot.runTool}
+              onClearToolResult={chatbot.clearToolResult}
+              onRetry={chatbot.retryMessage}
+              branches={branching.branches}
+              activeBranchId={branching.activeBranchId}
+              onBranchFrom={handleBranchFrom}
+              onBranchSwitch={branching.switchBranch}
+              onRewind={handleRewind}
+              loopActive={false}
+              onNewChat={chatbot.newChat}
+              wsStatus={wsState}
+              onDimensionClick={handleDimensionClick}
+              draftMessage={pendingDraft}
+              onDraftConsumed={handleDraftConsumed}
+              rightPanelWidth={chatRightPanel.width}
+              onRightPanelResize={chatRightPanel.onMouseDown}
+            />
+          </ErrorBoundary>
         </div>
       </div>
     );
@@ -413,6 +424,24 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
         onSoundToggle={sound.toggle}
       />
 
+      {/* WS disconnection banner */}
+      {wsState === "disconnected" && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-destructive/10 border-b border-destructive/30 shrink-0">
+          <WifiOff className="size-3 text-destructive shrink-0" />
+          <span className="text-[10px] font-mono uppercase tracking-widest text-destructive">
+            WebSocket disconnected -- reconnecting...
+          </span>
+        </div>
+      )}
+      {wsState === "connecting" && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-yellow-500/10 border-b border-yellow-500/30 shrink-0">
+          <WifiOff className="size-3 text-yellow-500 shrink-0 animate-pulse" />
+          <span className="text-[10px] font-mono uppercase tracking-widest text-yellow-500">
+            Reconnecting to server...
+          </span>
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         {/* Session history sidebar -- leftmost */}
         <SessionSidebar
@@ -429,6 +458,7 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
           {sidebarOpen ? (
             <>
               <div className="flex-1 overflow-hidden">
+                <ErrorBoundary panelName="Chat Sidebar">
                 <ChatPanel
                   state={chatbot.state}
                   onSend={chatbot.sendMessage}
@@ -447,7 +477,10 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                   loopActive={loopState.loopStatus === "running"}
                   onNewChat={chatbot.newChat}
                   wsStatus={wsState}
+                  draftMessage={pendingDraft}
+                  onDraftConsumed={handleDraftConsumed}
                 />
+                </ErrorBoundary>
               </div>
               {/* Collapse toggle at bottom */}
               <button
@@ -543,7 +576,9 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
               </button>
               {terminalOpen && (
                 <div className="h-[300px] overflow-hidden">
-                  <AgentOutput lines={loopState.agentOutputLines} />
+                  <ErrorBoundary panelName="Terminal">
+                    <AgentOutput lines={loopState.agentOutputLines} />
+                  </ErrorBoundary>
                 </div>
               )}
             </div>
@@ -564,22 +599,24 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
             }`}
             style={{ width: mobileTab === "right" ? "100%" : rightPanel.width }}
           >
-            <RightPanel
-              chatState={chatbot.state}
-              tasks={loopState.tasks}
-              taskDiffs={loopState.taskDiffs}
-              loopStarted={phase === "loop"}
-              sessionId={sessionId}
-              githubUrl={loopState.githubUrl}
-              onDimensionClick={handleDimensionClick}
-              onRunTool={chatbot.runTool}
-              onClearToolResult={chatbot.clearToolResult}
-              onTaskUpdate={(taskId, patch) => {
-                if (patch.status === "open") {
-                  dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
-                }
-              }}
-            />
+            <ErrorBoundary panelName="Right Panel">
+              <RightPanel
+                chatState={chatbot.state}
+                tasks={loopState.tasks}
+                taskDiffs={loopState.taskDiffs}
+                loopStarted={phase === "loop"}
+                sessionId={sessionId}
+                githubUrl={loopState.githubUrl}
+                onDimensionClick={handleDimensionClick}
+                onRunTool={chatbot.runTool}
+                onClearToolResult={chatbot.clearToolResult}
+                onTaskUpdate={(taskId, patch) => {
+                  if (patch.status === "open") {
+                    dispatch({ type: "task_reset", timestamp: Date.now(), data: { task_id: taskId } });
+                  }
+                }}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       </div>

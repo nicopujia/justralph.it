@@ -4,9 +4,11 @@ import type { RalphEvent } from "./useEventReducer";
 export type WSState = "connecting" | "connected" | "disconnected";
 
 const MAX_BACKOFF = 10_000;
+const PING_INTERVAL = 30_000; // send ping every 30s to keep connection alive
 
 /**
- * WebSocket hook with auto-reconnect. Pass null URL to defer connection.
+ * WebSocket hook with auto-reconnect and ping/pong keepalive.
+ * Pass null URL to defer connection.
  */
 export function useWebSocket(
   url: string | null,
@@ -25,6 +27,7 @@ export function useWebSocket(
     }
 
     let reconnectTimer: ReturnType<typeof setTimeout>;
+    let pingTimer: ReturnType<typeof setInterval>;
     let unmounted = false;
 
     function connect() {
@@ -37,9 +40,18 @@ export function useWebSocket(
         if (unmounted) return;
         setState("connected");
         backoffRef.current = 1000;
+
+        // Start ping keepalive to prevent proxy/LB timeouts
+        pingTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send("ping");
+          }
+        }, PING_INTERVAL);
       };
 
       ws.onmessage = (ev) => {
+        // Ignore pong responses
+        if (ev.data === "pong") return;
         try {
           const event: RalphEvent = JSON.parse(ev.data);
           onEventRef.current(event);
@@ -52,6 +64,7 @@ export function useWebSocket(
         if (unmounted) return;
         setState("disconnected");
         wsRef.current = null;
+        clearInterval(pingTimer);
         reconnectTimer = setTimeout(() => {
           backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF);
           connect();
@@ -68,6 +81,7 @@ export function useWebSocket(
     return () => {
       unmounted = true;
       clearTimeout(reconnectTimer);
+      clearInterval(pingTimer);
       wsRef.current?.close();
     };
   }, [url]);
