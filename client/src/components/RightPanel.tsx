@@ -52,9 +52,10 @@ export function RightPanel({
   ];
 
   // Get diff lines for the currently selected task (or all diffs merged)
-  const diffTaskIds = Array.from(taskDiffs.keys());
+  const safeDiffs = taskDiffs instanceof Map ? taskDiffs : new Map();
+  const diffTaskIds = Array.from(safeDiffs.keys());
   const activeDiffId = selectedDiffTask ?? diffTaskIds[diffTaskIds.length - 1] ?? null;
-  const activeDiff = activeDiffId ? taskDiffs.get(activeDiffId) : null;
+  const activeDiff = activeDiffId ? safeDiffs.get(activeDiffId) : null;
   const diffLines = activeDiff?.diff.split("\n") ?? [];
 
   const ghLink = githubUrl ? toGitHubLink(githubUrl) : null;
