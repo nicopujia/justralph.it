@@ -140,7 +140,7 @@ def _compute_readiness(confidence: dict[str, int], relevance: dict[str, float]) 
 
 
 def _is_ready(state: "ChatState") -> bool:
-    """Ready when weighted readiness >= 60% and all relevant dimensions >= 70%.
+    """Ready when weighted readiness >= 50% and all relevant dimensions >= 50%.
 
     No minimum question count -- if the user provides enough detail in one
     prompt to hit the threshold, that's valid.

@@ -488,7 +488,12 @@ class RalphyRunner:
                 ["git", "remote", "get-url", "origin"],
                 capture_output=True, text=True, cwd=self.cfg.project_dir,
             )
-            remote_url = url_result.stdout.strip()
+            # Strip embedded token from URL before exposing in events
+            import re
+            remote_url = re.sub(
+                r"https://[^@]+@github\.com/", "https://github.com/",
+                url_result.stdout.strip(),
+            )
 
             # Get current commit SHA
             sha_result = subprocess.run(

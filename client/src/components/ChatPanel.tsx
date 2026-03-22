@@ -671,6 +671,7 @@ export function ChatPanel({
   onRalphIt,
   onForceRalphIt,
   onReviewTasks,
+  onReconcile,
   onClearError,
   ralphItLoading = false,
   mode = "full",

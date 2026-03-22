@@ -625,9 +625,14 @@ export function useChatbot() {
       toolUsageCount: { ...EMPTY_TOOL_USAGE },
     });
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const authToken = localStorage.getItem("ralph_token");
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
       const resp = await fetch(`${API}/api/sessions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({}),
       });
       if (resp.ok) {

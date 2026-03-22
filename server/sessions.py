@@ -225,6 +225,9 @@ def start_loop(session: Session) -> None:
             session.iteration_count += 1
         elif event.type == EventType.TASK_HELP:
             session.status = "needs_help"
+            session.current_task_id = None
+        elif event.type == EventType.TASK_BLOCKED:
+            session.current_task_id = None
         elif event.type == EventType.TASK_CLAIMED:
             session.current_task_id = event.data.get("task_id")
         elif event.type == EventType.TASK_DONE:

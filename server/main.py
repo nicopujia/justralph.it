@@ -386,12 +386,16 @@ def api_git_status(session_id: str):
     session = _require_session(session_id)
     cwd = session.base_dir
 
-    # Remote URL
+    # Remote URL (strip embedded token for security)
+    import re
     remote_url = ""
     try:
         r = sp.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=cwd)
         if r.returncode == 0:
-            remote_url = r.stdout.strip()
+            remote_url = re.sub(
+                r"https://[^@]+@github\.com/", "https://github.com/",
+                r.stdout.strip(),
+            )
     except Exception:
         pass
 

@@ -271,8 +271,8 @@ def test_is_ready_ignores_low_relevance_dims():
 
 def test_is_ready_false_when_multiple_dims_below_min():
     state = _make_ready_state()
-    state.confidence["functional"] = 50
-    state.confidence["technical_stack"] = 50
+    state.confidence["functional"] = 30
+    state.confidence["technical_stack"] = 30
     assert _is_ready(state) is False
 
 
@@ -566,16 +566,16 @@ def test_describe_gaps_all_met():
 
 def test_describe_gaps_low_dimension():
     state = _make_ready_state()
-    state.confidence["testing"] = 50
+    state.confidence["testing"] = 30
     state.weighted_readiness = 75.0
     result = _describe_gaps(state)
     assert "testing" in result
-    assert "50%" in result
+    assert "30%" in result
 
 
 def test_describe_gaps_low_readiness():
     state = _make_ready_state()
-    state.weighted_readiness = 50.0  # below 60% threshold
+    state.weighted_readiness = 40.0  # below 50% threshold
     result = _describe_gaps(state)
     assert "overall readiness" in result
 
