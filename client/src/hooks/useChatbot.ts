@@ -67,6 +67,12 @@ export type ChatState = {
   sessionId: string | null;
   tasks: any[] | null;
   project: any | null;
+  /** Draft tasks shown progressively during chat (before reconciliation). */
+  draftTasks: any[] | null;
+  /** True while the reconciliation agent is running. */
+  reconciling: boolean;
+  /** Summary of changes made by reconciliation. */
+  reconcileSummary: string | null;
   weightedReadiness: number;
   questionCount: number;
   phase: number;
@@ -171,6 +177,9 @@ export function useChatbot() {
     sessionId: null,
     tasks: null,
     project: null,
+    draftTasks: null,
+    reconciling: false,
+    reconcileSummary: null,
     weightedReadiness: 0,
     questionCount: 0,
     phase: 1,
@@ -316,8 +325,9 @@ export function useChatbot() {
           confidence: data.confidence ?? s.confidence,
           relevance: data.relevance ?? s.relevance,
           ready: data.ready ?? false,
-          tasks: data.tasks ?? null,
-          project: data.project ?? null,
+          draftTasks: data.tasks ?? s.draftTasks,
+          tasks: s.reconciledTasks ?? (data.ready ? (data.tasks ?? s.tasks) : s.tasks),
+          project: data.project ?? s.project,
           weightedReadiness: data.weighted_readiness ?? s.weightedReadiness,
           questionCount: data.question_count ?? s.questionCount,
           phase: data.phase ?? s.phase,
@@ -447,6 +457,10 @@ export function useChatbot() {
       ready: false,
       tasks: null,
       project: null,
+      draftTasks: null,
+      reconciledTasks: null,
+      reconciling: false,
+      reconcileSummary: null,
       weightedReadiness: 0,
       questionCount: 0,
       phase: 1,
@@ -563,6 +577,9 @@ export function useChatbot() {
       sessionId: null,
       tasks: null,
       project: null,
+      draftTasks: null,
+      reconciling: false,
+      reconcileSummary: null,
       weightedReadiness: 0,
       questionCount: 0,
       phase: 1,
@@ -587,10 +604,43 @@ export function useChatbot() {
     }
   }, []);
 
+  /** Run the reconciliation agent: deduplicate, fix deps, fill gaps. */
+  const reconcile = useCallback(async () => {
+    if (!state.sessionId) return null;
+    setState((s) => ({ ...s, reconciling: true }));
+    try {
+      const resp = await fetch(`${API}/api/sessions/${state.sessionId}/reconcile`, {
+        method: "POST",
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: "Reconciliation failed" }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      setState((s) => ({
+        ...s,
+        reconciledTasks: data.tasks,
+        tasks: data.tasks,
+        project: data.project ?? s.project,
+        reconcileSummary: data.changes_summary,
+        reconciling: false,
+      }));
+      return data;
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        reconciling: false,
+        error: err instanceof Error ? err.message : "Reconciliation failed",
+      }));
+      return null;
+    }
+  }, [state.sessionId]);
+
   return {
     state,
     sendMessage,
     ralphIt,
+    reconcile,
     createSession,
     clearError,
     clearChat,

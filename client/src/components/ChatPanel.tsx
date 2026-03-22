@@ -32,6 +32,7 @@ import * as Popover from "@radix-ui/react-popover";
 import type { Theme } from "@/hooks/useTheme";
 import { API_URL } from "@/lib/config";
 import { ConfidenceMeter } from "./ConfidenceMeter";
+import { ProgressiveTaskCard } from "./ProgressiveTaskCard";
 import { ToolsetPanel } from "./ToolsetPanel";
 import { ToolSuggestion } from "./ToolSuggestion";
 import { useToast } from "./Toast";
@@ -69,6 +70,8 @@ type ChatPanelProps = {
   onRalphIt: () => void;
   /** Called when user wants to review generated tasks before starting loop. */
   onReviewTasks?: () => void;
+  /** Called when user clicks RALPH.IT to trigger reconciliation. */
+  onReconcile?: () => void;
   onClearError?: () => void;
   /** true while ralphIt() is in flight (distinct from message loading). */
   ralphItLoading?: boolean;
@@ -509,25 +512,20 @@ function RightTabPanel({
         )}
         {activeTab === "tasks" && (
           <div className="space-y-2">
-            {state.tasks && state.tasks.length > 0 ? (
-              state.tasks.map((task: any, i: number) => (
-                <div
-                  key={i}
-                  className="border border-border px-3 py-2 bg-background"
-                >
-                  <p className="text-xs font-bold text-foreground uppercase truncate">
-                    {task.title ?? task.name ?? `TASK ${i + 1}`}
+            {state.draftTasks && state.draftTasks.length > 0 ? (
+              <>
+                {!state.ready && (
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground px-1 pb-1">
+                    DRAFT TASKS (UPDATES EACH TURN)
                   </p>
-                  {task.body && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {task.body}
-                    </p>
-                  )}
-                </div>
-              ))
+                )}
+                {state.draftTasks.map((task: any, i: number) => (
+                  <ProgressiveTaskCard key={task.title ?? i} task={task} index={i} />
+                ))}
+              </>
             ) : (
               <p className="text-xs text-muted-foreground uppercase tracking-wider text-center py-8">
-                TASKS WILL APPEAR WHEN RALPH IS READY.
+                TASKS WILL APPEAR AS THE CONVERSATION PROGRESSES.
               </p>
             )}
           </div>
@@ -553,9 +551,17 @@ function RightTabPanel({
       </div>
 
       {/* Action button */}
-      {state.ready && state.tasks && state.tasks.length > 0 && (
+      {state.ready && state.draftTasks && state.draftTasks.length > 0 && (
         <div className="p-4 border-t border-border shrink-0 space-y-2">
-          {onReviewTasks ? (
+          {onReconcile ? (
+            <button
+              onClick={onReconcile}
+              disabled={busy || state.reconciling}
+              className="w-full border-2 border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-sm font-bold py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {state.reconciling ? "RECONCILING..." : "RALPH.IT"}
+            </button>
+          ) : onReviewTasks ? (
             <button
               onClick={onReviewTasks}
               disabled={busy}
@@ -572,14 +578,9 @@ function RightTabPanel({
               {ralphItLoading ? "CREATING PROJECT..." : "JUST RALPH IT"}
             </button>
           )}
-          {slowLoad && !onReviewTasks && (
-            <p className="text-xs text-muted-foreground uppercase tracking-wider text-center">
-              THIS IS TAKING A WHILE...
-            </p>
-          )}
         </div>
       )}
-      {state.ready && (!state.tasks || state.tasks.length === 0) && (
+      {state.ready && (!state.draftTasks || state.draftTasks.length === 0) && (
         <div className="p-4 border-t border-border shrink-0">
           <p className="text-xs text-muted-foreground uppercase tracking-wider text-center animate-pulse">
             GENERATING IMPLEMENTATION PLAN...
@@ -1004,15 +1005,15 @@ export function ChatPanel({
         </div>
 
         {/* Ready actions (sidebar) */}
-        {state.ready && state.tasks && state.tasks.length > 0 && (
+        {state.ready && state.draftTasks && state.draftTasks.length > 0 && (
           <div className="px-2 pb-2 shrink-0">
-            {onReviewTasks ? (
+            {onReconcile ? (
               <button
-                onClick={onReviewTasks}
-                disabled={busy}
+                onClick={onReconcile}
+                disabled={busy || state.reconciling}
                 className="w-full border border-primary bg-transparent text-primary hover:bg-primary hover:text-primary-foreground uppercase tracking-wider text-xs font-bold py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                REVIEW TASKS
+                {state.reconciling ? "RECONCILING..." : "RALPH.IT"}
               </button>
             ) : (
               <button
@@ -1272,17 +1273,17 @@ export function ChatPanel({
           {state.loading && (
             <TypingIndicator elapsedSeconds={elapsedSeconds} />
           )}
-          {/* Inline task cards -- rendered after last assistant message when ready */}
-          {state.ready && state.tasks && state.tasks.length > 0 && state.sessionId && (
+          {/* Progressive task cards -- shown after first extraction */}
+          {state.draftTasks && state.draftTasks.length > 0 && state.sessionId && (
             <div className="mt-3 space-y-1 pb-2">
               <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
-                TASKS (click to edit)
+                {state.ready ? "TASKS (CLICK RALPH.IT TO RECONCILE)" : "DRAFT TASKS (UPDATING...)"}
               </p>
-              {state.tasks.map((task: any) => (
-                <InlineTaskCard
-                  key={task.id ?? task.title}
-                  task={{ id: task.id ?? task.title, title: task.title ?? task.name ?? "", priority: task.priority, status: task.status }}
-                  sessionId={state.sessionId!}
+              {state.draftTasks.map((task: any, i: number) => (
+                <ProgressiveTaskCard
+                  key={task.title ?? i}
+                  task={task}
+                  index={i}
                 />
               ))}
             </div>

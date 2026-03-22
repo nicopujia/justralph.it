@@ -256,7 +256,15 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
     // errors are surfaced via chatbot.state.error -> ChatPanel -> toast
   }, [chatbot]);
 
-  // Transition to preview phase when user clicks "Review Tasks"
+  // Reconcile tasks and transition to preview phase
+  const handleReconcile = useCallback(async () => {
+    const result = await chatbot.reconcile();
+    if (result) {
+      setPhase("preview");
+    }
+  }, [chatbot]);
+
+  // Fallback: direct transition to preview (bypasses reconciliation)
   const handleReviewTasks = useCallback(() => {
     setPhase("preview");
   }, []);
@@ -319,6 +327,7 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
               onSend={handleBranchSend}
               onRalphIt={handleRalphIt}
               onReviewTasks={handleReviewTasks}
+              onReconcile={handleReconcile}
               onClearError={chatbot.clearError}
               onUndo={branching.isMainBranch ? chatbot.undoLastMessage : undefined}
               onClearChat={chatbot.clearChat}
@@ -464,6 +473,7 @@ export function Dashboard({ theme, onThemeToggle, onLogout, user }: DashboardPro
                   onSend={chatbot.sendMessage}
                   onRalphIt={handleRalphIt}
                   onReviewTasks={handleReviewTasks}
+                  onReconcile={handleReconcile}
                   onClearError={chatbot.clearError}
                   onUndo={chatbot.undoLastMessage}
                   onClearChat={chatbot.clearChat}

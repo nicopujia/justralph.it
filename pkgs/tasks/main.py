@@ -363,18 +363,25 @@ def compute_parallel_groups(*, cwd: Path | None = None) -> None:
     by_id: dict[str, dict] = {item["id"]: item for item in items if "id" in item}
     groups: dict[str, int] = {}
 
-    def _group_of(task_id: str) -> int:
+    def _group_of(task_id: str, _visiting: set[str] | None = None) -> int:
         if task_id in groups:
             return groups[task_id]
         item = by_id.get(task_id)
         if not item:
             return 1
+        if _visiting is None:
+            _visiting = set()
+        if task_id in _visiting:
+            # Circular dependency -- break cycle
+            groups[task_id] = 1
+            return 1
+        _visiting.add(task_id)
         parent = item.get("parent", "")
         if not parent or parent not in by_id:
             groups[task_id] = 1
             return 1
         # Parent's group + 1
-        pg = _group_of(parent)
+        pg = _group_of(parent, _visiting)
         groups[task_id] = pg + 1
         return pg + 1
 
@@ -424,17 +431,25 @@ def _tasks_path(cwd: Path | None) -> Path:
     return base / TASKS_FILE
 
 
+def _lock_path(cwd: Path | None) -> Path:
+    """Sidecar lock file for coordinating reads and writes."""
+    return _tasks_path(cwd).with_suffix(".yaml.lock")
+
+
 def _load_tasks(cwd: Path | None) -> dict:
     """Read tasks.yaml, returning an empty structure if missing."""
     path = _tasks_path(cwd)
     if not path.exists():
         return {"tasks": []}
-    with open(path) as f:
-        fcntl.flock(f, fcntl.LOCK_SH)
+    lock = _lock_path(cwd)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_SH)
         try:
-            data = yaml.safe_load(f)
+            with open(path) as f:
+                data = yaml.safe_load(f)
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            fcntl.flock(lf, fcntl.LOCK_UN)
     return data if isinstance(data, dict) else {"tasks": []}
 
 
@@ -442,18 +457,19 @@ def _save_tasks(data: dict, cwd: Path | None) -> None:
     """Atomically write tasks.yaml (write to temp, then rename)."""
     path = _tasks_path(cwd)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".yaml")
-    try:
-        with open(fd, "w") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
+    lock = _lock_path(cwd)
+    with open(lock, "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".yaml")
+        try:
+            with open(fd, "w") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-        Path(tmp).rename(path)
-    except Exception:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+            Path(tmp).rename(path)
+        except Exception:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
 
 
 def _next_id(tasks: list[dict]) -> str:

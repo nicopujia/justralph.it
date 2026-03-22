@@ -4,12 +4,15 @@ EventBus bridges the sync Ralph Loop thread and the async FastAPI server.
 The loop calls ``bus.emit()``; the server drains events via ``bus.drain()``.
 """
 
+import logging
 import queue
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(StrEnum):
@@ -70,7 +73,16 @@ class EventBus:
         try:
             self._queue.put_nowait(event)
         except queue.Full:
-            pass  # drop oldest-style: consumer should drain faster
+            # Drop oldest to make room for the new event
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._queue.put_nowait(event)
+            except queue.Full:
+                pass
+            logger.warning("Event queue overflow -- dropped oldest event")
         for cb in self._callbacks:
             cb(event)
 

@@ -50,7 +50,7 @@ BASE_WEIGHTS: dict[str, float] = {
     "testing": 1.0,
     "edge_cases": 1.0,
 }
-READINESS_THRESHOLD = 80
+READINESS_THRESHOLD = 60
 MIN_DIM_SCORE = 70
 RELEVANCE_CUTOFF = 0.3
 
@@ -140,7 +140,7 @@ def _compute_readiness(confidence: dict[str, int], relevance: dict[str, float]) 
 
 
 def _is_ready(state: "ChatState") -> bool:
-    """Ready when weighted readiness >= 85% and all relevant dimensions >= 70%.
+    """Ready when weighted readiness >= 60% and all relevant dimensions >= 70%.
 
     No minimum question count -- if the user provides enough detail in one
     prompt to hit the threshold, that's valid.
@@ -778,6 +778,89 @@ def _generate_tasks_fallback(
         return None
 
 
+def reconcile_tasks(
+    session_id: str,
+    session_dir: Path | None = None,
+    model: str = DEFAULT_MODEL,
+) -> dict | None:
+    """Reconciliation agent: reads entire conversation, cross-references all
+    extracted tasks, deduplicates, fixes dependencies, fills gaps.
+
+    Returns {"tasks": [...], "project": {...}, "changes_summary": "..."} or None.
+    """
+    state = get_chat_state(session_id)
+    conversation = _conversation_summary(state, max_messages=0)
+    existing_tasks = json.dumps(state.tasks or [], indent=2)
+    confidence_summary = ", ".join(
+        f"{d}: {state.confidence.get(d, 0)}%" for d in DIMENSIONS
+    )
+
+    prompt = (
+        "You are a task reconciliation specialist. You have the full conversation "
+        "between a user and Ralphy, plus the tasks extracted progressively.\n\n"
+        f"## Full Conversation\n{conversation}\n\n"
+        f"## Current Tasks (extracted progressively)\n{existing_tasks}\n\n"
+        f"## Confidence Scores\n{confidence_summary}\n\n"
+        "## Instructions\n"
+        "1. Read the ENTIRE conversation carefully\n"
+        "2. Cross-reference every task against what was actually discussed\n"
+        "3. DEDUPLICATE tasks that cover the same requirement\n"
+        "4. FIX dependency chains (parent references must be valid task titles)\n"
+        "5. FILL GAPS: add tasks for requirements discussed but not captured\n"
+        "6. REMOVE tasks that contradict or were superseded by later discussion\n"
+        "7. Ensure acceptance criteria are specific and testable\n"
+        "8. Assign priorities based on conversation emphasis\n\n"
+        "Return ONLY a JSON object:\n"
+        '{\n'
+        '  "tasks": [\n'
+        '    {\n'
+        '      "title": "Short imperative title",\n'
+        '      "acceptance_criteria": ["Testable condition 1"],\n'
+        '      "design_notes": ["Implementation approach"],\n'
+        '      "estimated_complexity": "low|medium|high",\n'
+        '      "priority": 1,\n'
+        '      "parent": null\n'
+        '    }\n'
+        '  ],\n'
+        '  "project": {\n'
+        '    "name": "project-name",\n'
+        '    "language": "Python",\n'
+        '    "framework": "FastAPI",\n'
+        '    "description": "One-line description",\n'
+        '    "test_command": "pytest",\n'
+        '    "lint_command": "ruff check ."\n'
+        '  },\n'
+        '  "changes_summary": "Brief description of what changed from the original list"\n'
+        '}\n\n'
+        "Return ONLY valid JSON. No explanation, no code fences."
+    )
+
+    cwd = str(session_dir or state.session_dir) if (session_dir or state.session_dir) else None
+    try:
+        result = subprocess.run(
+            [OPENCODE_CMD, "run", prompt, "--model", model, "--format", "json"],
+            capture_output=True, text=True, timeout=90,
+            cwd=cwd,
+        )
+        output = result.stdout.strip()
+        if not output:
+            return None
+        content = _extract_content(output)
+        content = _strip_code_fences(content)
+        parsed = json.loads(content)
+        tasks = parsed.get("tasks")
+        if not tasks or not isinstance(tasks, list):
+            return None
+        # Store reconciled tasks in state
+        state.tasks = tasks
+        if parsed.get("project"):
+            state.project = parsed["project"]
+        return parsed
+    except Exception as e:
+        logger.warning("Task reconciliation failed: %s", e)
+        return None
+
+
 _chat_states: dict[str, ChatState] = {}
 
 
@@ -1032,8 +1115,8 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         "weighted_readiness": state.weighted_readiness,
         "question_count": state.user_msg_count,
         "phase": _get_phase(_total_user_chars(state)),
-        "tasks": state.tasks if state.ready else None,
-        "project": state.project if state.ready else None,
+        "tasks": state.tasks,
+        "project": state.project,
         "contradictions": contradictions,
         "questions_remaining": questions_remaining,
     }

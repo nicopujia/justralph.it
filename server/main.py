@@ -23,7 +23,7 @@ from .auth import (
     get_github_user,
     get_user_session,
 )
-from .chatbot import DIMENSIONS, TOOL_CONFIGS, ChatState, _chat_states, chat as chatbot_chat, get_chat_state, run_tool as chatbot_run_tool, undo_last_message
+from .chatbot import DIMENSIONS, TOOL_CONFIGS, ChatState, _chat_states, chat as chatbot_chat, get_chat_state, reconcile_tasks, run_tool as chatbot_run_tool, undo_last_message
 from .sessions import (
     Session,
     create_session,
@@ -808,6 +808,47 @@ class RalphItRequest(BaseModel):
     # Optional override: user-edited tasks from the preview step.
     # If omitted, the server uses chatbot-generated tasks.
     tasks: list[dict] | None = None
+
+
+@app.post("/api/sessions/{session_id}/reconcile")
+def api_reconcile(session_id: str):
+    """Run the reconciliation agent on current conversation + tasks.
+
+    Returns reconciled task list for user review in TaskPreview.
+    Does NOT start the loop -- that still requires POST /ralph-it.
+    """
+    _require_session(session_id)
+    chat_state = get_chat_state(session_id)
+
+    if not chat_state.ready:
+        raise HTTPException(
+            status_code=400,
+            detail="Chatbot confidence threshold not met yet",
+        )
+
+    if not chat_state.tasks:
+        raise HTTPException(
+            status_code=400,
+            detail="No tasks extracted from conversation yet",
+        )
+
+    session = _require_session(session_id)
+    result = reconcile_tasks(session_id, session_dir=session.base_dir)
+
+    if not result:
+        return {
+            "tasks": chat_state.tasks,
+            "project": chat_state.project,
+            "changes_summary": "Reconciliation unavailable -- returning original tasks",
+            "reconciled": False,
+        }
+
+    return {
+        "tasks": result["tasks"],
+        "project": result.get("project", chat_state.project),
+        "changes_summary": result.get("changes_summary", ""),
+        "reconciled": True,
+    }
 
 
 @app.post("/api/sessions/{session_id}/ralph-it")

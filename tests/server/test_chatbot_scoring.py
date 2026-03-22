@@ -575,7 +575,7 @@ def test_describe_gaps_low_dimension():
 
 def test_describe_gaps_low_readiness():
     state = _make_ready_state()
-    state.weighted_readiness = 70.0
+    state.weighted_readiness = 50.0  # below 60% threshold
     result = _describe_gaps(state)
     assert "overall readiness" in result
 
