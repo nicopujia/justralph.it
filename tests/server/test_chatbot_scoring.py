@@ -7,6 +7,7 @@ import pytest
 
 from server.chatbot import (
     BASE_WEIGHTS,
+    BATCH_BONUS_THRESHOLD,
     DIMENSIONS,
     EMA_ALPHA,
     MAX_DELTA,
@@ -18,9 +19,11 @@ from server.chatbot import (
     SHORT_MSG_DELTA,
     SHORT_MSG_LEN,
     ChatState,
+    _auto_score_irrelevant,
     _build_question_guidance,
     _clamp_score,
     _compute_readiness,
+    _describe_gaps,
     _extract_content,
     _get_phase,
     _is_ready,
@@ -28,6 +31,7 @@ from server.chatbot import (
     _questions_for_dim,
     _smooth,
     _strip_code_fences,
+    _strip_task_content,
 )
 
 
@@ -38,12 +42,12 @@ from server.chatbot import (
 
 @pytest.mark.parametrize("chars,expected", [
     (50, 1),     # tiny input
-    (150, 1),    # boundary
-    (151, 2),    # crosses into phase 2
-    (500, 2),    # boundary
-    (501, 3),    # crosses into phase 3
-    (1000, 3),   # boundary
-    (1001, 4),   # full phase
+    (100, 1),    # boundary
+    (101, 2),    # crosses into phase 2
+    (350, 2),    # boundary
+    (351, 3),    # crosses into phase 3
+    (700, 3),    # boundary
+    (701, 4),    # full phase
     (5000, 4),
 ])
 def test_get_phase(chars: int, expected: int):
@@ -60,21 +64,21 @@ def test_get_phase_zero_chars_returns_phase_1():
 
 
 @pytest.mark.parametrize("chars,expected", [
-    (50, 60),    # tiny
-    (150, 60),   # boundary
-    (151, 80),   # moderate
-    (500, 80),   # boundary
-    (501, 95),   # solid
-    (1000, 95),  # boundary
-    (1001, 100), # uncapped
+    (50, 65),    # tiny
+    (100, 65),   # boundary
+    (101, 90),   # moderate
+    (350, 90),   # boundary
+    (351, 100),  # uncapped
+    (700, 100),  # boundary
+    (701, 100),  # beyond
     (5000, 100),
 ])
 def test_phase_cap(chars: int, expected: int):
     assert _phase_cap(total_chars=chars) == expected
 
 
-def test_phase_cap_zero_returns_60():
-    assert _phase_cap(total_chars=0) == 60
+def test_phase_cap_zero_returns_65():
+    assert _phase_cap(total_chars=0) == 65
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +142,16 @@ def test_smooth_equal_score_returns_new():
     assert result == 50
 
 
-def test_smooth_increasing_score_applies_ema():
+def test_smooth_first_score_skips_dampening():
+    # When prev=0, first real score is used directly (no EMA against zero)
     result = _smooth(100, 0)
-    expected = round(EMA_ALPHA * 100 + (1 - EMA_ALPHA) * 0)
+    assert result == 100
+
+
+def test_smooth_increasing_score_applies_ema():
+    # When prev > 0, EMA is applied
+    result = _smooth(100, 50)
+    expected = round(EMA_ALPHA * 100 + (1 - EMA_ALPHA) * 50)
     assert result == expected
 
 
@@ -510,3 +521,214 @@ def test_build_question_guidance_covered_dimensions():
     guidance = _build_question_guidance(conf, rel)
     assert "COVERED" in guidance
     assert "Total questions this turn: 0" in guidance
+
+
+# ---------------------------------------------------------------------------
+# _strip_task_content
+# ---------------------------------------------------------------------------
+
+
+def test_strip_task_content_short_list_preserved():
+    msg = "Here are 3 things:\n1. First\n2. Second\n3. Third\nDone."
+    assert _strip_task_content(msg) == msg
+
+
+def test_strip_task_content_long_list_collapsed():
+    lines = [f"{i}. Task {i} title here" for i in range(1, 12)]
+    msg = "Let me list the tasks:\n" + "\n".join(lines) + "\nDone."
+    result = _strip_task_content(msg)
+    assert "11 tasks generated" in result
+    assert "Task 1 title here" not in result
+
+
+def test_strip_task_content_no_task_lines():
+    msg = "This is a normal response with no task list."
+    assert _strip_task_content(msg) == msg
+
+
+def test_strip_task_content_bullet_list_collapsed():
+    lines = [f"- **Task {i}**: do something" for i in range(1, 8)]
+    msg = "Tasks:\n" + "\n".join(lines)
+    result = _strip_task_content(msg)
+    assert "7 tasks generated" in result
+
+
+# ---------------------------------------------------------------------------
+# _describe_gaps
+# ---------------------------------------------------------------------------
+
+
+def test_describe_gaps_all_met():
+    state = _make_ready_state()
+    result = _describe_gaps(state)
+    assert result == "almost there"
+
+
+def test_describe_gaps_low_dimension():
+    state = _make_ready_state()
+    state.confidence["testing"] = 50
+    state.weighted_readiness = 75.0
+    result = _describe_gaps(state)
+    assert "testing" in result
+    assert "50%" in result
+
+
+def test_describe_gaps_low_readiness():
+    state = _make_ready_state()
+    state.weighted_readiness = 70.0
+    result = _describe_gaps(state)
+    assert "overall readiness" in result
+
+
+# ---------------------------------------------------------------------------
+# _auto_score_irrelevant
+# ---------------------------------------------------------------------------
+
+
+def test_auto_score_irrelevant_sets_95():
+    state = ChatState()
+    state.relevance["auth"] = 0.0
+    state.confidence["auth"] = 0
+    _auto_score_irrelevant(state)
+    assert state.confidence["auth"] == 95
+
+
+def test_auto_score_irrelevant_skips_relevant():
+    state = ChatState()
+    state.relevance["functional"] = 1.0
+    state.confidence["functional"] = 50
+    _auto_score_irrelevant(state)
+    assert state.confidence["functional"] == 50
+
+
+def test_auto_score_irrelevant_skips_already_high():
+    state = ChatState()
+    state.relevance["auth"] = 0.1
+    state.confidence["auth"] = 95
+    _auto_score_irrelevant(state)
+    assert state.confidence["auth"] == 95
+
+
+# ---------------------------------------------------------------------------
+# _clamp_score batch bonus
+# ---------------------------------------------------------------------------
+
+
+def test_clamp_score_batch_bonus_for_long_messages():
+    # Messages > BATCH_BONUS_THRESHOLD get extra delta
+    result_short = _clamp_score(95, 0, 100, 100)
+    result_batch = _clamp_score(95, 0, 100, BATCH_BONUS_THRESHOLD + 1)
+    assert result_batch > result_short
+
+
+# ---------------------------------------------------------------------------
+# Scoring math simulation: 3-turn convergence
+# ---------------------------------------------------------------------------
+
+
+def test_scoring_reaches_readiness_in_3_turns():
+    """Simulate 3 chat turns and verify readiness reaches threshold."""
+    conf = {d: 0 for d in DIMENSIONS}
+    rel = {d: 1.0 for d in DIMENSIONS}
+
+    # Simulate 3 turns of batch answers (each ~600 chars)
+    for turn in range(3):
+        total_chars = (turn + 1) * 600
+        phase_max = _phase_cap(total_chars)
+        msg_len = 600
+
+        for d in DIMENSIONS:
+            raw = 95  # LLM reports high confidence
+            prev = conf[d]
+            clamped = _clamp_score(raw, prev, phase_max, msg_len)
+            conf[d] = _smooth(clamped, prev)
+
+    readiness = _compute_readiness(conf, rel)
+    assert readiness >= READINESS_THRESHOLD, f"Readiness {readiness:.1f}% < {READINESS_THRESHOLD}% after 3 turns"
+    for d in DIMENSIONS:
+        assert conf[d] >= MIN_DIM_SCORE, f"{d} = {conf[d]} < {MIN_DIM_SCORE} after 3 turns"
+
+
+# ---------------------------------------------------------------------------
+# _generate_tasks_fallback
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateTasksFallback:
+    """Tests for the two-step task generation fallback."""
+
+    def test_returns_none_on_subprocess_failure(self):
+        from unittest.mock import patch, MagicMock
+        from server.chatbot import _generate_tasks_fallback
+
+        state = _make_ready_state()
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.stderr = "error"
+
+        with patch("server.chatbot.subprocess.run", return_value=mock_result):
+            result = _generate_tasks_fallback(state, None, "test-model")
+        assert result is None
+
+    def test_returns_none_on_timeout(self):
+        import subprocess as sp
+        from unittest.mock import patch
+        from server.chatbot import _generate_tasks_fallback
+
+        state = _make_ready_state()
+        with patch("server.chatbot.subprocess.run", side_effect=sp.TimeoutExpired("cmd", 60)):
+            result = _generate_tasks_fallback(state, None, "test-model")
+        assert result is None
+
+    def test_returns_none_on_invalid_json(self):
+        from unittest.mock import patch, MagicMock
+        from server.chatbot import _generate_tasks_fallback
+
+        state = _make_ready_state()
+        mock_result = MagicMock()
+        mock_result.stdout = '{"type":"text","part":{"text":"not valid json {{{"}}'
+
+        with patch("server.chatbot.subprocess.run", return_value=mock_result):
+            result = _generate_tasks_fallback(state, None, "test-model")
+        assert result is None
+
+    def test_returns_none_when_tasks_not_list(self):
+        import json
+        from unittest.mock import patch, MagicMock
+        from server.chatbot import _generate_tasks_fallback
+
+        state = _make_ready_state()
+        # LLM returns tasks as a string instead of list
+        payload = json.dumps({"tasks": "not a list", "project": {}})
+        ndjson = json.dumps({"type": "text", "part": {"text": payload}})
+        mock_result = MagicMock()
+        mock_result.stdout = ndjson
+
+        with patch("server.chatbot.subprocess.run", return_value=mock_result):
+            result = _generate_tasks_fallback(state, None, "test-model")
+        assert result is None
+
+    def test_returns_parsed_tasks_on_success(self):
+        import json
+        from unittest.mock import patch, MagicMock
+        from server.chatbot import _generate_tasks_fallback
+
+        state = _make_ready_state()
+        payload = json.dumps({
+            "tasks": [
+                {"title": "Setup project", "priority": 1, "parent": None,
+                 "acceptance_criteria": ["Project initializes"], "estimated_complexity": "low"},
+            ],
+            "project": {"name": "test", "language": "Python", "framework": "FastAPI",
+                        "description": "Test project"},
+        })
+        ndjson = json.dumps({"type": "text", "part": {"text": payload}})
+        mock_result = MagicMock()
+        mock_result.stdout = ndjson
+
+        with patch("server.chatbot.subprocess.run", return_value=mock_result):
+            result = _generate_tasks_fallback(state, None, "test-model")
+        assert result is not None
+        assert len(result["tasks"]) == 1
+        assert result["tasks"][0]["title"] == "Setup project"
+        assert result["project"]["name"] == "test"

@@ -432,7 +432,7 @@ class TestRunToolIntegration:
         state.last_tool_time = 0.0
         _chat_states["test-integration"] = state
 
-        ndjson = '{"type":"text","part":{"text":"1. Idea one\\n2. Idea two"}}\n'
+        ndjson = '{"type":"text","part":{"text":"1. Idea one: build a REST API with user authentication and JWT tokens\\n2. Idea two: add real-time notifications via WebSocket connections\\n3. Idea three: integrate payment processing with Stripe checkout"}}\n'
         mock_result = MagicMock()
         mock_result.stdout = ndjson
         mock_result.stderr = ""
@@ -459,7 +459,7 @@ class TestRunToolIntegration:
         state.last_tool_time = 0.0
         _chat_states["test-refine"] = state
 
-        ndjson = '{"type":"text","part":{"text":"Improved text here"}}\n'
+        ndjson = '{"type":"text","part":{"text":"Improved text: Build a REST API with FastAPI that handles user registration, login with JWT authentication, and role-based access control for admin and regular users."}}\n'
         mock_result = MagicMock()
         mock_result.stdout = ndjson
         mock_result.stderr = ""
@@ -471,7 +471,7 @@ class TestRunToolIntegration:
                 result = await run_tool("test-refine", "refine", "my custom text")
 
             assert result["mode"] == "edit"
-            assert "Improved" in result["result"]
+            assert "Improved text" in result["result"]
         finally:
             _chat_states.pop("test-refine", None)
 

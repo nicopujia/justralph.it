@@ -32,12 +32,14 @@ DIMENSIONS = [
 ]
 
 # -- Validation constants ---
-# Tuned for 3-4 message convergence with batch questions (21 Qs in turn 1).
-# Each turn carries a lot of information, so deltas and smoothing are generous.
-MAX_DELTA = 35               # large jumps OK -- each turn has 21+ answers
-SHORT_MSG_LEN = 80           # "short" means < 80 chars (raised from 30)
-SHORT_MSG_DELTA = 10         # even short messages can move scores
-EMA_ALPHA = 0.85             # fast response -- less smoothing
+# Tuned for 2-3 turn convergence with batch questions (21 Qs in turn 1).
+# Math simulation: with these values a dimension goes 0 -> 45 -> 82 -> 90+ in 3 turns.
+MAX_DELTA = 45               # big jumps -- batch answers carry lots of info
+SHORT_MSG_LEN = 80           # "short" means < 80 chars
+SHORT_MSG_DELTA = 15         # even short messages can move scores meaningfully
+BATCH_BONUS_THRESHOLD = 500  # user messages longer than this get a delta bonus
+BATCH_BONUS_DELTA = 15       # extra delta for batch answers (added to MAX_DELTA)
+EMA_ALPHA = 0.9              # fast convergence -- 90% new, 10% old
 
 BASE_WEIGHTS: dict[str, float] = {
     "functional": 2.0,
@@ -48,24 +50,23 @@ BASE_WEIGHTS: dict[str, float] = {
     "testing": 1.0,
     "edge_cases": 1.0,
 }
-READINESS_THRESHOLD = 85
+READINESS_THRESHOLD = 80
 MIN_DIM_SCORE = 70
 RELEVANCE_CUTOFF = 0.3
 
 # Questions-per-dimension for adaptive questioning.
-# Turn 1: 3 per sector.  Subsequent turns reduce based on confidence.
 QUESTIONS_PER_DIM_INITIAL = 3
 QUESTION_REDUCTION_FACTOR = 0.6  # 60% fewer Qs per dim when confidence >= 60
 
 # Phase caps based on cumulative user content length (chars).
-# Aggressive ramp: the batch-question format means each answer is long.
+# Lowered thresholds: batch answers produce 500-1000 chars easily.
 _PHASE_CHAR_THRESHOLDS: list[tuple[int, int, int]] = [
     #  (max_chars, phase, cap)
-    (150,   1, 60),   # initial idea pitch -- cap 60
-    (500,   2, 80),   # first batch of answers -- cap 80
-    (1000,  3, 95),   # second round -- cap 95
+    (100,   1, 65),   # initial idea pitch
+    (350,   2, 90),   # first batch of answers
+    (700,   3, 100),  # second round -- uncapped
 ]
-_PHASE_FINAL = (4, 100)  # beyond 1000 chars -- uncapped
+_PHASE_FINAL = (4, 100)  # beyond threshold -- fully uncapped
 
 
 def _get_phase(total_chars: int = 0) -> int:
@@ -116,6 +117,9 @@ def _build_question_guidance(confidence: dict[str, int], relevance: dict[str, fl
 def _clamp_score(new: int, prev: int, phase_max: int, msg_len: int) -> int:
     clamped = min(new, phase_max)
     max_d = SHORT_MSG_DELTA if msg_len < SHORT_MSG_LEN else MAX_DELTA
+    # Batch answer bonus: long messages can jump further
+    if msg_len > BATCH_BONUS_THRESHOLD:
+        max_d = min(max_d + BATCH_BONUS_DELTA, 60)
     if clamped > prev + max_d:
         clamped = prev + max_d
     return max(0, min(100, clamped))
@@ -124,6 +128,8 @@ def _clamp_score(new: int, prev: int, phase_max: int, msg_len: int) -> int:
 def _smooth(new: int, prev: int) -> int:
     if new <= prev:
         return new
+    if prev == 0:
+        return new  # first real score -- no dampening against zero baseline
     return round(EMA_ALPHA * new + (1 - EMA_ALPHA) * prev)
 
 
@@ -146,6 +152,67 @@ def _is_ready(state: "ChatState") -> bool:
             if state.confidence.get(d, 0) < MIN_DIM_SCORE:
                 return False
     return True
+
+
+def _describe_gaps(state: "ChatState") -> str:
+    """Human-readable list of dimensions blocking readiness."""
+    gaps = []
+    for d in DIMENSIONS:
+        if state.relevance.get(d, 1.0) <= RELEVANCE_CUTOFF:
+            continue
+        score = state.confidence.get(d, 0)
+        if score < MIN_DIM_SCORE:
+            gaps.append(f"{d.replace('_', ' ')} ({score}%, needs {MIN_DIM_SCORE}%)")
+    if state.weighted_readiness < READINESS_THRESHOLD:
+        gaps.append(f"overall readiness {state.weighted_readiness:.0f}% (needs {READINESS_THRESHOLD}%)")
+    return ", ".join(gaps) if gaps else "almost there"
+
+
+def _strip_task_content(message: str) -> str:
+    """Remove task-list-like content from a chat message.
+
+    Detects 5+ consecutive lines that look like numbered tasks or bullet-point
+    task titles and collapses them. Prevents the LLM from dumping a task list
+    inside the message text.
+    """
+    import re
+    lines = message.split("\n")
+    cleaned: list[str] = []
+    task_run: list[str] = []
+
+    def _is_task_line(line: str) -> bool:
+        s = line.strip()
+        return bool(re.match(r"^\d+[\.\)]\s+\S", s) or re.match(r"^[-*]\s+\*?\*?[A-Z]", s))
+
+    for line in lines:
+        if _is_task_line(line):
+            task_run.append(line)
+        else:
+            if len(task_run) >= 5:
+                cleaned.append(f"*({len(task_run)} tasks generated -- see Tasks tab)*")
+            else:
+                cleaned.extend(task_run)
+            task_run = []
+            cleaned.append(line)
+
+    if len(task_run) >= 5:
+        cleaned.append(f"*({len(task_run)} tasks generated -- see Tasks tab)*")
+    else:
+        cleaned.extend(task_run)
+
+    return "\n".join(cleaned)
+
+
+def _auto_score_irrelevant(state: "ChatState") -> None:
+    """Auto-set confidence to 95 for dimensions the LLM marked irrelevant.
+
+    Prevents dead dimensions from confusing the LLM while they're already
+    excluded from the readiness check by RELEVANCE_CUTOFF.
+    """
+    for d in DIMENSIONS:
+        if state.relevance.get(d, 1.0) <= RELEVANCE_CUTOFF:
+            if state.confidence.get(d, 0) < 90:
+                state.confidence[d] = 95
 
 
 # -- Tool helpers -----------------------------------------------------------
@@ -327,17 +394,30 @@ async def run_tool(
     session_dir: Path | None = None,
 ) -> dict:
     """Run a toolset tool. Returns {result, mode, tool, elapsed_ms, model}. Does NOT modify chat state."""
+    import hashlib
+    import uuid
+
     if tool not in TOOL_CONFIGS:
         raise ValueError(f"Unknown tool: {tool}")
 
     state = get_chat_state(session_id)
     config = TOOL_CONFIGS[tool]
 
-    # Rate limit (separate from chat rate limit)
+    # Circuit breaker: if tool has failed 3+ consecutive times, disable it
+    if state.tool_fail_counts.get(tool, 0) >= 3:
+        raise RuntimeError(
+            f"'{tool}' has failed 3 consecutive times. "
+            "Try a different tool or continue chatting to change context."
+        )
+
+    # Per-tool progressive cooldown (3s base, 10s on 2nd use, 30s on 3rd+)
     now = time.time()
-    if now - state.last_tool_time < 3.0:
-        raise RuntimeError("Rate limited. Wait a moment.")
-    state.last_tool_time = now
+    usage = state.tool_usage_counts.get(tool, 0)
+    last_ts = state.tool_timestamps.get(tool, 0.0)
+    cooldown = 3.0 if usage <= 1 else (10.0 if usage == 2 else 30.0)
+    if now - last_ts < cooldown:
+        remaining = round(cooldown - (now - last_ts))
+        raise RuntimeError(f"Rate limited. Wait {remaining}s before running {tool} again.")
 
     # Gate check
     if not config["gate"](state):
@@ -374,7 +454,7 @@ async def run_tool(
                     "\n\n## Current task statuses\n" + "\n".join(task_lines)
                 )
     except Exception:
-        pass  # best-effort; skip if task file doesn't exist yet
+        pass
 
     # Conditionally remove auth section for architect if auth is irrelevant
     if tool == "architect":
@@ -383,6 +463,26 @@ async def run_tool(
             system_prompt = system_prompt.replace(
                 "3. Auth strategy (or note if not needed)\n", ""
             )
+
+    # Context hash dedup: reject if prompt is identical to last run of same tool
+    prompt_hash = hashlib.md5(system_prompt.encode()).hexdigest()[:12]
+    if prompt_hash == state.tool_context_hashes.get(tool):
+        raise RuntimeError(
+            f"Same context as the last {tool} run. "
+            "Add more detail to the conversation first, then try again."
+        )
+
+    # On repeat runs: inject anti-repetition instructions + previous result as negative example
+    run_number = usage + 1
+    if run_number > 1:
+        system_prompt += f"\n\nThis is run #{run_number} of {tool}. You MUST produce COMPLETELY DIFFERENT output."
+        prev_result = state.tool_last_results.get(tool, "")
+        if prev_result:
+            snippet = prev_result[:500]
+            system_prompt += f"\n\nPrevious result (DO NOT repeat this):\n{snippet}\n\nProvide fresh, alternative ideas."
+
+    # Nonce to prevent any caching
+    system_prompt += f"\n\n<!-- run-id: {uuid.uuid4().hex[:8]} -->"
 
     # Model override per tool
     model = config.get("model")
@@ -401,7 +501,8 @@ async def run_tool(
         )
         output = result.stdout.strip()
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Tool timed out (120s)")
+        state.tool_fail_counts[tool] = state.tool_fail_counts.get(tool, 0) + 1
+        raise RuntimeError("Tool timed out (120s). Try a shorter conversation or different tool.")
     except FileNotFoundError:
         raise RuntimeError("OpenCode not found on PATH")
     elapsed_ms = int((time.time() - start) * 1000)
@@ -409,10 +510,23 @@ async def run_tool(
     if not output:
         output = result.stderr.strip() or ""
         if not output:
-            raise RuntimeError("Tool returned no output")
+            state.tool_fail_counts[tool] = state.tool_fail_counts.get(tool, 0) + 1
+            raise RuntimeError("Tool returned no output. Try rephrasing or adding more context.")
 
     content = _extract_content(output)
     content = _strip_code_fences(content)
+
+    # Validate result quality
+    if len(content.strip()) < 50:
+        state.tool_fail_counts[tool] = state.tool_fail_counts.get(tool, 0) + 1
+        raise RuntimeError("Tool produced insufficient output. Try adding more context to the conversation.")
+
+    # Success: update dedup state, reset fail counter
+    state.tool_context_hashes[tool] = prompt_hash
+    state.tool_last_results[tool] = content[:1000]
+    state.tool_usage_counts[tool] = run_number
+    state.tool_timestamps[tool] = time.time()
+    state.tool_fail_counts[tool] = 0
 
     db.save_tool_invocation(session_id, tool, config["mode"], elapsed_ms, model or DEFAULT_MODEL)
 
@@ -495,8 +609,8 @@ You MUST respond with valid JSON only (no markdown, no code fences):
 When requirements are thoroughly covered, set "ready": true and add:
 
 {{
-  "message": "Here are the tasks:",
-  "confidence": {{ ... }},
+  "message": "I've gathered enough requirements. Review the implementation plan below.",
+  "confidence": {{ ... all dimensions 80+ ... }},
   "relevance": {{ ... }},
   "contradictions": [],
   "ready": true,
@@ -530,6 +644,13 @@ When requirements are thoroughly covered, set "ready": true and add:
     "test_command": "uv run pytest", "lint_command": "uv run ruff check ."
   }}
 }}
+
+IMPORTANT: Keep the "message" field brief -- questions and short acknowledgments only.
+Your implementation plan goes in the "tasks" array, which the UI renders as
+interactive task cards. When you set ready=true, you MUST include a populated
+"tasks" array and a "project" object -- these are required for the handoff to work.
+The server validates readiness independently using its own scoring. If it agrees
+with your ready=true, it extracts tasks from the structured fields above.
 
 ### Task field rules:
 - **acceptance_criteria**: 2-5 bullet points. Each MUST be testable (a human could
@@ -570,6 +691,12 @@ class ChatState:
     session_dir: Path | None = None
     last_message_time: float = 0.0
     last_tool_time: float = 0.0
+    # Tool dedup: context hash + last result per tool, usage counts, per-tool timestamps
+    tool_context_hashes: dict[str, str] = field(default_factory=dict)
+    tool_last_results: dict[str, str] = field(default_factory=dict)
+    tool_usage_counts: dict[str, int] = field(default_factory=dict)
+    tool_timestamps: dict[str, float] = field(default_factory=dict)
+    tool_fail_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def user_msg_count(self) -> int:
@@ -584,6 +711,71 @@ class ChatState:
             "question_count": self.user_msg_count,
             "phase": _get_phase(_total_user_chars(self)),
         }
+
+
+def _generate_tasks_fallback(
+    state: "ChatState", session_dir: Path | None, model: str,
+) -> dict | None:
+    """Second-pass LLM call: generate tasks from already-gathered requirements.
+
+    Called when the server confirms readiness but the LLM's response didn't
+    include a tasks array. Returns parsed dict with 'tasks' and 'project',
+    or None on failure.
+    """
+    conversation = _conversation_summary(state)
+    confidence_summary = ", ".join(
+        f"{d}: {state.confidence.get(d, 0)}%" for d in DIMENSIONS
+    )
+    prompt = (
+        "You are a task generation specialist. The requirements conversation below "
+        "has been validated as complete. Generate a structured task list.\n\n"
+        f"## Conversation\n{conversation}\n\n"
+        f"## Confidence scores\n{confidence_summary}\n\n"
+        "## Instructions\n"
+        "Return ONLY a JSON object with 'tasks' and 'project' fields.\n\n"
+        '{\n'
+        '  "tasks": [\n'
+        '    {\n'
+        '      "title": "Short imperative title",\n'
+        '      "acceptance_criteria": ["Testable condition 1", "Testable condition 2"],\n'
+        '      "design_notes": ["Implementation approach"],\n'
+        '      "estimated_complexity": "low|medium|high",\n'
+        '      "priority": 1,\n'
+        '      "parent": null\n'
+        '    }\n'
+        '  ],\n'
+        '  "project": {\n'
+        '    "name": "project-name",\n'
+        '    "language": "Python",\n'
+        '    "framework": "FastAPI",\n'
+        '    "description": "One-line description",\n'
+        '    "test_command": "pytest",\n'
+        '    "lint_command": "ruff check ."\n'
+        '  }\n'
+        '}\n\n'
+        "Return ONLY valid JSON. No explanation, no code fences."
+    )
+
+    cwd = str(session_dir or state.session_dir) if (session_dir or state.session_dir) else None
+    try:
+        result = subprocess.run(
+            [OPENCODE_CMD, "run", prompt, "--model", model, "--format", "json"],
+            capture_output=True, text=True, timeout=60,
+            cwd=cwd,
+        )
+        output = result.stdout.strip()
+        if not output:
+            return None
+        content = _extract_content(output)
+        content = _strip_code_fences(content)
+        parsed = json.loads(content)
+        tasks = parsed.get("tasks")
+        if not tasks or not isinstance(tasks, list):
+            return None
+        return parsed
+    except Exception as e:
+        logger.warning("Task generation fallback failed: %s", e)
+        return None
 
 
 _chat_states: dict[str, ChatState] = {}
@@ -630,9 +822,18 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
     state.messages.append({"role": "user", "content": user_message})
     db.save_chat_message(session_id, "user", user_message)
 
-    # Build adaptive question guidance based on current confidence
+    # Build adaptive question guidance + readiness projection
     question_guidance = _build_question_guidance(state.confidence, state.relevance)
-    system = SYSTEM_PROMPT.replace("{question_guidance}", question_guidance)
+    readiness_note = ""
+    if state.weighted_readiness > 0:
+        gaps = _describe_gaps(state)
+        readiness_note = (
+            f"\n\n## Readiness status\n"
+            f"Current weighted readiness: {state.weighted_readiness:.0f}% (threshold: {READINESS_THRESHOLD}%)\n"
+            f"Gaps: {gaps}\n"
+            f"Focus your questions on the weakest dimensions listed above."
+        )
+    system = SYSTEM_PROMPT.replace("{question_guidance}", question_guidance + readiness_note)
 
     # Build the full prompt for opencode: system prompt + conversation history.
     # Truncate to keep prompt manageable: always include the first user message
@@ -719,8 +920,87 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
             if isinstance(rel, (int, float)):
                 state.relevance[dim] = max(0.0, min(1.0, float(rel)))
 
+    # Auto-score irrelevant dimensions so they don't drag down readiness
+    _auto_score_irrelevant(state)
+
+    # Stall escalation: if readiness hasn't improved in 2 turns, uncap scores
+    prev_readiness = state.weighted_readiness
     state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
+
+    if hasattr(state, "_stall_count"):
+        if state.weighted_readiness <= prev_readiness and prev_readiness > 0:
+            state._stall_count += 1
+        else:
+            state._stall_count = 0
+    else:
+        state._stall_count = 0
+
+    # If stalled 2+ turns, re-clamp with uncapped phase (force phase 4)
+    if state._stall_count >= 2:
+        logger.info("Readiness stalled %d turns at %.1f%%, escalating to uncapped", state._stall_count, state.weighted_readiness)
+        if "confidence" in parsed and not contradictions:
+            for dim in DIMENSIONS:
+                raw = parsed["confidence"].get(dim)
+                if not isinstance(raw, (int, float)):
+                    continue
+                prev = state.confidence[dim]
+                clamped = _clamp_score(int(raw), prev, 100, user_msg_len)
+                state.confidence[dim] = _smooth(clamped, prev)
+            state.weighted_readiness = _compute_readiness(state.confidence, state.relevance)
+
     state.ready = _is_ready(state)
+
+    # ALWAYS extract tasks/project from LLM response (don't gate on readiness).
+    # Preserves tasks from the turn where the LLM reaches readiness even if
+    # the server's clamped scores lag by 1-2%. Only overwrite with non-empty.
+    llm_tasks = parsed.get("tasks")
+    llm_project = parsed.get("project")
+    if llm_tasks and isinstance(llm_tasks, list):
+        state.tasks = llm_tasks
+    if llm_project and isinstance(llm_project, dict):
+        state.project = llm_project
+
+    # Detect LLM/server readiness mismatch
+    llm_said_ready = parsed.get("ready", False)
+    if llm_said_ready and not state.ready:
+        gaps = _describe_gaps(state)
+        logger.warning(
+            "LLM/server readiness mismatch: LLM=True, server=False (readiness=%.1f%%). Gaps: %s",
+            state.weighted_readiness, gaps,
+        )
+        assistant_msg = (
+            f"Almost there! I need a bit more detail on: {gaps}. "
+            "Let me ask a few more targeted questions."
+        )
+
+    # Two-step generation: if ready but no tasks, make a focused second call
+    if state.ready and not state.tasks:
+        logger.warning(
+            "Readiness confirmed but no tasks in LLM response (session=%s) -- "
+            "attempting fallback task generation",
+            session_id,
+        )
+        fallback = _generate_tasks_fallback(state, session_dir, model)
+        if fallback:
+            state.tasks = fallback.get("tasks")
+            if not state.project and fallback.get("project"):
+                state.project = fallback["project"]
+
+    # Final guard: never signal ready without tasks
+    if state.ready and not state.tasks:
+        logger.warning(
+            "Readiness confirmed but no tasks after fallback (session=%s) -- "
+            "downgrading ready to false",
+            session_id,
+        )
+        state.ready = False
+        assistant_msg += (
+            "\n\nI'm ready to create your implementation plan. "
+            "Let me finalize the task list -- one more moment..."
+        )
+
+    # Strip task-like content from message (prevents LLM dumping tasks in chat)
+    assistant_msg = _strip_task_content(assistant_msg)
 
     db.save_chat_state(
         session_id,
@@ -732,21 +1012,10 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         state.project,
     )
 
-    if state.ready:
-        state.tasks = parsed.get("tasks")
-        state.project = parsed.get("project")
-        db.save_chat_state(
-            session_id,
-            state.confidence,
-            state.relevance,
-            state.ready,
-            state.weighted_readiness,
-            state.tasks,
-            state.project,
-        )
-
-    # A3: Record timestamp after processing
+    # A3: Record timestamp + reset tool cooldowns (new context = fresh tool runs)
     state.last_message_time = time.time()
+    state.tool_usage_counts.clear()
+    state.tool_context_hashes.clear()
 
     # Compute questions remaining for frontend display
     questions_remaining = sum(
@@ -763,8 +1032,8 @@ async def chat(session_id: str, user_message: str, *, session_dir: Path | None =
         "weighted_readiness": state.weighted_readiness,
         "question_count": state.user_msg_count,
         "phase": _get_phase(_total_user_chars(state)),
-        "tasks": state.tasks,
-        "project": state.project,
+        "tasks": state.tasks if state.ready else None,
+        "project": state.project if state.ready else None,
         "contradictions": contradictions,
         "questions_remaining": questions_remaining,
     }

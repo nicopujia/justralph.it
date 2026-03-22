@@ -175,6 +175,8 @@ export function TaskPreview({
 }: TaskPreviewProps) {
   // Local mutable copy -- user edits apply here before confirm
   const [tasks, setTasks] = useState<PreviewTask[]>(initialTasks);
+  // Track whether the initial load had tasks (to distinguish "never generated" from "user removed all")
+  const [hadInitialTasks] = useState(() => initialTasks.length > 0);
 
   const updateTask = (index: number, patch: Partial<PreviewTask>) => {
     setTasks((prev) =>
@@ -210,9 +212,11 @@ export function TaskPreview({
       {/* Scrollable task list */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full gap-2">
             <p className="text-muted-foreground text-xs uppercase tracking-wider">
-              ALL TASKS REMOVED. GO BACK TO CHAT TO REGENERATE.
+              {hadInitialTasks
+                ? "ALL TASKS REMOVED. GO BACK TO CHAT TO REGENERATE."
+                : "NO TASKS GENERATED YET. GO BACK TO CHAT TO CONTINUE THE CONVERSATION."}
             </p>
           </div>
         ) : (

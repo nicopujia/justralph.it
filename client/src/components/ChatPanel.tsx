@@ -553,7 +553,7 @@ function RightTabPanel({
       </div>
 
       {/* Action button */}
-      {state.ready && (
+      {state.ready && state.tasks && state.tasks.length > 0 && (
         <div className="p-4 border-t border-border shrink-0 space-y-2">
           {onReviewTasks ? (
             <button
@@ -577,6 +577,13 @@ function RightTabPanel({
               THIS IS TAKING A WHILE...
             </p>
           )}
+        </div>
+      )}
+      {state.ready && (!state.tasks || state.tasks.length === 0) && (
+        <div className="p-4 border-t border-border shrink-0">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider text-center animate-pulse">
+            GENERATING IMPLEMENTATION PLAN...
+          </p>
         </div>
       )}
     </div>
@@ -997,7 +1004,7 @@ export function ChatPanel({
         </div>
 
         {/* Ready actions (sidebar) */}
-        {state.ready && (
+        {state.ready && state.tasks && state.tasks.length > 0 && (
           <div className="px-2 pb-2 shrink-0">
             {onReviewTasks ? (
               <button
