@@ -85,7 +85,7 @@ export function ConfidenceMeter({
         <div className="flex justify-between text-xs tracking-wider">
           <span className="text-muted-foreground">PHASE {phase}/4</span>
           <span className="text-muted-foreground">
-            Q:{String(questionCount).padStart(2, "0")}/{questionCount < 10 ? "10 MIN" : "10"}
+            Q:{String(questionCount).padStart(2, "0")}
           </span>
         </div>
 
